@@ -90,9 +90,16 @@ describe('FutureActionService.schedule', () => {
     if (!result.ok) throw new Error(result.reason);
 
     const chain = await harness.db.audit.listByCorrelationId('corr_followup');
-    expect(chain.map((event) => event.type)).toEqual(['FUTURE_ACTION_SCHEDULED']);
-    expect(chain[0]?.subjectType).toBe('FUTURE_ACTION');
-    expect(chain[0]?.subjectId).toBe(result.value.futureAction.id);
+    // ENTITY_PERSISTED was added to this transaction by
+    // MISSION-48d6ff04-AUTO-AGENT (announced in the coordination mailbox), so
+    // the FutureAction path records "a row was written" in the same vocabulary
+    // the Meeting path uses. Both events are about the same row.
+    expect(chain.map((event) => event.type)).toEqual(['ENTITY_PERSISTED', 'FUTURE_ACTION_SCHEDULED']);
+    expect(chain.map((event) => event.subjectType)).toEqual(['FUTURE_ACTION', 'FUTURE_ACTION']);
+    expect(chain.map((event) => event.subjectId)).toEqual([
+      result.value.futureAction.id,
+      result.value.futureAction.id,
+    ]);
   });
 
   it('does NOT refuse a callback just because the calendar is busy', async () => {

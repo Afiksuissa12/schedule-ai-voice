@@ -99,14 +99,19 @@ describe('runDueActions - a single successful pass', () => {
     await harness.runner.runDueActions(DUE_UTC);
 
     const chain = await harness.db.audit.listByCorrelationId(CORRELATION);
+    // ENTITY_PERSISTED was added to FutureActionService's transaction by
+    // MISSION-48d6ff04-AUTO-AGENT (announced in the coordination mailbox). The
+    // point of this test is unchanged: the runner's events land on the SAME
+    // chain as the turn that made the promise.
     expect(chain.map((event) => event.type)).toEqual([
+      'ENTITY_PERSISTED',
       'FUTURE_ACTION_SCHEDULED',
       'FUTURE_ACTION_CLAIMED',
       'FUTURE_ACTION_EXECUTED',
     ]);
-    expect(chain.map((event) => event.sequence)).toEqual([1, 2, 3]);
+    expect(chain.map((event) => event.sequence)).toEqual([1, 2, 3, 4]);
 
-    const executed = JSON.parse(chain[2]?.detailJson ?? '{}');
+    const executed = JSON.parse(chain[3]?.detailJson ?? '{}');
     expect(executed.runnerId).toBe('runner-a');
     expect(executed.telephonyStatus).toBe('COMPLETED');
     expect(executed.outcome).toBe('CONNECTED');
