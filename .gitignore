@@ -24,6 +24,10 @@ coverage/
 .agent-inbox/
 .agent-outbox/
 
+# AutonomousDevTeam orchestrator runtime state (project-local, not source)
+.agent/
+.worktrees/
+
 # editor / OS noise
 .DS_Store
 Thumbs.db
