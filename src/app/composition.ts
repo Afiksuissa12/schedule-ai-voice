@@ -31,9 +31,14 @@
  * provider lives in the same source tree.
  *
  * This file contains no transport of any kind. It CONSTRUCTS a provider; the
- * only file that dials Ollama is `src/llm/ollama/client.ts`, which is what
+ * only file an application path can reach that dials Ollama is
+ * `src/llm/ollama/client.ts`, which is what
  * `tests/invariants/vendorBoundary.test.ts` requires of everything under
- * `src/app`.
+ * `src/app`. (`src/eval/models/ollamaAdmin.ts` also speaks HTTP to Ollama, but
+ * deliberately from outside that clause: it wraps the OPERATOR endpoints -
+ * pull, ps, show - which no application path may call, and keeping them out of
+ * the provider's client is what makes "a bad configuration cannot download a
+ * model" a structural property rather than a convention.)
  */
 import { ConversationService } from '../conversation/conversationService.js';
 import { ConversationContextAssembler } from '../conversation/contextAssembler.js';

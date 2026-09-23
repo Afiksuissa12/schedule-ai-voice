@@ -259,6 +259,11 @@ Note that **`.env` is loaded whether you ask for it or not**: `dotenv` arrives
 transitively through `@prisma/config`, so importing `@prisma/client` reads `.env`
 into `process.env`. Whatever is in your `.env` beats the defaults in the source.
 
+**And `npm run db:generate` will not update an existing `.env`** — it copies
+`.env.example` only when `.env` is absent. If you have a `.env` from before
+`LOCAL_LLM_NUM_CTX` was raised to 16384, it still says 8192 and 8192 is what
+applies. Update it by hand, or delete `.env` and re-run.
+
 ### Configuration
 
 Every key is optional, defaulted, and Zod-validated. A clone with no `.env` at

@@ -1013,7 +1013,7 @@ Re-run on this branch after the fixes, the offline ones are unchanged:
 transport this branch rewrote, and it passes unchanged including its own proof
 that the mapping layer performs no I/O.
 
-**Three probes were added for the four defects**, each of which fails against the
+**Four probes were added for the four defects**, each of which fails against the
 code as it was and passes against the code as it is. They are not vitest tests
 for the reason in § 10.1 — `vitest.config.ts` collects `tests/**` only and this
 task could write to neither — and **converting them is the first thing the
@@ -1023,6 +1023,7 @@ a gate rather than a document:
 | Probe | Defect | What it does |
 |---|---|---|
 | deadline probe | § 8.4 | A `node:http` server that sends `200` plus one NDJSON line and never ends the body; asserts all four transport paths reject with `OllamaTimeoutError` inside the deadline. Fails all four at a 15 s watchdog against the pre-fix client |
+| timer-release probe | § 8.4 | A server that answers `/api/chat` with a `500`, against a 120 s `timeoutMs`, and no explicit `process.exit` — so a leaked abort timer shows up as a hang. Hangs for the full test limit against the ported fix; exits in 0 s here |
 | business-profile probe | § 8.10 | Drives `buildAgentRuntime` → `handleTurn` → `get_contact_context` and asserts the `business` key is present with a profile, absent without one, and **absent on the Baseline V1 path** |
 | context-budget probe | § 8.1 | Six cases: derivation from the provider, an explicit smaller budget left alone, an explicit larger one raising `ConfigurationError`, and the two documented cases where nothing can be derived |
 
@@ -1248,6 +1249,17 @@ timer, keeps the Node event loop alive for the remainder of `timeoutMs`. On a
 CLI that is a two-minute hang after the work is visibly finished. Both checks now
 sit inside a `try` that releases on every path, which also puts `ensureOk`'s read
 of the error body under the deadline where it belongs.
+
+Measured, against a server that answers `/api/chat` with a `500` and a
+`timeoutMs` of 120,000 ms — the script does no explicit `process.exit`, so a
+leaked timer shows up as a hang:
+
+```
+  ported version:  threw OllamaRequestError after 20 ms
+                   ...then HUNG. Killed at the 60 s test limit.
+  this branch:     threw OllamaRequestError after 10 ms
+                   process exited immediately. 0 s wall clock.
+```
 
 **This is a change in a sibling slice's file, made by integration.** It was
 reported upstream with the reproduction above first, and changed here because the
@@ -1688,7 +1700,15 @@ Each line was checked directly by this review, not copied from a self-report.
 - **The vendor boundary holds.** Exactly one file, `src/llm/openAiLlmProvider.ts`,
   imports a vendor SDK; a direct re-check finds no other. No `fetch(`,
   `XMLHttpRequest` or raw `node:http`/`node:https` under `src/agent`,
-  `src/conversation` or `src/app`. `tests/invariants/vendorBoundary.test.ts` and
+  `src/conversation` or `src/app`. **One file outside that clause does speak HTTP
+  to Ollama and should be named rather than left for a reader to find**:
+  `src/eval/models/ollamaAdmin.ts`, which wraps the OPERATOR endpoints — pull,
+  ps, show. It is deliberately *not* in `src/llm/ollama/client.ts`, because the
+  application must never be able to download a multi-gigabyte model as a side
+  effect of a bad configuration; keeping those endpoints in `src/eval` makes
+  that a structural property rather than a convention. Nothing on any
+  application path imports it, which is why the sweep still records zero
+  outbound attempts. `tests/invariants/vendorBoundary.test.ts` and
   `tests/invariants/networkTrap.ts` were **not modified** and both pass.
 - **The nine tools are unchanged** — none added, removed or altered.
   `src/agent/tools/dispatcher.ts`'s validation logic is unchanged.
