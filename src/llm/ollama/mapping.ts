@@ -1,0 +1,705 @@
+/**
+ * Ollama <-> port translation. PURE, and deliberately so.
+ *
+ * Not one function here opens a socket, reads a clock, or reads the
+ * environment. That is what lets `npm run llm:mapcheck` replay real recorded
+ * responses through the exact code the provider runs and assert the resulting
+ * `ToolCallRequest[]` byte for byte, with the network trap armed and nothing to
+ * trap. Given this repository's test files cannot be added to, that CLI is the
+ * regression net for this module, and it is only possible because the module
+ * has no I/O in it.
+ *
+ * THE ONE RULE EVERYTHING HERE OBEYS
+ * ---------------------------------------------------------------------------
+ * Translate, never interpret. No argument is added, removed, renamed, coerced,
+ * defaulted or repaired. `argumentsJson` comes out as a verbatim serialisation
+ * of what the model produced, because downstream it is evidence: it is stored
+ * on `ConversationTurn.rawPayloadJson` and read by an auditor asking what the
+ * model actually said.
+ */
+import type {
+  CompleteTurnResult,
+  LlmMessage,
+  LlmRuntimeDetail,
+  LlmToolCallHealth,
+  LlmToolDefinition,
+  LlmTurnMetrics,
+  ToolCallRequest,
+} from '../../ports/llm.js';
+import { ConfigurationError } from '../../shared/errors.js';
+import type {
+  OllamaChatChunk,
+  OllamaRequestMessage,
+  OllamaToolSpec,
+  OllamaWireToolCall,
+} from './wire.js';
+
+// ---------------------------------------------------------------------------
+// Request direction
+// ---------------------------------------------------------------------------
+
+/**
+ * A port tool definition becomes an Ollama tool spec.
+ *
+ * The JSON Schema is passed through UNTOUCHED. It was generated from the Zod
+ * schema the dispatcher validates against (`src/agent/tools/jsonSchema.ts`),
+ * and the entire value of generating it is that the model is told exactly what
+ * application code will accept. Any "normalisation" here would reintroduce the
+ * drift that generation exists to remove.
+ */
+export function toOllamaTool(tool: LlmToolDefinition): OllamaToolSpec {
+  return {
+    type: 'function',
+    function: {
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parametersJsonSchema,
+    },
+  };
+}
+
+/**
+ * One port message becomes one Ollama message.
+ *
+ * The interesting case, exactly as with OpenAI, is an ASSISTANT message that
+ * carries both a `toolCallId` and a `toolName`: that is a tool-call turn
+ * rebuilt from the database, and Ollama needs it expressed as `tool_calls` so
+ * that the `tool` result message following it is legal.
+ *
+ * `message.content` on such a turn is the raw arguments string this system
+ * persisted. It is re-parsed here and ONLY here, because Ollama wants an
+ * object where OpenAI wanted a string. If it does not parse it is sent as a
+ * string rather than guessed at - a transcript that once contained malformed
+ * arguments should keep containing them, since the model's own recovery from
+ * its earlier mistake is part of what we are testing.
+ */
+export function toOllamaMessage(message: LlmMessage): OllamaRequestMessage {
+  switch (message.role) {
+    case 'system':
+      return { role: 'system', content: message.content };
+
+    case 'user':
+      return { role: 'user', content: message.content };
+
+    case 'tool':
+      return {
+        role: 'tool',
+        content: message.content,
+        // A tool result with no id cannot be matched to its call. Failing here
+        // beats sending a request whose rejection is harder to read.
+        tool_call_id: requireToolCallId(message),
+        ...(message.toolName ? { tool_name: message.toolName } : {}),
+      };
+
+    case 'assistant': {
+      if (message.toolCallId && message.toolName) {
+        return {
+          role: 'assistant',
+          content: '',
+          tool_calls: [
+            {
+              id: message.toolCallId,
+              function: { name: message.toolName, arguments: reparseArguments(message.content) },
+            },
+          ],
+        };
+      }
+      return { role: 'assistant', content: message.content };
+    }
+
+    default: {
+      const exhaustive: never = message.role;
+      throw new ConfigurationError(`Unsupported LlmMessage role: ${String(exhaustive)}`);
+    }
+  }
+}
+
+/** The system prompt is the first message; Ollama has no separate field for it. */
+export function toOllamaMessages(
+  systemPrompt: string,
+  messages: ReadonlyArray<LlmMessage>,
+): OllamaRequestMessage[] {
+  return [{ role: 'system' as const, content: systemPrompt }, ...messages.map(toOllamaMessage)];
+}
+
+function requireToolCallId(message: LlmMessage): string {
+  if (!message.toolCallId) {
+    throw new ConfigurationError(
+      'A tool result message must carry the toolCallId of the call it answers. ' +
+        'ConversationService always persists one; a message without it did not come from the database.',
+      { details: { contentPreview: message.content.slice(0, 120) } },
+    );
+  }
+  return message.toolCallId;
+}
+
+function reparseArguments(content: string): unknown {
+  try {
+    return JSON.parse(content);
+  } catch {
+    return content;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Response direction: native tool calls
+// ---------------------------------------------------------------------------
+
+/** Mints a correlation id for a tool call that arrived without one. */
+export type ToolCallIdMinter = (index: number) => string;
+
+/**
+ * Ollama's `message.tool_calls` become port `ToolCallRequest`s.
+ *
+ * THE RE-SERIALISATION, AND WHY IT IS NOT A LIE
+ * ---------------------------------------------------------------------------
+ * Ollama hands back `arguments` as a parsed OBJECT; the port requires a raw
+ * string. `JSON.stringify` is therefore unavoidable, and it is the ONLY
+ * transformation applied: keys keep their order and their values, nothing is
+ * added, nothing is dropped. The audit trail records the model's arguments,
+ * losing only the whitespace Ollama had already discarded before we saw it.
+ * `LOCAL_PROVIDER.md` states this plainly so no auditor is surprised by it.
+ *
+ * A call with no usable name is DROPPED, not repaired. Naming a tool is the
+ * one thing this layer can never do on the model's behalf.
+ */
+export function mapNativeToolCalls(
+  raw: ReadonlyArray<OllamaWireToolCall> | undefined,
+  mintId: ToolCallIdMinter,
+): ToolCallRequest[] {
+  if (!raw || raw.length === 0) return [];
+
+  const calls: ToolCallRequest[] = [];
+  for (const [index, call] of raw.entries()) {
+    const name = call.function?.name;
+    if (typeof name !== 'string' || name.trim().length === 0) continue;
+
+    calls.push({
+      toolCallId: nonEmpty(call.id) ?? mintId(index),
+      toolName: name,
+      argumentsJson: stringifyArguments(call.function?.arguments),
+    });
+  }
+  return calls;
+}
+
+/**
+ * Arguments to their verbatim JSON string.
+ *
+ * `undefined` becomes `{}` ONLY here, where the model genuinely produced a
+ * native tool call carrying no arguments object at all. That is not invention:
+ * the tool was named natively by the model, and an absent arguments object in
+ * a structured call means the empty set. The dispatcher will still reject it
+ * with SCHEMA_VIOLATION if the tool has required fields, which is the correct
+ * and audited outcome. The TEXT fallback below is deliberately stricter.
+ */
+function stringifyArguments(value: unknown): string {
+  if (value === undefined) return '{}';
+  if (typeof value === 'string') return value;
+  return JSON.stringify(value);
+}
+
+function nonEmpty(value: string | undefined): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Response direction: the text fallback
+// ---------------------------------------------------------------------------
+
+export interface TextualToolCallRecovery {
+  /** Calls recovered, in the order they appeared in the text. */
+  readonly toolCalls: ToolCallRequest[];
+  /** The assistant text with every recovered span removed; null if nothing is left. */
+  readonly remainingText: string | null;
+  readonly recovered: number;
+  /** Candidates that looked like a tool call and were REFUSED. */
+  readonly malformed: number;
+  /** Why each refusal happened. Surfaced by `llm:smoke`, never acted on. */
+  readonly refusals: string[];
+}
+
+/**
+ * THE FALLBACK: a tool call the model wrote into its text instead of into the
+ * native field.
+ *
+ * WHY IT EXISTS
+ * ---------------------------------------------------------------------------
+ * A 7B model's chat template is what turns a native tool call into tokens. When
+ * that template is imperfect - a quantization that degraded it, a prompt shape
+ * it was not tuned for, a model whose tool support is newer than its template -
+ * the model still tries to call the tool and the call comes out as JSON in the
+ * prose. Both models measured for this mission emitted NATIVE calls throughout,
+ * so this is a robustness path and not the normal one; the counters below exist
+ * so the evaluation task can prove that per model rather than assume it.
+ *
+ * WHY IT IS THIS CONSERVATIVE
+ * ---------------------------------------------------------------------------
+ * A fallback that guesses is worse than no fallback, because a guessed tool
+ * call is an action proposed by this file rather than by the model, and this
+ * file has no authority to propose actions. So every one of these must hold:
+ *
+ *   1. The span is one of four recognised shapes - the whole message, a fenced
+ *      code block, a `[TOOL_CALLS]`-prefixed payload, or a balanced JSON value
+ *      starting at the first character. Braces are never hunted for mid-prose,
+ *      because a model explaining a tool call is not calling it.
+ *   2. The span parses as JSON.
+ *   3. It names a tool, under `name`, `tool_name`, or a nested `function.name`.
+ *   4. THAT NAME WAS ACTUALLY OFFERED THIS TURN. A model cannot conjure a tool
+ *      into existence by writing its name, and an unoffered name is far more
+ *      likely to be prose about tools than a call.
+ *   5. It carries an `arguments`/`parameters` value that is a JSON OBJECT, or a
+ *      string that parses to one. An ABSENT arguments key is a refusal, not an
+ *      empty object: supplying `{}` for a field the model never wrote is
+ *      exactly the "fill in the blank" this architecture forbids.
+ *
+ * Anything that fails 2-5 after passing the "looks like a tool call" test is
+ * counted as `malformed`, left in the assistant's text, and never converted.
+ * The contact hears the model's words and nothing is proposed - which is the
+ * safe failure, and a visible one.
+ */
+export function recoverToolCallsFromText(
+  text: string,
+  offeredToolNames: ReadonlyArray<string>,
+  mintId: ToolCallIdMinter,
+): TextualToolCallRecovery {
+  const empty: TextualToolCallRecovery = {
+    toolCalls: [],
+    remainingText: text.trim().length > 0 ? text : null,
+    recovered: 0,
+    malformed: 0,
+    refusals: [],
+  };
+
+  // No tools offered means nothing in this text can be a call to one.
+  if (offeredToolNames.length === 0 || text.trim().length === 0) return empty;
+
+  const offered = new Set(offeredToolNames);
+  const spans = findCandidateSpans(text);
+  if (spans.length === 0) return empty;
+
+  const toolCalls: ToolCallRequest[] = [];
+  const refusals: string[] = [];
+  const consumed: Span[] = [];
+  let malformed = 0;
+  let minted = 0;
+
+  for (const span of spans) {
+    const parsed = tryParseJson(span.json);
+    if (parsed === PARSE_FAILED) {
+      // Only count it if it announced itself as a tool call in the raw text;
+      // an unparseable fenced block of something else is not our business.
+      if (looksLikeToolCallText(span.json)) {
+        malformed += 1;
+        refusals.push('span did not parse as JSON');
+      }
+      continue;
+    }
+
+    const candidates = Array.isArray(parsed) ? parsed : [parsed];
+    const accepted: ToolCallRequest[] = [];
+    let spanRefused = false;
+
+    for (const candidate of candidates) {
+      const outcome = evaluateCandidate(candidate, offered);
+      if (outcome.kind === 'ignore') continue;
+      if (outcome.kind === 'refuse') {
+        malformed += 1;
+        refusals.push(outcome.reason);
+        spanRefused = true;
+        continue;
+      }
+      accepted.push({
+        toolCallId: mintId(minted),
+        toolName: outcome.toolName,
+        argumentsJson: outcome.argumentsJson,
+      });
+      minted += 1;
+    }
+
+    // A span is only removed from the text if EVERY tool-call-looking thing in
+    // it was accepted. Leaving a refused call visible in the transcript is the
+    // point: the reader must be able to see what the model tried to do.
+    if (accepted.length > 0 && !spanRefused) {
+      toolCalls.push(...accepted);
+      consumed.push(span);
+    } else if (accepted.length > 0) {
+      toolCalls.push(...accepted);
+    }
+  }
+
+  return {
+    toolCalls,
+    remainingText: removeSpans(text, consumed),
+    recovered: toolCalls.length,
+    malformed,
+    refusals,
+  };
+}
+
+interface Span {
+  readonly start: number;
+  readonly end: number;
+  readonly json: string;
+}
+
+type CandidateOutcome =
+  /** Not a tool-call attempt at all. Not counted either way. */
+  | { readonly kind: 'ignore' }
+  | { readonly kind: 'refuse'; readonly reason: string }
+  | { readonly kind: 'accept'; readonly toolName: string; readonly argumentsJson: string };
+
+function evaluateCandidate(candidate: unknown, offered: ReadonlySet<string>): CandidateOutcome {
+  if (!isPlainObject(candidate)) return { kind: 'ignore' };
+
+  // Both the flat shape (`{name, arguments}`) and the OpenAI-ish nested one
+  // (`{function: {name, arguments}}`) are seen from small models.
+  const nested = isPlainObject(candidate['function']) ? (candidate['function'] as Record<string, unknown>) : null;
+  const source = nested ?? candidate;
+
+  const rawName = source['name'] ?? source['tool_name'];
+  if (typeof rawName !== 'string' || rawName.trim().length === 0) return { kind: 'ignore' };
+  const toolName = rawName.trim();
+
+  if (!offered.has(toolName)) {
+    return {
+      kind: 'refuse',
+      reason: `names "${toolName}", which was not offered this turn`,
+    };
+  }
+
+  if (!('arguments' in source) && !('parameters' in source)) {
+    return {
+      kind: 'refuse',
+      reason: `"${toolName}" carried no arguments object; supplying one would be inventing it`,
+    };
+  }
+
+  const rawArguments = 'arguments' in source ? source['arguments'] : source['parameters'];
+
+  // A string is passed through VERBATIM when it parses to an object - that
+  // string is literally what the model wrote, which is the best possible
+  // `argumentsJson`.
+  if (typeof rawArguments === 'string') {
+    const parsed = tryParseJson(rawArguments);
+    if (parsed !== PARSE_FAILED && isPlainObject(parsed)) {
+      return { kind: 'accept', toolName, argumentsJson: rawArguments };
+    }
+    return { kind: 'refuse', reason: `"${toolName}" had a string arguments value that is not a JSON object` };
+  }
+
+  if (!isPlainObject(rawArguments)) {
+    return { kind: 'refuse', reason: `"${toolName}" had a non-object arguments value` };
+  }
+
+  return { kind: 'accept', toolName, argumentsJson: JSON.stringify(rawArguments) };
+}
+
+/**
+ * The four recognised span shapes, in priority order. The first that yields
+ * anything wins, so a fenced block inside a whole-message JSON is never
+ * double-counted.
+ */
+function findCandidateSpans(text: string): Span[] {
+  const whole = wholeMessageSpan(text);
+  if (whole) return [whole];
+
+  const fenced = fencedSpans(text);
+  if (fenced.length > 0) return fenced;
+
+  const marked = toolCallsMarkerSpans(text);
+  if (marked.length > 0) return marked;
+
+  const leading = leadingJsonSpan(text);
+  return leading ? [leading] : [];
+}
+
+function wholeMessageSpan(text: string): Span | null {
+  const start = text.length - text.trimStart().length;
+  const body = text.trim();
+  if (!startsJson(body)) return null;
+  if (tryParseJson(body) === PARSE_FAILED) return null;
+  return { start, end: start + body.length, json: body };
+}
+
+const FENCE_RE = /```(?:json|JSON)?[ \t]*\r?\n([\s\S]*?)```/g;
+
+function fencedSpans(text: string): Span[] {
+  const spans: Span[] = [];
+  for (const match of text.matchAll(FENCE_RE)) {
+    const body = (match[1] ?? '').trim();
+    if (startsJson(body)) {
+      spans.push({ start: match.index, end: match.index + match[0].length, json: body });
+    }
+  }
+  return spans;
+}
+
+/** Mistral's raw template leaks `[TOOL_CALLS] [{...}]` when tool parsing fails. */
+const TOOL_CALLS_MARKER = '[TOOL_CALLS]';
+
+function toolCallsMarkerSpans(text: string): Span[] {
+  const marker = text.indexOf(TOOL_CALLS_MARKER);
+  if (marker < 0) return [];
+  const after = text.slice(marker + TOOL_CALLS_MARKER.length);
+  const offset = after.length - after.trimStart().length;
+  const balanced = balancedJsonFrom(after.trimStart());
+  if (balanced === null) return [];
+  return [
+    {
+      start: marker,
+      end: marker + TOOL_CALLS_MARKER.length + offset + balanced.length,
+      json: balanced,
+    },
+  ];
+}
+
+function leadingJsonSpan(text: string): Span | null {
+  const start = text.length - text.trimStart().length;
+  const body = text.trimStart();
+  if (!startsJson(body)) return null;
+  const balanced = balancedJsonFrom(body);
+  if (balanced === null) return null;
+  return { start, end: start + balanced.length, json: balanced };
+}
+
+function startsJson(value: string): boolean {
+  return value.startsWith('{') || value.startsWith('[');
+}
+
+/**
+ * The longest balanced JSON value starting at index 0, or null.
+ *
+ * String-aware, so a brace inside `"reason": "call back {tomorrow}"` does not
+ * end the value early. Depth-only: it does not validate, because `JSON.parse`
+ * does that immediately afterwards.
+ */
+function balancedJsonFrom(value: string): string | null {
+  const open = value[0];
+  if (open !== '{' && open !== '[') return null;
+  const close = open === '{' ? '}' : ']';
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < value.length; i += 1) {
+    const char = value[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') inString = true;
+    else if (char === open) depth += 1;
+    else if (char === close) {
+      depth -= 1;
+      if (depth === 0) return value.slice(0, i + 1);
+    }
+  }
+  return null;
+}
+
+/** Cheap "was this trying to be a tool call?" test, used only to count refusals. */
+function looksLikeToolCallText(value: string): boolean {
+  return /"(?:name|tool_name|function)"\s*:/.test(value);
+}
+
+function removeSpans(text: string, spans: ReadonlyArray<Span>): string | null {
+  if (spans.length === 0) return text.trim().length > 0 ? text : null;
+
+  const ordered = [...spans].sort((a, b) => a.start - b.start);
+  let out = '';
+  let cursor = 0;
+  for (const span of ordered) {
+    if (span.start < cursor) continue;
+    out += text.slice(cursor, span.start);
+    cursor = span.end;
+  }
+  out += text.slice(cursor);
+
+  const trimmed = out.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+const PARSE_FAILED = Symbol('parse-failed');
+
+function tryParseJson(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return PARSE_FAILED;
+  }
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+// ---------------------------------------------------------------------------
+// Metrics
+// ---------------------------------------------------------------------------
+
+const NS_PER_MS = 1_000_000;
+const NS_PER_SECOND = 1_000_000_000;
+
+export interface MetricsInput {
+  readonly modelId: string;
+  readonly streamed: boolean;
+  readonly totalLatencyMs: number;
+  readonly timeToFirstTokenMs: number | null;
+  /** The `done: true` chunk, which is where Ollama puts every counter. */
+  readonly final: OllamaChatChunk | null;
+  readonly toolCallHealth: LlmToolCallHealth;
+  readonly runtime?: LlmRuntimeDetail;
+}
+
+/**
+ * Ollama's own counters become port metrics.
+ *
+ * Tokens-per-second is computed from `eval_count / eval_duration` - GENERATION
+ * time only, excluding prompt evaluation and model load. That is the number
+ * that describes how fast the model speaks, which is what a voice product
+ * cares about, and it is deliberately not the same as
+ * `generatedTokens / totalLatencyMs`, which would make a cold start look like
+ * a slow model.
+ */
+export function buildMetrics(input: MetricsInput): LlmTurnMetrics {
+  const final = input.final;
+  const promptTokens = numberOrNull(final?.prompt_eval_count);
+  const generatedTokens = numberOrNull(final?.eval_count);
+  const evalDurationNs = numberOrNull(final?.eval_duration);
+  const loadDurationNs = numberOrNull(final?.load_duration);
+
+  const tokensPerSecond =
+    generatedTokens !== null && evalDurationNs !== null && evalDurationNs > 0
+      ? round2((generatedTokens * NS_PER_SECOND) / evalDurationNs)
+      : null;
+
+  const runtime: LlmRuntimeDetail = {
+    ...(input.runtime ?? {}),
+    ...(loadDurationNs !== null ? { loadDurationMs: round2(loadDurationNs / NS_PER_MS) } : {}),
+  };
+
+  // The safety number. Both halves have to be known for it to mean anything,
+  // and a guess here would be worse than a null - see the port's comment on
+  // silent front-truncation.
+  const contextLength = runtime.contextLength;
+  const contextUtilization =
+    promptTokens !== null && typeof contextLength === 'number' && contextLength > 0
+      ? Math.round((promptTokens / contextLength) * 10_000) / 10_000
+      : null;
+
+  return {
+    modelId: input.modelId,
+    streamed: input.streamed,
+    timeToFirstTokenMs: input.timeToFirstTokenMs,
+    totalLatencyMs: round2(input.totalLatencyMs),
+    promptTokens,
+    generatedTokens,
+    tokensPerSecond,
+    contextUtilization,
+    toolCallHealth: input.toolCallHealth,
+    ...(Object.keys(runtime).length > 0 ? { runtime } : {}),
+  };
+}
+
+function numberOrNull(value: number | undefined): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+// ---------------------------------------------------------------------------
+// Assembling a turn from chunks
+// ---------------------------------------------------------------------------
+
+export interface AssembledTurn {
+  readonly text: string;
+  readonly nativeToolCalls: OllamaWireToolCall[];
+  readonly final: OllamaChatChunk | null;
+}
+
+/**
+ * Fold a chunk sequence into one turn.
+ *
+ * Works for BOTH paths, which is the point: a non-streaming response is a
+ * one-element sequence whose single chunk has `done: true`. One assembler
+ * means the streaming and non-streaming paths cannot disagree about what the
+ * model said, which is a real risk when they are written twice.
+ *
+ * `thinking` is ignored. It is the model's scratchpad, not its reply, and
+ * putting it in `assistantText` would eventually put it in a contact's ear.
+ */
+export function assembleTurn(chunks: ReadonlyArray<OllamaChatChunk>): AssembledTurn {
+  let text = '';
+  const nativeToolCalls: OllamaWireToolCall[] = [];
+  let final: OllamaChatChunk | null = null;
+
+  for (const chunk of chunks) {
+    const content = chunk.message?.content;
+    if (typeof content === 'string') text += content;
+
+    const calls = chunk.message?.tool_calls;
+    if (calls && calls.length > 0) nativeToolCalls.push(...calls);
+
+    if (chunk.done === true) final = chunk;
+  }
+
+  return { text, nativeToolCalls, final };
+}
+
+/**
+ * The whole response direction, end to end: chunks in, `CompleteTurnResult`
+ * out. Exposed so `llm:mapcheck` can drive it with recorded fixtures and
+ * assert the exact result the provider would have returned.
+ */
+export function toCompleteTurnResult(input: {
+  readonly chunks: ReadonlyArray<OllamaChatChunk>;
+  readonly offeredToolNames: ReadonlyArray<string>;
+  readonly mintId: ToolCallIdMinter;
+  readonly modelId: string;
+  readonly streamed: boolean;
+  readonly totalLatencyMs: number;
+  readonly timeToFirstTokenMs: number | null;
+  readonly runtime?: LlmRuntimeDetail;
+}): CompleteTurnResult & { readonly refusals: string[] } {
+  const assembled = assembleTurn(input.chunks);
+  const nativeCalls = mapNativeToolCalls(assembled.nativeToolCalls, input.mintId);
+
+  // The fallback runs ONLY when the native field produced nothing. A model that
+  // called a tool properly is never second-guessed by a text scan.
+  const recovery =
+    nativeCalls.length === 0
+      ? recoverToolCallsFromText(assembled.text, input.offeredToolNames, (index) =>
+          input.mintId(index),
+        )
+      : null;
+
+  const toolCalls = nativeCalls.length > 0 ? nativeCalls : (recovery?.toolCalls ?? []);
+  const text = recovery ? recovery.remainingText : assembled.text;
+
+  const health: LlmToolCallHealth = {
+    native: nativeCalls.length,
+    recoveredFromText: recovery?.recovered ?? 0,
+    malformed: recovery?.malformed ?? 0,
+  };
+
+  return {
+    assistantText: text !== null && text.trim().length > 0 ? text : null,
+    toolCalls,
+    metrics: buildMetrics({
+      modelId: input.modelId,
+      streamed: input.streamed,
+      totalLatencyMs: input.totalLatencyMs,
+      timeToFirstTokenMs: input.timeToFirstTokenMs,
+      final: assembled.final,
+      toolCallHealth: health,
+      ...(input.runtime ? { runtime: input.runtime } : {}),
+    }),
+    refusals: recovery?.refusals ?? [],
+  };
+}

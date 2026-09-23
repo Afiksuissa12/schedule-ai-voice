@@ -25,7 +25,11 @@
     "db:reset": "npm run env:ensure && prisma db push --force-reset --skip-generate && npm run db:seed",
     "slice:demo": "tsx src/app/sliceDemo.ts",
     "qa:sweep": "tsx tests/qa/sweepCli.ts",
-    "verify": "npm run typecheck && npm run test"
+    "verify": "npm run typecheck && npm run test",
+    "llm:probe": "tsx src/llm/cli/probe.ts",
+    "llm:smoke": "tsx src/llm/cli/smoke.ts",
+    "llm:mapcheck": "tsx src/llm/cli/mappingSelfCheck.ts",
+    "llm:verify": "npm run llm:mapcheck && npm run llm:probe && npm run llm:smoke"
   },
   "dependencies": {
     "@prisma/client": "^6.16.2",

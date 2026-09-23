@@ -44,7 +44,6 @@ import type {
   ToolCallRequest,
 } from '../ports/llm.js';
 import { ConfigurationError } from '../shared/errors.js';
-import { toolNameOf } from './agentMessage.js';
 
 /**
  * The default model.
@@ -166,7 +165,7 @@ function toOpenAiTool(tool: { name: string; description: string; parametersJsonS
  * The interesting case is an ASSISTANT message that carries a `toolCallId` and
  * a `toolName`: that is a rebuilt tool-call turn, and OpenAI needs it expressed
  * as `tool_calls` so that the `tool` result message following it is legal. This
- * is the whole reason `AgentLlmMessage` exists - see `agentMessage.ts`.
+ * is the whole reason `LlmMessage.toolName` exists on the port.
  */
 function toOpenAiMessage(message: LlmMessage): ChatCompletionMessageParam {
   switch (message.role) {
@@ -186,7 +185,7 @@ function toOpenAiMessage(message: LlmMessage): ChatCompletionMessageParam {
       };
 
     case 'assistant': {
-      const toolName = toolNameOf(message);
+      const toolName = message.toolName;
       if (message.toolCallId && toolName) {
         return {
           role: 'assistant',
