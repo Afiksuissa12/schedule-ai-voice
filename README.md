@@ -9,6 +9,10 @@ browser-only prototype, built by the Autonomous Development Team
 (`C:\Users\afiks\AutonomousDevTeam`) against a Founder mission. This is its
 **first end-to-end vertical slice**.
 
+> **Status: Baseline V1** — Founder-reviewed and merged to `master`
+> (`docs/FOUNDER_REVIEW.md`, `docs/BASELINE_V1.md`). The next milestone has
+> deliberately not started yet.
+
 ---
 
 ## Quick start
