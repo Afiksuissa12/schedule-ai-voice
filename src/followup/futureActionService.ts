@@ -235,6 +235,43 @@ export class FutureActionService {
           validationProvenanceJson: stringifyJson(provenance),
         });
 
+        // ---------------------------------------------------------------
+        // ADDITIVE CHANGE, requested by MISSION-48d6ff04-AUTO-AGENT through
+        // the coordination mailbox and announced there before it was made.
+        //
+        // A FutureAction row is a persisted domain row exactly as a Meeting
+        // is, and `MeetingSchedulingService` already emits ENTITY_PERSISTED
+        // for its own. Without this event, `audit.listBySubject('FUTURE_ACTION',
+        // id)` could not answer "which event wrote this row?" in the same
+        // vocabulary the meeting path uses, and an agent turn's chain read
+        // TOOL_CALL_VALIDATED -> FUTURE_ACTION_SCHEDULED with the persistence
+        // step missing between them.
+        //
+        // It is recorded on the SAME transaction, immediately before
+        // FUTURE_ACTION_SCHEDULED, so the row and both events commit together.
+        // Nothing else in this service changed.
+        // ---------------------------------------------------------------
+        await tx.audit.record({
+          type: 'ENTITY_PERSISTED',
+          organizationId: input.organizationId,
+          correlationId: input.correlationId,
+          conversationId: input.conversationId ?? null,
+          contactId: contact.id,
+          toolCallId: input.toolCallId ?? null,
+          subjectType: 'FUTURE_ACTION',
+          subjectId: created.id,
+          summary: `FutureAction ${created.type} persisted for ${slot.startLocal} ${slot.timezone}`,
+          detailJson: {
+            futureActionId: created.id,
+            type: created.type,
+            scheduledForUtc: created.scheduledForUtc,
+            timezone: created.timezone,
+            status: created.status,
+            idempotencyKey: created.idempotencyKey,
+          },
+          occurredAt: nowUtc,
+        });
+
         await tx.audit.record({
           type: 'FUTURE_ACTION_SCHEDULED',
           organizationId: input.organizationId,

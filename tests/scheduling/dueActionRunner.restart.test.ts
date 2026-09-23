@@ -159,12 +159,16 @@ describe('a promised callback survives a process restart', () => {
       // The audit chain spans BOTH processes under one correlation id: the
       // promise, the claim, and the call that kept it.
       const chain = await restartedDb.audit.listByCorrelationId(CORRELATION);
+      // ENTITY_PERSISTED was added to FutureActionService's transaction by
+      // MISSION-48d6ff04-AUTO-AGENT (announced in the coordination mailbox);
+      // it belongs to the FIRST process, alongside FUTURE_ACTION_SCHEDULED.
       expect(chain.map((event) => event.type)).toEqual([
+        'ENTITY_PERSISTED',
         'FUTURE_ACTION_SCHEDULED',
         'FUTURE_ACTION_CLAIMED',
         'FUTURE_ACTION_EXECUTED',
       ]);
-      expect(JSON.parse(chain[1]?.detailJson ?? '{}').runnerId).toBe('runner-after-restart');
+      expect(JSON.parse(chain[2]?.detailJson ?? '{}').runnerId).toBe('runner-after-restart');
     } finally {
       await restartedDb.disconnect();
     }
