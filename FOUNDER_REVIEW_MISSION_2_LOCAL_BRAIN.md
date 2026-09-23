@@ -1329,6 +1329,32 @@ phrasing — **not a benchmark result** — but it is the kind of thing the
 conversation-quality half of the rubric exists to catch, and it is a reason not
 to confirm the incumbent by default.
 
+**A second, independent sighting of the same character.** QA ran its own real
+four-turn conversation through `buildAgentRuntime` + `LocalLlmProvider` + the
+context layer (qwen2.5:7b-instruct, 12.6–18.9 s per turn, non-streaming) and
+reported the dialogue as natural, non-canned and context-aware: it picked up a
+brother-in-law referral, **quoted the real $79/tech/month figure from the
+profile** — which is the § 6.1 pricing weakness *not* reproducing, and is worth
+saying — and handled an "I'm in the middle of something" opener. But asked *"Can
+you call me back tomorrow afternoon at 3?"* it **asked a clarifying question
+instead of proposing `schedule_followup`, so no `FutureAction` was persisted.**
+
+That is the § 5.2 failure-mode table's central finding arriving from a completely
+different direction: **qwen2.5 under-acts.** It does not pick the wrong tool; it
+says it will do something and then calls nothing. Here it did not even say it
+would — it asked instead, which is a *defensible* conversational choice and an
+*undesirable* product one, because a scheduling agent's whole job at that moment
+is to recognise that somebody proposed a time. It belongs in the
+scheduling-intent number, where the benchmark records **82.4% (n=17)** on the
+post-fix run — i.e. roughly one missed intent in six, which is the same rate this
+sighting is one instance of.
+
+It is model behaviour within a working architecture rather than a code defect —
+the scripted suite covers the tool path, and the dispatcher would have accepted
+the call had it been made — but it is exactly the kind of thing that only shows up
+by holding a real conversation, and it is the single most important number to
+weigh if this model is adopted.
+
 ### 8.7 The benchmark run died, and the five-model comparison is incomplete
 
 Covered in full in § 5.3. The immediate operational lesson is small and worth
