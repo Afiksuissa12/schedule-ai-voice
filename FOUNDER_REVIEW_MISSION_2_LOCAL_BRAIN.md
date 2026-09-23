@@ -670,10 +670,10 @@ disqualification (§ 8.5) rests on the scenarios that did run.
 rather than quietly carried forward.**
 
 Everything in § 5.2 was produced by the review task on
-`task/MISSION-2-LOCAL-BRAIN-AUTO-REVIEW`. That branch was never merged. The
-defects in § 8.1, § 8.4 and § 8.10 were consequently still live in the integrated
-tree when QA re-found them, and **two of the three change what a benchmarked turn
-actually is:**
+`task/MISSION-2-LOCAL-BRAIN-AUTO-REVIEW`. That branch was never merged, so § 8.1
+and § 8.4 were still live in the integrated tree when QA re-reproduced them there,
+and § 8.10 — which this review never covered — was live on both. **Two of those
+three change what a benchmarked turn actually is:**
 
 - **§ 8.10, the business profile never reaching the tools.** Every recorded turn
   in § 5.2 ran against an agent whose `get_contact_context` came back **without
@@ -1744,7 +1744,7 @@ Each line was checked directly by this review, not copied from a self-report.
   API-key, AWS-key, private-key, Slack, GitHub and Google-key shapes returns
   nothing. `.env` is untracked (`git ls-files` confirms only `.env.example`).
   `OPENAI_API_KEY=` is still empty in `.env.example`. **Re-run on this branch**
-  after the evaluation layer and the three fixes were added — same result, and
+  after the evaluation layer and the three code fixes were added — same result, and
   `git ls-files | grep '^\.env'` still returns `.env.example` alone.
 - **No real external communication occurred.** Every LLM call in this mission
   went to the **local Ollama instance on the host** at
