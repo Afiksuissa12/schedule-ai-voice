@@ -1424,6 +1424,22 @@ same value to both collaborators — two `loadBusinessProfile()` calls could ret
 two different documents, and a background that disagrees with a tool result is
 worse than either being absent.
 
+**A related observability gap, found while verifying the fix, and NOT fixed here.**
+The benchmark's per-run record projects each tool outcome down to
+`toolCallId, toolName, ok, summary, code, reason, persisted` — it does **not**
+record the tool's `data`. So a recorded run cannot answer "did the agent actually
+receive the business facts", and **the benchmark could not have caught § 8.10 on
+its own; it still could not.** The projection is otherwise a good decision — the
+full `data` for 59 turns × 5 models is large and mostly noise — so the fix is not
+"record everything" but to record the one bit that matters, e.g. a
+`businessBlockPresent` flag on `get_contact_context` outcomes. Recommended, not
+done: changing the recorded shape mid-comparison would make the runs on either
+side of the change non-comparable, which is the same trap § 5.3 documents.
+Verified the other way instead, by dispatching through the benchmark's exact
+wiring shape — `contextAssembly: { businessProfile, budget: { modelNumCtx } }`
+with the provider passed as an instance — and confirming the `business` key is
+present.
+
 **And the benchmark had the same hole, from the other direction.** The evaluation
 runner pre-dated the composition seam, so it hand-built the assembler and swapped
 `AgentTurnService` onto a runtime the composition root had already returned —
