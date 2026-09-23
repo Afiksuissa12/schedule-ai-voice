@@ -788,6 +788,64 @@ thing tool-call correctness alone would never have surfaced. It is also the
 single best argument for why § 9's recommendation must wait for the full
 comparison rather than confirm the incumbent by default.
 
+#### Re-run on this branch, after all four fixes
+
+`npm run demo:local`, same scenario, same model, `num_ctx` 16384 — and the point
+of repeating it is that **it reproduces, which a one-off transcript cannot show
+on its own.** Verbatim, ANSI stripped:
+
+```
+  ---- turn 1 of 3 ------------------------------------------------
+  CONTACT:  Hi, it's Jordan. You caught me at a better time than last week.
+  AGENT:    Hi Jordan, it's Avery from Northwind Systems. How are you doing today? Last
+            time we spoke, you were busy mid-week. Is this a good time to chat?
+  CONTEXT   10078 chars of background, 2 durable fact(s), 1 loose end(s),
+            previous conversation carried, transcript 1/1 turns
+            budget ladder applied: drop-topic-facts, drop-proof-points,
+            drop-meeting-types, trim-product-detail,
+            drop-knowledge-goal-rationale, drop-policies
+
+  ---- turn 3 of 3 ------------------------------------------------
+  CONTACT:  Alright, that is worth a proper look. Can you call me back tomorrow afternoon at 3?
+  PROPOSED  schedule_followup
+            raw argumentsJson: {"contact_id":"cmuehzgv60008r2v9e4feuqj4",
+                                "when":"tomorrow afternoon at 3",
+                                "reason":"Discuss Northwind Dispatch for eight technicians."}
+  ALLOWED   schedule_followup -> application code validated and persisted it
+  FutureAction  CALL_CONTACT  PENDING
+    scheduledFor  2026-03-05T20:00:00.000Z  (America/New_York)
+    provenance    2250 bytes, NOT NULL by schema
+```
+
+Four things carry over exactly, and one does not:
+
+- **The cross-session memory works** — "last time we spoke, you were busy
+  mid-week" again comes from a *separate, completed* conversation's memory
+  envelope, and the wording differs from the first run, so it is being generated
+  from the fact rather than recited.
+- **`"when":"tomorrow afternoon at 3"`** — the contact's own words, unresolved,
+  again. Application code produced `2026-03-05T20:00:00.000Z` with 2,250 bytes of
+  provenance.
+- **§ 8.2's `num_ctx` measurement reproduces precisely**: 10,078 chars of
+  background and **six** ladder steps, **none of them pricing** — the same two
+  figures the 16384 row of that table reports, arrived at independently.
+- **The demo now prints where its `num_ctx` came from**, which is § 8.2's fix
+  working: `num_ctx 16384 (from LOCAL_LLM_NUM_CTX in the environment (note: .env
+  is loaded by @prisma/client))`. The provenance that took a direct probe to
+  establish is now one line of ordinary output.
+- **§ 8.6's pricing weakness also reproduces**, which is the one nobody wanted.
+  Asked again what it would run for eight technicians, the agent named the
+  product and asked *"Would you like to hear more about how it works for a team of
+  eight?"* — no price, with the prices verifiably in the window. That is now
+  **n=3 across three runs**, which moves it from an anecdote to a consistent
+  characteristic of this model on this prompt.
+
+**Do not read the latency off this run.** Its TTFT was 5.3–9.2 s against the
+66 ms median in § 5.2, because the benchmark was holding the GPU and judging
+while it ran, so every turn paid a model reload. Generation throughput
+(49.6–50.8 tok/s) is unaffected and matches. The latency numbers that count are
+§ 5.2's, measured on an uncontended card.
+
 ### 6.2 Hebrew, as it actually came out — and it is not good
 
 **Model:** `qwen2.5:7b-instruct` · **Scenario:** `hebrew-intro-and-booking` ·
@@ -1005,6 +1063,12 @@ choice. These CLIs stand in, and all of them were re-run by this review:
 | `npm run context:prove` | no | **PASS — 9/9 proofs**, including determinism, boundedness over 100 turns, cross-session continuity, the disclosure record, the budget ladder, and five ways a summariser can fail without costing a turn |
 | `npm run eval:corpus` | no | **Corpus 1.0.0 VALID** — 19 scenarios, 59 turns, en=15 / he=3 / mixed=1, all 26 required shapes claimed |
 | `npm run demo:local` | yes | **PASS** — every check held (§ 6.1, § 6.4) |
+
+`npm run demo:local` was re-run on this branch after the fixes and passed again:
+3 contact utterances, 4 model calls, **tool-call health native=1 recovered=0
+malformed=0**, one `FutureAction` persisted with 2,250 bytes of provenance, and
+the runtime anti-scripting check green with its known-scripted control line
+caught. Transcript in § 6.1.
 
 Re-run on this branch after the fixes, the offline ones are unchanged:
 `llm:mapcheck` **62 checks / 0 failures**, `check:anti-scripting` **PASS**,
