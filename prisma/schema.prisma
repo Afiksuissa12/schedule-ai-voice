@@ -1,0 +1,576 @@
+// Schedule AI Voice - durable domain model.
+//
+// GOVERNING ARCHITECTURAL RULE
+// ---------------------------------------------------------------------------
+// The LLM reasons and converses, but APPLICATION CODE owns state and executes
+// actions. Every row below is written by application code only, after
+// validation. No business-critical state may live only in an LLM context
+// window or in UI state. This schema exists specifically to kill the legacy
+// prototype's limitations: browser-only state, synthetic availability, no
+// follow-up engine, no durable conversation state, no CRM abstraction, no
+// background execution, and a one-call-only lifecycle.
+//
+// ENUMS ON SQLITE
+// ---------------------------------------------------------------------------
+// The Prisma SQLite connector does not support `enum` blocks. Every field
+// documented below as an "enum" is therefore a `String` column whose permitted
+// values are defined exactly once, in TypeScript, in `src/domain/enums.ts`
+// (const object + union type + Zod schema). Repositories in `src/db` accept
+// only those union types, so the enum is enforced at every write path.
+// The allowed values are repeated in a comment above each field so that the
+// schema stays readable on its own.
+//
+// TIME
+// ---------------------------------------------------------------------------
+// Every instant is stored as a UTC `DateTime`. Wherever a wall-clock intent
+// matters (a meeting is "Tuesday 2pm for the contact"), the originating IANA
+// timezone is stored alongside it in a `timezone` column. Instants crossing a
+// port boundary (`src/ports`) are ISO-8601 UTC strings.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Tenancy
+// ---------------------------------------------------------------------------
+
+/// Top-level tenant. Everything business-critical hangs off an Organization so
+/// that multi-tenant isolation is a schema property, not a convention.
+model Organization {
+  id              String   @id @default(cuid())
+  name            String
+  /// IANA timezone used as the organization-wide default.
+  defaultTimezone String   @default("UTC")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  users               User[]
+  aiAgents            AiAgent[]
+  contacts            Contact[]
+  leads               Lead[]
+  conversations       Conversation[]
+  calls               Call[]
+  meetings            Meeting[]
+  futureActions       FutureAction[]
+  tasks               Task[]
+  calendarConnections CalendarConnection[]
+  auditEvents         AuditEvent[]
+
+  @@index([name])
+}
+
+/// A human operator of the platform.
+///
+/// NOTE: authentication is deliberately NOT modelled in this slice. No
+/// password hashes, no sessions, no tokens. Adding auth is a separate,
+/// Founder-approved decision; this table only records who exists so that
+/// Lead ownership and Task assignment have a real foreign key to point at.
+model User {
+  id             String   @id @default(cuid())
+  organizationId String
+  email          String   @unique
+  fullName       String
+  /// enum UserRole: OWNER | ADMIN | AGENT_OPERATOR | VIEWER
+  role           String   @default("AGENT_OPERATOR")
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  ownedLeads    Lead[] @relation("LeadOwner")
+  assignedTasks Task[] @relation("TaskAssignee")
+
+  @@index([organizationId])
+}
+
+// ---------------------------------------------------------------------------
+// AI agent + its versioned configuration
+// ---------------------------------------------------------------------------
+
+/// A configured AI agent persona that can hold conversations on behalf of the
+/// organization.
+model AiAgent {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+  /// enum AiAgentStatus: ACTIVE | DISABLED
+  status         String   @default("ACTIVE")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  configurations AgentConfiguration[]
+  conversations  Conversation[]
+
+  @@index([organizationId])
+}
+
+/// Immutable, versioned policy for an AiAgent.
+///
+/// The scheduling layer reads its business-hours policy, minimum lead time and
+/// scheduling horizon from HERE, never from the LLM. This is what makes
+/// "application code owns policy" enforceable: the model may *propose* a time,
+/// but the numbers it is checked against come out of this table.
+model AgentConfiguration {
+  id                       String   @id @default(cuid())
+  aiAgentId                String
+  version                  Int
+  /// Reference (not the text) of the guardrailed system prompt, e.g. "sales-scheduler@v1".
+  systemPromptRef          String
+  /// Serialized BusinessHoursPolicy (see src/domain/businessHours.ts).
+  businessHoursJson        String
+  /// IANA timezone this agent falls back to when a contact has none.
+  defaultTimezone          String
+  /// A proposed meeting must start at least this many minutes from `now`.
+  minLeadTimeMinutes       Int      @default(30)
+  /// A proposed meeting may not start more than this many days from `now`.
+  maxSchedulingHorizonDays Int      @default(180)
+  /// Serialized string[] of tool names this agent is permitted to call.
+  allowedToolsJson         String
+  isActive                 Boolean  @default(true)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  aiAgent AiAgent @relation(fields: [aiAgentId], references: [id], onDelete: Cascade)
+
+  conversations Conversation[]
+
+  @@unique([aiAgentId, version])
+  @@index([aiAgentId, isActive])
+}
+
+// ---------------------------------------------------------------------------
+// CRM: contact, lead, qualification
+// ---------------------------------------------------------------------------
+
+/// A real person the platform may call. The CRM abstraction the legacy
+/// prototype lacked entirely.
+model Contact {
+  id               String   @id @default(cuid())
+  organizationId   String
+  fullName         String
+  /// E.164 phone number, e.g. "+12125550123". Format is validated in
+  /// application code (src/domain/enums.ts -> E164Schema) before any write.
+  primaryPhoneE164 String
+  email            String?
+  /// IANA timezone of the CONTACT. Required: every datetime the agent proposes
+  /// is interpreted in this zone unless the contact explicitly says otherwise.
+  timezone         String
+  isDecisionMaker  Boolean  @default(false)
+  notes            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  leads              Lead[]
+  conversations      Conversation[]
+  calls              Call[]
+  meetings           Meeting[]
+  futureActions      FutureAction[]
+  tasks              Task[]
+  qualificationState QualificationState?
+  auditEvents        AuditEvent[]
+
+  // Deliberately a plain index rather than @@unique: de-duplication policy for
+  // inbound leads (same number, different person / shared line) is a product
+  // decision that has not been made yet. Deferred pending Founder input.
+  @@index([organizationId, primaryPhoneE164])
+  @@index([organizationId])
+}
+
+/// A sales opportunity attached to a Contact.
+model Lead {
+  id             String   @id @default(cuid())
+  organizationId String
+  contactId      String
+  /// Free-form acquisition source, e.g. "inbound_web_form".
+  source         String
+  /// enum LeadStatus: NEW | CONTACTED | QUALIFYING | QUALIFIED | DISQUALIFIED | CONVERTED | LOST
+  status         String   @default("NEW")
+  ownerUserId    String?
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contact      Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  owner        User?        @relation("LeadOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, status])
+  @@index([contactId])
+}
+
+/// Current qualification verdict for a Contact.
+///
+/// The legacy rubric applied a HARD CAP to the score when the contact is not
+/// the decision maker. That cap is a POLICY decision owned by application code,
+/// so the row records all three numbers: the raw rubric output, the value after
+/// the cap, and the effective score used downstream. An auditor can therefore
+/// see both what the rubric said and what policy did to it.
+model QualificationState {
+  id                  String   @id @default(cuid())
+  contactId           String   @unique
+  /// Effective score used by downstream logic (normally == cappedScore).
+  score               Int
+  /// Rubric output BEFORE the non-decision-maker cap is applied.
+  rawScore            Int
+  /// Rubric output AFTER the non-decision-maker cap is applied.
+  cappedScore         Int
+  /// enum QualificationBand: UNQUALIFIED | LOW | MEDIUM | HIGH
+  band                String
+  isDecisionMaker     Boolean  @default(false)
+  /// Version of the rubric that produced these numbers, e.g. "rubric@v1".
+  rubricVersion       String
+  /// Serialized array of scoring factors (name, weight, value, contribution).
+  factorsJson         String
+  /// The validated tool call that last wrote this row, if any. Ties the CRM
+  /// state back to the audit chain.
+  updatedByToolCallId String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([band])
+}
+
+// ---------------------------------------------------------------------------
+// Durable conversation state
+// ---------------------------------------------------------------------------
+
+/// A durable conversation with a Contact.
+///
+/// This is the anti-thesis of the legacy browser-only state: the conversation
+/// and every turn in it live in the database, survive process restart, and are
+/// the single source of truth. The LLM context window is rebuilt FROM this
+/// table, never the other way around.
+model Conversation {
+  id                   String    @id @default(cuid())
+  organizationId       String
+  contactId            String
+  aiAgentId            String
+  /// Configuration version in force for this conversation. Pinned so an
+  /// audit replay uses the policy that actually applied at the time.
+  agentConfigurationId String?
+  /// enum ConversationChannel: VOICE | SMS | WEB | TEST
+  channel              String    @default("VOICE")
+  /// enum ConversationStatus: ACTIVE | COMPLETED | ABANDONED
+  status               String    @default("ACTIVE")
+  startedAt            DateTime  @default(now())
+  endedAt              DateTime?
+  summary              String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contact            Contact             @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  aiAgent            AiAgent             @relation(fields: [aiAgentId], references: [id], onDelete: Cascade)
+  agentConfiguration AgentConfiguration? @relation(fields: [agentConfigurationId], references: [id], onDelete: SetNull)
+
+  turns         ConversationTurn[]
+  calls         Call[]
+  meetings      Meeting[]
+  futureActions FutureAction[]
+  tasks         Task[]
+  auditEvents   AuditEvent[]
+
+  @@index([organizationId, status])
+  @@index([contactId, startedAt])
+}
+
+/// One ordered turn of a durable conversation.
+///
+/// `index` is unique per conversation, which makes turn ordering a database
+/// invariant rather than an in-memory array position.
+model ConversationTurn {
+  id             String   @id @default(cuid())
+  conversationId String
+  /// 0-based position within the conversation. Unique per conversation.
+  index          Int
+  /// enum ConversationTurnRole: CONTACT | AGENT | SYSTEM | TOOL
+  role           String
+  /// Natural-language content. NULL for pure tool turns.
+  text           String?
+  /// Tool name for TOOL turns (and for AGENT turns that requested a tool).
+  toolName       String?
+  /// Correlates this turn with the tool call in the audit chain.
+  toolCallId     String?
+  /// Serialized JSON payload: raw tool arguments, raw tool result, or raw
+  /// provider response. Stored verbatim so an auditor can see exactly what the
+  /// model produced, not a cleaned-up version of it.
+  rawPayloadJson String?
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, index])
+  @@index([conversationId, createdAt])
+  @@index([toolCallId])
+}
+
+// ---------------------------------------------------------------------------
+// Telephony
+// ---------------------------------------------------------------------------
+
+/// A phone call. `providerName` / `providerCallId` are the only coupling to a
+/// telephony vendor; no vendor SDK type ever enters the domain.
+model Call {
+  id              String    @id @default(cuid())
+  organizationId  String
+  contactId       String
+  conversationId  String?
+  /// enum CallDirection: INBOUND | OUTBOUND
+  direction       String
+  /// Provider identity string, e.g. "deterministic-test" or "twilio".
+  providerName    String
+  providerCallId  String?
+  /// enum CallStatus: QUEUED | RINGING | IN_PROGRESS | COMPLETED | FAILED | NO_ANSWER
+  status          String    @default("QUEUED")
+  startedAt       DateTime?
+  endedAt         DateTime?
+  durationSeconds Int?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contact      Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+
+  outcome CallOutcome?
+
+  @@index([organizationId, status])
+  @@index([contactId, createdAt])
+  @@index([providerName, providerCallId])
+}
+
+/// Terminal result of a Call. One row per call.
+model CallOutcome {
+  id                   String   @id @default(cuid())
+  callId               String   @unique
+  /// enum CallOutcomeKind: CONNECTED | VOICEMAIL | NO_ANSWER | BUSY | DECLINED | WRONG_NUMBER | FAILED
+  outcome              String
+  notes                String?
+  /// The validated tool call that recorded this outcome, if a tool recorded it.
+  recordedByToolCallId String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  call Call @relation(fields: [callId], references: [id], onDelete: Cascade)
+
+  @@index([outcome])
+}
+
+// ---------------------------------------------------------------------------
+// Calendar + meetings
+// ---------------------------------------------------------------------------
+
+/// A calendar the platform may read availability from and (optionally) write to.
+///
+/// SECRETS: this mission stores NO OAuth tokens, refresh tokens, client
+/// secrets or any other credential on this row. `externalAccountRef` is an
+/// opaque, non-secret pointer (e.g. an account email or a vendor account id).
+/// Token storage is DEFERRED pending Founder approval of a secrets mechanism
+/// (KMS / secret manager / encrypted column + key rotation policy). Do not add
+/// a token column without that approval.
+model CalendarConnection {
+  id                 String   @id @default(cuid())
+  organizationId     String
+  /// enum CalendarProviderKind: GOOGLE | MICROSOFT_GRAPH | DETERMINISTIC_TEST
+  provider           String
+  /// Opaque, NON-SECRET reference to the external account. Never a token.
+  externalAccountRef String?
+  /// enum CalendarConnectionStatus: ACTIVE | REVOKED | TEST_DOUBLE
+  status             String   @default("TEST_DOUBLE")
+  /// Identifier of the calendar within the provider, e.g. "primary".
+  calendarRef        String
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  meetings Meeting[]
+
+  @@index([organizationId, status])
+}
+
+/// A scheduled meeting. The durable outcome of a successful scheduling slice.
+model Meeting {
+  id                       String   @id @default(cuid())
+  organizationId           String
+  contactId                String
+  conversationId           String?
+  calendarConnectionId     String?
+  title                    String
+  description              String?
+  /// Instant in UTC. Authoritative.
+  startUtc                 DateTime
+  /// Instant in UTC. Authoritative.
+  endUtc                   DateTime
+  /// IANA timezone the meeting was agreed in. Needed to render the wall-clock
+  /// time the contact actually agreed to, across DST changes.
+  timezone                 String
+  /// enum MeetingStatus: SCHEDULED | RESCHEDULED | CANCELLED | COMPLETED
+  status                   String   @default("SCHEDULED")
+  externalCalendarEventId  String?
+  /// Caller-supplied idempotency key. Unique so a retried tool call cannot
+  /// create a duplicate meeting.
+  idempotencyKey           String?  @unique
+  /// NOT NULL BY DESIGN. Serialized ValidationProvenance (src/ports/validation.ts).
+  /// A Meeting may not exist unless application code validated the datetime
+  /// that produced it and recorded exactly which checks ran, against which
+  /// `now`, from which raw LLM-proposed value. This column is what makes
+  /// "never trust an LLM-generated datetime blindly" auditable rather than
+  /// aspirational.
+  validationProvenanceJson String
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contact            Contact             @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  conversation       Conversation?       @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  calendarConnection CalendarConnection? @relation(fields: [calendarConnectionId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, startUtc])
+  @@index([contactId, startUtc])
+  @@index([status, startUtc])
+}
+
+// ---------------------------------------------------------------------------
+// Autonomous follow-up
+// ---------------------------------------------------------------------------
+
+/// A durable intention to do something later: call the contact back, send a
+/// follow-up message, or raise an internal task.
+///
+/// This is the record the legacy prototype had no equivalent of. It MUST
+/// survive process restart, which is why the lease/attempt bookkeeping lives
+/// in columns rather than in an in-memory scheduler. A background runner
+/// claims a row by setting status=CLAIMED and leaseExpiresAt; a crashed runner
+/// simply lets the lease lapse and the row becomes claimable again.
+model FutureAction {
+  id                       String    @id @default(cuid())
+  organizationId           String
+  contactId                String
+  conversationId           String?
+  /// enum FutureActionType: CALL_CONTACT | SEND_FOLLOWUP_MESSAGE | INTERNAL_TASK
+  type                     String
+  /// Instant in UTC at which this action becomes due.
+  scheduledForUtc          DateTime
+  /// IANA timezone the follow-up was agreed in (for rendering + DST safety).
+  timezone                 String
+  /// enum FutureActionStatus: PENDING | CLAIMED | IN_PROGRESS | DONE | FAILED | CANCELLED
+  status                   String    @default("PENDING")
+  attempts                 Int       @default(0)
+  maxAttempts              Int       @default(3)
+  /// Set while a background runner holds this row. NULL when unclaimed.
+  leaseExpiresAt           DateTime?
+  /// Opaque id of the runner holding the lease. Diagnostic only.
+  leaseOwner               String?
+  lastError                String?
+  /// Serialized, application-validated payload for the action.
+  payloadJson              String
+  /// Unique so a retried tool call cannot schedule the same follow-up twice.
+  idempotencyKey           String?   @unique
+  /// NOT NULL BY DESIGN. Serialized ValidationProvenance - see Meeting.
+  validationProvenanceJson String
+  completedAt              DateTime?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contact      Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+
+  tasks Task[]
+
+  // The claim query for the background runner.
+  @@index([status, scheduledForUtc])
+  @@index([organizationId, status])
+  @@index([contactId, scheduledForUtc])
+}
+
+/// Work for a human. Either raised directly or materialised from an
+/// INTERNAL_TASK FutureAction.
+model Task {
+  id               String    @id @default(cuid())
+  organizationId   String
+  contactId        String?
+  conversationId   String?
+  futureActionId   String?
+  assignedToUserId String?
+  title            String
+  description      String?
+  /// enum TaskStatus: OPEN | IN_PROGRESS | DONE | CANCELLED
+  status           String    @default("OPEN")
+  dueAtUtc         DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contact      Contact?      @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  futureAction FutureAction? @relation(fields: [futureActionId], references: [id], onDelete: SetNull)
+  assignedTo   User?         @relation("TaskAssignee", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, status])
+  @@index([assignedToUserId, status])
+}
+
+// ---------------------------------------------------------------------------
+// Audit
+// ---------------------------------------------------------------------------
+
+/// Append-only audit trail. A first-class deliverable, not a log.
+///
+/// Every event of one agent turn shares a `correlationId`. `sequence` is a
+/// per-correlation monotonically increasing counter starting at 1, and
+/// (correlationId, sequence) is UNIQUE, so the chain can be replayed in exactly
+/// the order it happened. Together these rows must be sufficient to answer:
+/// "why did this system schedule / plan to contact this person at that time?"
+model AuditEvent {
+  id             String   @id @default(cuid())
+  organizationId String
+  /// Ties every event of one agent turn together.
+  correlationId  String
+  /// 1-based, monotonically increasing within a correlationId.
+  sequence       Int
+  /// enum AuditEventType - see src/audit/types.ts for the full list.
+  type           String
+  conversationId String?
+  contactId      String?
+  toolCallId     String?
+  /// enum AuditSubjectType: the kind of domain row this event is about.
+  subjectType    String?
+  /// Primary key of the domain row this event is about.
+  subjectId      String?
+  /// Short human-readable line, safe to show in a timeline UI.
+  summary        String
+  /// Serialized structured payload. The machine-readable detail.
+  detailJson     String
+  /// When the event actually happened (from an injected Clock, never Date.now
+  /// inside business logic).
+  occurredAt     DateTime
+  /// When the row was written.
+  createdAt      DateTime @default(now())
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  contact      Contact?      @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@unique([correlationId, sequence])
+  @@index([correlationId, sequence])
+  @@index([subjectType, subjectId])
+  @@index([organizationId, occurredAt])
+  @@index([conversationId, occurredAt])
+  @@index([type])
+}

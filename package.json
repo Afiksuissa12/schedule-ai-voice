@@ -1,0 +1,42 @@
+{
+  "name": "schedule-ai-voice",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Schedule AI Voice - AI Voice Sales & Scheduling platform (first end-to-end vertical slice)",
+  "license": "UNLICENSED",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "env:ensure": "node prisma/ensure-env.mjs",
+    "db:generate": "npm run env:ensure && prisma generate",
+    "db:push": "npm run env:ensure && prisma db push --skip-generate",
+    "db:migrate": "npm run env:ensure && prisma migrate deploy",
+    "db:seed": "npm run env:ensure && tsx prisma/seed.ts",
+    "db:setup": "npm run db:generate && npm run db:push && npm run db:seed",
+    "db:reset": "npm run env:ensure && prisma db push --force-reset --skip-generate && npm run db:seed",
+    "verify": "npm run typecheck && npm run test"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.16.2",
+    "luxon": "^3.7.2",
+    "openai": "^5.23.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/luxon": "^3.7.1",
+    "@types/node": "^22.18.6",
+    "prisma": "^6.16.2",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}
