@@ -1,0 +1,26 @@
+# AutonomousDevTeam write policy for this repository.
+#
+# Without this file, the orchestrator's conservative default is
+# writable_paths: ["src"] once src/ exists on master (see
+# orchestrator/project_config.py's discover_defaults) - which quarantined
+# a whole eval-output/ directory of real benchmark data, model
+# comparisons and conversation transcripts during Mission 2 (Local AI
+# Brain) before this file existed. This file widens that deliberately,
+# narrowly, to the directories this project's own missions actually need
+# to write to, without granting blanket repo-root access.
+
+writable_paths:
+  - src
+  - tests
+  - prisma
+  - docs
+  - eval-output
+
+validation_commands:
+  - npm run typecheck
+  - npm run test
+  - npm run qa:sweep
+
+build_command: npm run build
+test_command: npm run test
+typecheck_command: npm run typecheck
