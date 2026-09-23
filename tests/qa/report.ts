@@ -41,7 +41,18 @@ export const KNOWN_COVERAGE_GAPS: readonly string[] = [
   'Only `schedule_followup`, `schedule_meeting`, `check_availability`, `update_qualification` and two ' +
     'fabricated-subject calls are driven. `reschedule_meeting`, `cancel_meeting` (on a REAL meeting), ' +
     '`record_call_outcome`, `transfer_to_human` and `get_contact_context` are covered by the sibling ' +
-    'suites in tests/e2e and tests/agent, not by this sweep.',
+    'suites in tests/e2e and tests/agent, not by this sweep. `reschedule_meeting` accepts the same ' +
+    'model-supplied `timezone` argument family J sweeps, so that tool\'s override path is proved by a unit ' +
+    'test rather than across this matrix.',
+  'Family J sweeps the model-asserted `timezone` axis at ONE `now` instant and under ONE policy ' +
+    '(p1-default). Crossing it with all ten instants and all four policies would be 2,800 cases for an ' +
+    'axis whose interesting behaviour - which window the instant is judged in - does not depend on either.',
+  'No policy in this matrix pins `BusinessHoursPolicy.timezone`, so the `policy` branch of ' +
+    '`businessHoursAnchor` (a business whose hours are its OWN clock regardless of where the contact is) ' +
+    'is never taken here. It is covered by tests/scheduling/schedulingValidator.test.ts. Consequence worth ' +
+    'stating: under such a policy a distant contact CAN be booked outside their own working hours - that ' +
+    'is the documented meaning of pinning a zone, and it is a decision by whoever wrote the configuration ' +
+    'row, not something a model can bring about.',
   'The sweep stops at persistence. `DueActionRunner` execution - claim, lease, dispatch, retry, backoff - ' +
     'is proved by tests/scheduling/dueActionRunner*.test.ts and is NOT re-swept per scenario here, so no ' +
     'scenario in this corpus places a call through the telephony double at all.',

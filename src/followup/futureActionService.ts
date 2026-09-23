@@ -206,6 +206,9 @@ export class FutureActionService {
         `minLeadTime=${policy.minLeadTimeMinutes}min, horizon=${policy.maxSchedulingHorizonDays}d`,
     );
 
+    // The zone the PHRASE is read in. `input.proposal.timezone` may carry what
+    // the model asserted, which is legitimate for this purpose and only this
+    // purpose - the business-hours window is anchored separately, below.
     const timezone = input.proposal.timezone ?? contact.timezone ?? policy.defaultTimezone;
 
     // ---- the deterministic datetime gate ------------------------------------
@@ -216,6 +219,9 @@ export class FutureActionService {
         ...(input.proposal.durationMinutes !== undefined ? { durationMinutes: input.proposal.durationMinutes } : {}),
       },
       policy,
+      // FROM THE ROW just loaded, never from `input.proposal.timezone`. This is
+      // the zone business hours are judged in; see `businessHoursAnchor`.
+      persistedContactTimezone: contact.timezone,
       checkBusinessHours: input.checkBusinessHours ?? true,
       checkAvailability: input.checkAvailability ?? false,
       ...(input.calendarRef ? { calendarRef: input.calendarRef } : {}),

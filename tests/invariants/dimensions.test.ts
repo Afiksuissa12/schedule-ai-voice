@@ -13,7 +13,17 @@
 import { DateTime, IANAZone } from 'luxon';
 import { describe, expect, it } from 'vitest';
 
-import { NOW_INSTANTS, TIMEZONES, AVAILABILITY_STATES, POLICIES, seededRandom } from './dimensions.js';
+import {
+  ASSERTED_TIMEZONES,
+  AVAILABILITY_STATES,
+  LEAD_TIME_BOUNDARY_CASES,
+  LEAD_TIME_BOUNDARY_ZONE,
+  NOW_INSTANTS,
+  POLICIES,
+  seededRandom,
+  TIMEZONE_OVERRIDE_CASES,
+  TIMEZONES,
+} from './dimensions.js';
 
 describe('timezone dimension', () => {
   it.each(TIMEZONES)('$zone is a real IANA zone', ({ zone }) => {
@@ -159,6 +169,79 @@ describe('policy and availability dimensions', () => {
     // Starts exactly where the slot ends: half-open, so NOT a conflict.
     expect(named['a4-adjacent']).toEqual({ startLocal: '15:00', endLocal: '16:00' });
   });
+});
+
+describe('the timezone-override dimension', () => {
+  it('asserts zones the contact is NOT in, so the axis is genuinely crossed', () => {
+    const contactZones = new Set(TIMEZONES.map((timezone) => timezone.zone));
+    const differing = ASSERTED_TIMEZONES.filter((zone) => !contactZones.has(zone));
+    expect(
+      differing.length,
+      'at least one asserted zone must appear nowhere in the contact-zone axis, or every scenario could ' +
+        'be asserting the zone the contact is already in',
+    ).toBeGreaterThan(0);
+    for (const zone of ASSERTED_TIMEZONES) {
+      expect(zone === 'UTC' || IANAZone.isValidZone(zone), `${zone} is not a real IANA zone`).toBe(true);
+    }
+  });
+
+  // The whole point of the committed cases is a claim about the CONTACT'S clock,
+  // and that claim is a pure tzdata fact. Re-derived here so a tzdata update
+  // cannot leave a stale expectation sitting in `dimensions.ts` looking correct.
+  it.each(TIMEZONE_OVERRIDE_CASES)(
+    '$key: $whenLocal in $assertedZone really is $contactLocalWallClock in $contactZone',
+    ({ whenLocal, assertedZone, contactZone, contactLocalWallClock }) => {
+      const asserted = DateTime.fromISO(whenLocal, { zone: assertedZone });
+      expect(asserted.isValid, `${whenLocal} is not a valid local time in ${assertedZone}`).toBe(true);
+      expect(asserted.setZone(contactZone).toFormat('yyyy-LL-dd HH:mm')).toBe(contactLocalWallClock);
+    },
+  );
+
+  // And the DIRECTION follows from the policy window rather than from an author's
+  // memory. `p1-default` is 09:00-17:00 Monday-Friday, windows are half-open, and
+  // the default slot is 30 minutes.
+  it.each(TIMEZONE_OVERRIDE_CASES)(
+    '$key: the declared direction follows from where that lands in the p1 window',
+    ({ contactLocalWallClock, direction }) => {
+      const policy = POLICIES.find((candidate) => candidate.key === 'p1-default');
+      const open = Number(policy?.businessHoursStartLocal.slice(0, 2)) * 60;
+      const close = Number(policy?.businessHoursEndLocal.slice(0, 2)) * 60;
+      const local = DateTime.fromFormat(contactLocalWallClock, 'yyyy-LL-dd HH:mm', { zone: 'UTC' });
+      const minutes = local.hour * 60 + local.minute;
+      const isBusinessDay = local.weekday <= 5;
+      const inside = isBusinessDay && minutes >= open && minutes + 30 <= close;
+      expect(inside ? 'ACCEPT' : 'REJECT').toBe(direction);
+    },
+  );
+});
+
+describe('the lead-time boundary dimension', () => {
+  it('carries SECONDS, which is the whole reason it exists alongside NOW_INSTANTS', () => {
+    for (const instant of NOW_INSTANTS) {
+      expect(
+        DateTime.fromISO(instant.nowUtc, { zone: 'utc' }).second,
+        `${instant.key} is on a whole minute, so it can never probe a sub-minute rounding bug`,
+      ).toBe(0);
+    }
+    const withSeconds = LEAD_TIME_BOUNDARY_CASES.filter(
+      (boundary) => DateTime.fromISO(boundary.nowUtc, { zone: 'utc' }).second !== 0,
+    );
+    expect(withSeconds.length, 'the boundary family must include instants that are NOT on a whole minute')
+      .toBeGreaterThan(2);
+  });
+
+  it.each(LEAD_TIME_BOUNDARY_CASES)(
+    '$key: the true lead really is $leadSeconds seconds, and the direction follows from the 30-minute minimum',
+    ({ nowUtc, whenLocal, leadSeconds, direction }) => {
+      const minimumMinutes = POLICIES.find((policy) => policy.key === 'p1-default')?.minLeadTimeMinutes as number;
+      const start = DateTime.fromISO(whenLocal, { zone: LEAD_TIME_BOUNDARY_ZONE });
+      expect(start.isValid, `${whenLocal} is not valid in ${LEAD_TIME_BOUNDARY_ZONE}`).toBe(true);
+
+      const actual = (start.toMillis() - DateTime.fromISO(nowUtc, { zone: 'utc' }).toMillis()) / 1000;
+      expect(actual, 'the declared lead must be the real one').toBe(leadSeconds);
+      expect(actual >= minimumMinutes * 60 ? 'ACCEPT' : 'REJECT').toBe(direction);
+    },
+  );
 });
 
 describe('the seeded PRNG', () => {

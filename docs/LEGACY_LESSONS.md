@@ -120,9 +120,10 @@ explicit `YYYY-MM-DD` dates.
 must always hold across a matrix of inputs, rather than writing one test per
 example.
 
-**Re-expressed as:** `tests/invariants/`. **509 generated scenarios** across nine
-named families, crossing 5 timezones, 10 `now` instants, 17 time expressions,
-4 persisted policies, 4 availability states and 6 tool shapes; **11 per-scenario
+**Re-expressed as:** `tests/invariants/`. **601 generated scenarios** across eleven
+named families, crossing 5 contact timezones, 7 model-asserted timezones,
+10 `now` instants plus 5 sub-minute ones, 17 time expressions, 4 persisted
+policies, 4 availability states and 6 tool shapes; **12 per-scenario
 invariants**, plus determinism and a network trap. All 13 declared
 `ValidationErrorCode`s are exercised. `npm run qa:sweep` reports it.
 
@@ -138,7 +139,13 @@ invariants**, plus determinism and a network trap. All 13 declared
   conditional — "IF a meeting was persisted THEN it sits inside business hours".
 - **Independent oracles.** Business-hours containment and interval overlap are
   re-derived with Luxon rather than by calling the system's own functions — so an
-  off-by-one in `checkBusinessHours` is caught rather than mirrored.
+  off-by-one in `checkBusinessHours` is caught rather than mirrored. An oracle can
+  still be independent and *wrong*, though, and one of these was: `INV-02` read
+  the window in `Meeting.timezone`, which is the zone the booking was agreed in
+  and therefore a zone a model can influence. It asked "was this inside business
+  hours according to the zone whoever booked it nominated?", which is always yes.
+  Both it and the new `INV-14` now read the window in `Contact.timezone`, off the
+  row, which no model can reach.
 - **Non-vacuity guards.** A corpus of conditional properties can pass while
   proving nothing. The sweep asserts it persisted >100 rows, refused >100 calls,
   and that **no invariant had zero applicable checks**; the report prints
@@ -149,7 +156,7 @@ invariants**, plus determinism and a network trap. All 13 declared
   other way — so a comment can never quietly become a lie while the sweep stays
   green and meaningless.
 
-**Honest difference in scale and shape:** 509 vs 538, and this corpus covers a
+**Honest difference in scale and shape:** 601 vs 538, and this corpus covers a
 first vertical slice rather than a whole product. What the sweep does **not**
 cover is listed in `docs/DECISIONS.md` § 6.6 and printed by every report run.
 
@@ -177,7 +184,7 @@ discouraged — there is a table, a constraint or a failing test in the way.
 
 | Legacy failure mode | Eliminated by |
 |---|---|
-| **An action nobody can explain** | `AuditEvent` with `@@unique([correlationId, sequence])`; audit writes throw rather than fail silently; `INV-06` proves every one of 509 outcomes is explained |
+| **An action nobody can explain** | `AuditEvent` with `@@unique([correlationId, sequence])`; audit writes throw rather than fail silently; `INV-06` proves every one of 601 outcomes is explained |
 | **A booking with no record of what justified it** | `validationProvenanceJson` is `NOT NULL` *and* structurally validated on write — `"{}"` is refused. `INV-04` proves the receipt's resolved instant **equals** the persisted instant and preserves the raw words, across 201 rows |
 
 ---

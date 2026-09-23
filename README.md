@@ -23,7 +23,7 @@ npm run db:seed          # one Organization / User / AiAgent / Contact / Calenda
 
 npm run slice:demo       # the whole slice, end to end, in one command
 npm run verify           # typecheck + the full test suite
-npm run qa:sweep         # the 509-scenario invariant sweep, with a report
+npm run qa:sweep         # the 601-scenario invariant sweep, with a report
 ```
 
 `npm run db:setup` does generate + push + seed in one go. A committed migration
@@ -86,14 +86,22 @@ The invariant sweep, carrying forward the legacy QA harness's philosophy: assert
 properties that must **always** hold across a matrix of inputs, rather than
 writing one test per example.
 
-**509 generated scenarios** crossing 5 timezones (including `Asia/Kolkata` for
-its half-hour offset), 10 `now` instants (either side of DST transitions in both
-hemispheres, a Friday afternoon, a weekend, month boundaries), 17 time
-expressions, 4 persisted policies, 4 availability states and 6 tool shapes —
-against **11 per-scenario invariants** plus determinism and a network trap.
+**601 generated scenarios** crossing 5 contact timezones (including
+`Asia/Kolkata` for its half-hour offset), 7 timezones the MODEL can assert in a
+tool argument, 10 `now` instants (either side of DST transitions in both
+hemispheres, a Friday afternoon, a weekend, month boundaries) plus 5 sub-minute
+instants straddling the minimum-lead-time boundary, 17 time expressions,
+4 persisted policies, 4 availability states and 6 tool shapes — against
+**12 per-scenario invariants** plus determinism and a network trap.
+
+`INV-14` is the one worth naming here: for every persisted `Meeting` and
+`FutureAction` it re-reads the instant on the clock of the person who will
+actually be contacted, using `Contact.timezone` off the row rather than the zone
+the slot was agreed in. That distinction is a guardrail, not a formality — see
+`businessHoursAnchor` in `src/scheduling/businessHours.ts`.
 
 ```bash
-npm run qa:sweep                        # all 509, report to stdout and .tmp/qa/
+npm run qa:sweep                        # all 601, report to stdout and .tmp/qa/
 npm run qa:sweep -- --determinism       # run the corpus TWICE and compare
 npm run qa:sweep -- --family B          # just one family
 npm run qa:sweep -- --concurrency 8
@@ -184,7 +192,7 @@ src/llm/                  ScriptedLlmProvider + the ONE file importing a vendor 
 src/conversation/         durable conversation + turn log
 src/agent/                prompt, the nine tools, the dispatcher, AgentTurnService
 src/app/                  composition root, seed world, slice demo, audit report
-tests/invariants/         the 509-scenario sweep
+tests/invariants/         the 601-scenario sweep
 tests/qa/                 the sweep report + `npm run qa:sweep`
 ```
 

@@ -25,13 +25,31 @@
  *   8. business_hours          -> OUTSIDE_BUSINESS_HOURS
  *   9. no_busy_conflict        -> CONFLICT_WITH_BUSY_INTERVAL
  *
+ * WHAT THE MODEL MAY AND MAY NOT INFLUENCE
+ * ---------------------------------------------------------------------------
+ * The model supplies exactly two things that reach this class: the raw phrase
+ * (`proposal.raw`) and, optionally, the zone that phrase is to be READ in
+ * (`proposal.timezone`). It supplies nothing else, and in particular it does not
+ * supply the zone the BUSINESS-HOURS WINDOW is read in. Those are two different
+ * questions and the second one is the guardrail:
+ *
+ *   - `proposal.timezone`            -> which instant "10am" means.
+ *   - `persistedContactTimezone`     -> whose office hours that instant is then
+ *     (via `businessHoursAnchor`)       judged against.
+ *
+ * Letting the first answer the second is how an LLM gets a real contact dialled
+ * at 23:30 their own time with every check reporting green: assert a zone in
+ * which the instant looks like mid-morning, and the window follows the
+ * assertion. `persistedContactTimezone` is therefore a REQUIRED input, so a
+ * caller cannot omit it and fall back to whatever the model said.
+ *
  * PURITY
  * ---------------------------------------------------------------------------
  * A validation is a pure function of (proposal, `now` from the injected Clock,
- * policy from the persisted AgentConfiguration, availability snapshot). It
- * reads no wall clock and writes no state - including no audit events. The
- * SERVICES decide what a verdict means and record it; the validator only
- * decides.
+ * policy from the persisted AgentConfiguration, the contact's persisted zone,
+ * availability snapshot). It reads no wall clock and writes no state - including
+ * no audit events. The SERVICES decide what a verdict means and record it; the
+ * validator only decides.
  */
 import { DateTime } from 'luxon';
 
@@ -39,7 +57,8 @@ import type { AvailabilityProvider, BusyInterval } from '../ports/availability.j
 import type { Clock, IsoUtcString } from '../ports/clock.js';
 import type { ValidationProvenance, ValidationResult } from '../ports/validation.js';
 import { validationFailed, validationOk, ValidationErrorCode } from '../ports/validation.js';
-import { businessHoursTimezone, checkBusinessHours } from './businessHours.js';
+import { isValidIanaTimezone } from '../shared/time.js';
+import { businessHoursAnchor, checkBusinessHours } from './businessHours.js';
 import { buildProvenance, ValidationCheckLog } from './checkLog.js';
 import { DateTimeResolver, type DateTimeProposal, type ResolvedSlot } from './dateTimeResolver.js';
 import type { SchedulingPolicy } from './policy.js';
@@ -63,6 +82,18 @@ export interface ValidateSlotInput {
   readonly proposal: DateTimeProposal;
   /** From `schedulingPolicyFromAgentConfiguration`. Never from the model. */
   readonly policy: SchedulingPolicy;
+  /**
+   * `Contact.timezone`, read off the persisted contact row.
+   *
+   * REQUIRED, and deliberately so. `proposal.timezone` may carry a zone the
+   * MODEL asserted; this one may not. The business-hours window is read in the
+   * zone `businessHoursAnchor` derives from this value and the policy, never in
+   * `proposal.timezone` - otherwise the model chooses its own window and the
+   * guardrail evaporates. Making it a required field rather than an optional one
+   * with a convenient default means a new call site that forgets it fails
+   * `npm run typecheck` instead of silently reopening that hole.
+   */
+  readonly persistedContactTimezone: string;
   /**
    * Calendar to consult, from `CalendarConnection.calendarRef`. Required when
    * the availability check runs.
@@ -146,7 +177,18 @@ export class SchedulingValidator {
 
     const nowMillis = Date.parse(nowUtc);
     const startMillis = Date.parse(slot.startUtc);
-    const leadMinutes = Math.round((startMillis - nowMillis) / MS_PER_MINUTE);
+    // MILLISECONDS, not rounded minutes.
+    //
+    // `Math.round` here used to let a shortfall of up to 30 seconds through the
+    // gate below - 29.5 minutes of lead rounds to 30 and cleared a 30-minute
+    // minimum - and then wrote "lead time 30 min >= 30 min" into the receipt.
+    // That is worse than the leak: `ValidationProvenance` is supposed to be
+    // re-runnable by hand, and a receipt that rounds the deciding quantity in
+    // the direction that makes the decision look correct cannot be re-run. The
+    // comparison is exact and the recorded number is the true one.
+    const leadMillis = startMillis - nowMillis;
+    const minLeadMillis = policy.minLeadTimeMinutes * MS_PER_MINUTE;
+    const leadMinutes = formatMinutes(leadMillis);
 
     // ---- check 5: strictly in the future ----------------------------------
     if (startMillis <= nowMillis) {
@@ -161,7 +203,7 @@ export class SchedulingValidator {
     checks.pass('in_the_future', `${slot.startUtc} is ${leadMinutes} min after now (${nowUtc})`);
 
     // ---- check 6: minimum lead time ---------------------------------------
-    if (leadMinutes < policy.minLeadTimeMinutes) {
+    if (leadMillis < minLeadMillis) {
       const detail = `lead time ${leadMinutes} min is below the configured minimum of ${policy.minLeadTimeMinutes} min.`;
       checks.fail('min_lead_time', detail);
       return validationFailed(
@@ -194,22 +236,61 @@ export class SchedulingValidator {
     );
 
     // ---- check 8: business hours ------------------------------------------
+    //
+    // Evaluated in the ANCHOR zone, which comes from the persisted policy or the
+    // persisted contact row and NEVER from `slot.timezone`. A model may still
+    // say which zone its "10am" is meant in - that is a legitimate thing for a
+    // travelling contact to tell us - but it does not get to say which window
+    // the resulting instant is then judged against. See `businessHoursAnchor`.
     if (wantsBusinessHours) {
-      const zone = businessHoursTimezone(policy.businessHours, slot.timezone);
-      const startLocal = DateTime.fromMillis(startMillis, { zone });
-      const endLocal = DateTime.fromMillis(Date.parse(slot.endUtc), { zone });
+      const anchor = businessHoursAnchor(policy.businessHours, {
+        persistedContactTimezone: input.persistedContactTimezone,
+        agentDefaultTimezone: policy.defaultTimezone,
+      });
+
+      if (!isValidIanaTimezone(anchor.timezone)) {
+        // A configuration error, not a contact error. Refusing loudly beats
+        // evaluating a wall-clock window in a zone this runtime cannot read -
+        // which would silently produce an unusable weekday and "pass".
+        const detail =
+          `The business-hours anchor zone "${anchor.timezone}" (from the ${anchor.source}) is not an IANA ` +
+          'zone this runtime knows, so the window cannot be read in it.';
+        checks.fail('business_hours', detail);
+        return validationFailed(ValidationErrorCode.POLICY_VIOLATION, detail, provenanceFor());
+      }
+
+      const startLocal = DateTime.fromMillis(startMillis, { zone: anchor.timezone });
+      const endLocal = DateTime.fromMillis(Date.parse(slot.endUtc), { zone: anchor.timezone });
       const verdict = checkBusinessHours(policy.businessHours, startLocal, endLocal);
-      notes.businessHoursTimezone = zone;
+
+      // Recorded in full so an auditor can see BOTH clocks: the one the slot was
+      // agreed in and the one the guardrail was applied in. When they differ,
+      // `slotTimezoneWasOverridden` says so in as many words, because "the model
+      // asserted a zone" is exactly the fact a reviewer wants surfaced.
+      notes.businessHours = {
+        anchorTimezone: anchor.timezone,
+        anchorSource: anchor.source,
+        persistedContactTimezone: input.persistedContactTimezone,
+        slotTimezone: slot.timezone,
+        slotTimezoneWasOverridden: slot.timezone !== anchor.timezone,
+        startLocalInAnchorZone: startLocal.toFormat("yyyy-LL-dd'T'HH:mm"),
+        endLocalInAnchorZone: endLocal.toFormat("yyyy-LL-dd'T'HH:mm"),
+      };
+
+      const explained =
+        `${verdict.detail} Evaluated in ${anchor.timezone} (the ${anchor.source} zone), where the slot ` +
+        `reads ${startLocal.toFormat("yyyy-LL-dd'T'HH:mm")}-${endLocal.toFormat('HH:mm')}; it was agreed ` +
+        `in ${slot.timezone}.`;
 
       if (!verdict.ok) {
-        checks.fail('business_hours', verdict.detail);
+        checks.fail('business_hours', explained);
         return validationFailed(
           ValidationErrorCode.OUTSIDE_BUSINESS_HOURS,
           `That is outside business hours: ${verdict.detail}`,
           provenanceFor(),
         );
       }
-      checks.pass('business_hours', verdict.detail);
+      checks.pass('business_hours', explained);
     }
 
     // ---- check 9: availability --------------------------------------------
@@ -254,6 +335,19 @@ export class SchedulingValidator {
 
     return validationOk(slot, provenanceFor());
   }
+}
+
+/**
+ * A duration in milliseconds, as minutes, exactly.
+ *
+ * Whole minutes render as `30`; anything else keeps the precision that decided
+ * the verdict - `29.5`, `0.017`. Never rounds: this string goes into
+ * `ValidationProvenance`, where a tidier number would be a false one.
+ */
+function formatMinutes(millis: number): string {
+  const minutes = millis / MS_PER_MINUTE;
+  if (Number.isInteger(minutes)) return String(minutes);
+  return String(Number(minutes.toFixed(6)));
 }
 
 /**

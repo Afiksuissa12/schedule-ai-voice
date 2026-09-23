@@ -313,6 +313,196 @@ export const LEAD_TIME_EXPRESSIONS: readonly ExpressionDimension[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// 3b. The timezone the MODEL asserts in the tool's `timezone` argument.
+//
+// This axis is here because of a real, reproduced bypass: the optional
+// `timezone` argument used to decide not only which INSTANT a phrase named but
+// also which wall-clock window that instant was judged against. A model could
+// therefore ask for a polite-sounding "10am" in a zone half a world away and
+// have a 23:30 contact-local callback recorded with `business_hours: passed`.
+//
+// The axis is deliberately crossed with EVERY contact zone, including zones that
+// differ wildly from the contact's, and `INV-14` re-reads each persisted instant
+// on the CONTACT'S OWN clock. Nothing here predicts a verdict: the committed
+// cases below are a separate, hand-checked list.
+// ---------------------------------------------------------------------------
+
+/**
+ * Zones a model might assert. The five sweep zones plus two that appear nowhere
+ * else, so a scenario cannot accidentally assert the zone the contact is
+ * already in and still count as covering the axis.
+ */
+export const ASSERTED_TIMEZONES: readonly string[] = [
+  'America/New_York',
+  'Europe/London',
+  'Australia/Sydney',
+  'Asia/Kolkata',
+  'UTC',
+  'America/Denver',
+  'Asia/Tokyo',
+];
+
+/** The phrase the override axis is crossed with. Innocuous on purpose. */
+export const OVERRIDE_PROBE_EXPRESSION = 'tomorrow at 10am';
+
+/**
+ * Overrides whose effect on the CONTACT'S clock was worked out by hand.
+ *
+ * Unlike the axis above, these DO commit to a direction, which is only safe
+ * because every input is pinned: the contact is in `contactZone`, the policy is
+ * `p1-default` (09:00-17:00, Mon-Fri), and `now` is `BASELINE_NOW`. The claim in
+ * `contactLocalWallClock` is a pure tzdata fact about (`whenLocal`,
+ * `assertedZone`, `contactZone`) - `dimensions.test.ts` re-derives every one of
+ * them from Luxon, and derives the direction from the policy window, so a tzdata
+ * change cannot leave a stale expectation sitting here looking authoritative.
+ */
+export interface TimezoneOverrideCase {
+  readonly key: string;
+  /** `Contact.timezone` on the persisted row. */
+  readonly contactZone: string;
+  /** What the model puts in the tool's `timezone` argument. */
+  readonly assertedZone: string;
+  /** ISO local datetime, to be read in `assertedZone`. */
+  readonly whenLocal: string;
+  /** `yyyy-LL-dd HH:mm` that instant reads as in `contactZone`. Re-derived. */
+  readonly contactLocalWallClock: string;
+  readonly direction: Direction;
+  readonly rationale: string;
+}
+
+export const TIMEZONE_OVERRIDE_CASES: readonly TimezoneOverrideCase[] = [
+  {
+    key: 'j1-kolkata-reaches-2330-nyc',
+    contactZone: 'America/New_York',
+    assertedZone: 'Asia/Kolkata',
+    whenLocal: '2026-03-05T10:00',
+    contactLocalWallClock: '2026-03-04 23:30',
+    direction: 'REJECT',
+    rationale:
+      'THE REPRODUCED BYPASS. A courteous "10:00" in a zone the model chose is half past eleven at ' +
+      'night where the contact actually lives.',
+  },
+  {
+    key: 'j2-tokyo-reaches-midnight-nyc',
+    contactZone: 'America/New_York',
+    assertedZone: 'Asia/Tokyo',
+    whenLocal: '2026-03-06T14:00',
+    contactLocalWallClock: '2026-03-06 00:00',
+    direction: 'REJECT',
+    rationale: 'The same bypass on the meeting path: a mid-afternoon Tokyo slot is midnight in New York.',
+  },
+  {
+    key: 'j3-utc-reaches-1800-nyc',
+    contactZone: 'America/New_York',
+    assertedZone: 'UTC',
+    whenLocal: '2026-03-05T23:00',
+    contactLocalWallClock: '2026-03-05 18:00',
+    direction: 'REJECT',
+    rationale: 'Only an hour past close, which is the kind of near-miss a coarse check waves through.',
+  },
+  {
+    key: 'j4-sydney-lands-exactly-on-close',
+    contactZone: 'America/New_York',
+    assertedZone: 'Australia/Sydney',
+    whenLocal: '2026-03-05T09:00',
+    contactLocalWallClock: '2026-03-04 17:00',
+    direction: 'REJECT',
+    rationale:
+      'Lands EXACTLY on 17:00 contact-local. Windows are half-open, so a slot starting at close is ' +
+      'outside - the boundary an off-by-one would get wrong in the permissive direction.',
+  },
+  {
+    key: 'j5-denver-is-a-genuine-traveller',
+    contactZone: 'America/New_York',
+    assertedZone: 'America/Denver',
+    whenLocal: '2026-03-05T10:00',
+    contactLocalWallClock: '2026-03-05 12:00',
+    direction: 'ACCEPT',
+    rationale:
+      'THE CONTROL. "I am in Denver this week" is the reason the argument exists. 10:00 Denver is noon ' +
+      'in New York, so it must still be bookable - a fix that refused this would be a regression.',
+  },
+  {
+    key: 'j6-london-morning-is-fine-too',
+    contactZone: 'America/New_York',
+    assertedZone: 'Europe/London',
+    whenLocal: '2026-03-05T15:00',
+    contactLocalWallClock: '2026-03-05 10:00',
+    direction: 'ACCEPT',
+    rationale: 'A second control, in a zone with a different DST date, so the accept is not a one-off.',
+  },
+];
+
+// ---------------------------------------------------------------------------
+// 3c. Sub-minute `now` instants, for the minimum-lead-time boundary.
+//
+// Every instant in `NOW_INSTANTS` is on a whole minute, which is why no scenario
+// there could ever expose a gate that rounded the lead time to the nearest
+// minute before comparing it: the rounding was invisible. These instants carry
+// SECONDS, and each one is placed a known number of seconds from the 30-minute
+// minimum in `p1-default`.
+// ---------------------------------------------------------------------------
+
+export interface LeadTimeBoundaryCase {
+  readonly key: string;
+  /** Carries seconds on purpose. */
+  readonly nowUtc: string;
+  /** ISO local datetime in America/New_York, the contact zone for this family. */
+  readonly whenLocal: string;
+  /** True lead in SECONDS against a 30-minute (1800s) minimum. Re-derived. */
+  readonly leadSeconds: number;
+  readonly direction: Direction;
+  readonly rationale: string;
+}
+
+export const LEAD_TIME_BOUNDARY_ZONE = 'America/New_York';
+
+export const LEAD_TIME_BOUNDARY_CASES: readonly LeadTimeBoundaryCase[] = [
+  {
+    key: 'k1-thirty-seconds-short',
+    nowUtc: '2026-03-04T14:00:30.000Z',
+    whenLocal: '2026-03-04T09:30',
+    leadSeconds: 1770,
+    direction: 'REJECT',
+    rationale:
+      'THE REPRODUCED DEFECT: 29.5 minutes. Rounding to the nearest minute made this read as 30 and ' +
+      'cleared a 30-minute minimum, then wrote "30 min >= 30 min" into the audit trail.',
+  },
+  {
+    key: 'k2-one-second-short',
+    nowUtc: '2026-03-04T14:00:01.000Z',
+    whenLocal: '2026-03-04T09:30',
+    leadSeconds: 1799,
+    direction: 'REJECT',
+    rationale: 'One second short is still short. The gate is a minimum, not a rounding target.',
+  },
+  {
+    key: 'k3-exactly-on-the-minimum',
+    nowUtc: '2026-03-04T14:00:00.000Z',
+    whenLocal: '2026-03-04T09:30',
+    leadSeconds: 1800,
+    direction: 'ACCEPT',
+    rationale: 'Exactly 30 minutes. The boundary is inclusive, and tightening the comparison must not move it.',
+  },
+  {
+    key: 'k4-one-second-over',
+    nowUtc: '2026-03-04T14:29:59.000Z',
+    whenLocal: '2026-03-04T10:00',
+    leadSeconds: 1801,
+    direction: 'ACCEPT',
+    rationale: 'THE CONTROL on the other side: a second past the minimum must still be bookable.',
+  },
+  {
+    key: 'k5-thirty-seconds-over',
+    nowUtc: '2026-03-04T13:59:30.000Z',
+    whenLocal: '2026-03-04T09:30',
+    leadSeconds: 1830,
+    direction: 'ACCEPT',
+    rationale: '30.5 minutes - the mirror of k1, so the fix cannot be "reject everything near the edge".',
+  },
+];
+
+// ---------------------------------------------------------------------------
 // 4. AgentConfiguration policy.
 // ---------------------------------------------------------------------------
 
