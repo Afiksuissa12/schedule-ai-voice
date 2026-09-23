@@ -145,7 +145,7 @@ Both legacy folders are read-only reference and **were never written to**.
 
 - A fresh clone needs **no credentials, no network, and no running service** to
   get a green test suite. That property is worth a great deal at this stage, and
-  it is load-bearing for the invariant sweep: 509 scenarios across 16 disposable
+  it is load-bearing for the invariant sweep: 601 scenarios across 19 disposable
   databases would be intolerable against a hosted Postgres.
 - Prisma gives a typed client and real migrations, so the move to Postgres is a
   datasource change rather than a rewrite.
@@ -315,6 +315,81 @@ audited `POLICY_VIOLATION` and writes nothing. **A silent no-op is forbidden:**
 a model told "done" for something that will never happen will tell the contact
 it is done.
 
+### 5.6 Business hours are anchored in a zone the model cannot choose
+
+*Recorded 2026-09-23, in response to an independent QA review that reproduced the
+bypass below against the real integrated stack.*
+
+Every time-bearing tool takes an optional `timezone` argument. It exists for a
+real reason — "I'm in Denver this week" genuinely changes which instant "10am"
+names — but it used to decide a second thing as well: the wall-clock window that
+instant was then judged against. Those are different questions, and conflating
+them made the business-hours guardrail advisory rather than enforced.
+
+**The concrete failure.** Contact `Jordan Prospect`, `Contact.timezone =
+America/New_York`, policy 09:00–17:00 Mon–Fri. Asking for `today at 11:30pm` was
+refused, correctly. Asking for `tomorrow at 10am` **with `timezone:
+Asia/Kolkata`** was accepted: 10:00 Kolkata is 04:30 UTC, which is 23:30 the
+previous day in New York. The `FutureAction` persisted, `business_hours` recorded
+`passed: true`, and advancing the clock made `DueActionRunner` place a real
+(deterministic-double) call to a US number at half past eleven at night. The
+model chose the window, so the model chose the verdict.
+
+**The decision.** The window is read in an **anchor** zone, resolved by
+`businessHoursAnchor` (`src/scheduling/businessHours.ts`) from persisted data
+only, in this order:
+
+1. `BusinessHoursPolicy.timezone` — a business whose hours are its own clock, when
+   the configuration row says so explicitly.
+2. `Contact.timezone` — the ordinary case, and what "business hours in the
+   contact's local time" actually means. No policy in `seedSliceWorld` pins a
+   zone, so this is the shipped default.
+3. `AgentConfiguration.defaultTimezone` — only if a contact row carries no zone.
+
+`businessHoursAnchor` takes **no slot zone parameter at all**, so there is no
+argument through which a model-supplied value could reach it, and
+`ValidateSlotInput.persistedContactTimezone` is a **required** field — a new call
+site that forgets it fails `npm run typecheck` rather than silently reopening the
+hole. Both zones, and whether they differed, are recorded in
+`ValidationProvenance.notes.businessHours`.
+
+**What was deliberately NOT done.** The override is demoted, not removed. A New
+York contact who says they are in Denver still gets "10am" read as 10:00 Denver
+(= noon New York) and still gets booked; the slot is stored and spoken back in
+the zone it was agreed in. Refusing every override would have passed every
+"must be refused" test in `tests/e2e/timezoneOverride.test.ts` and been a
+regression, which is why each refusal there is paired with a control.
+
+**Replaces:** `businessHoursTimezone(policy, slotTimezone)`, which is deleted
+rather than deprecated. Its signature was the bug — it invited a model-supplied
+fallback — and leaving it exported would let the hole be reopened by a caller
+doing the obvious thing. It was exported from `src/scheduling/index.ts`, which is
+a declared contract with the agent layer, so its removal was announced through
+the coordination mailbox. Nothing outside `SchedulingValidator` called it.
+
+### 5.7 The minimum lead time is compared in milliseconds, and reported truthfully
+
+*Same review, same date.*
+
+`SchedulingValidator` rounded the lead time to the nearest minute **before**
+comparing it to `minLeadTimeMinutes`, so any shortfall up to 30 seconds cleared
+the gate: with `now = 14:00:30Z` and a target of `14:30:00Z`, a true lead of 29.5
+minutes passed a 30-minute minimum. It then wrote `"lead time 30 min >= 30 min"`
+into `validationProvenanceJson`.
+
+The leak matters; the receipt matters more. `ValidationProvenance` exists so a
+decision is **re-runnable by hand**, and a receipt that rounds the deciding
+quantity in the direction that makes the decision look correct cannot be re-run —
+it is not a record, it is a rationalisation. The comparison is now exact
+(milliseconds against `minLeadTimeMinutes * 60_000`) and the recorded figure is
+the true one, to sub-minute precision: `lead time 29.5 min is below the
+configured minimum of 30 min.`
+
+Every `now` instant in `NOW_INSTANTS` sits on a whole minute, which is precisely
+why 509 scenarios could not see this. `LEAD_TIME_BOUNDARY_CASES` carries seconds,
+and `dimensions.test.ts` asserts that `NOW_INSTANTS` still does not — so the two
+axes cannot quietly converge and lose the coverage again.
+
 ---
 
 ## 6. Testing decisions
@@ -328,7 +403,7 @@ proves 13 hostile turns are refused. `INV-05` proves **"a rejected tool call
 changes no row count"** across 278 rejections spanning five timezones, ten `now`
 instants, four policies and every refusal code the system can emit.
 
-**Scale: 509 scenarios.** The legacy harness ran 538; this is the honest
+**Scale: 601 scenarios.** The legacy harness ran 538; this is the honest
 equivalent for a slice this size, and all 13 declared `ValidationErrorCode`s are
 exercised.
 
@@ -366,7 +441,7 @@ applicable checks**. The report marks any such invariant `VACUOUS` in capitals.
 
 ### 6.4 One shared database per chunk of scenarios
 
-509 fresh SQLite files plus Prisma clients costs over a minute of pure setup.
+601 fresh SQLite files plus Prisma clients costs over a minute of pure setup.
 Scenarios are grouped into chunks sharing one database, and isolation is
 achieved the way the application achieves it: each scenario seeds its **own**
 organization, contact, configuration and calendar via
@@ -380,7 +455,7 @@ and concurrency changes no outcome.
 
 ### 6.5 Determinism is checked on a cross-section in `npm run test`
 
-Running all 509 scenarios twice doubles the slowest thing in the repository. So
+Running all 601 scenarios twice doubles the slowest thing in the repository. So
 `npm run test` asserts determinism over a **cross-section that touches every
 family** (a stride, not the first N — the first N are all one family), and
 `npm run qa:sweep -- --determinism` runs the complete double pass for a release
@@ -403,7 +478,20 @@ generated report prints in full every run:
    `update_qualification` and two fabricated-subject calls are driven.
    `reschedule_meeting`, `cancel_meeting` on a real meeting, `record_call_outcome`,
    `transfer_to_human` and `get_contact_context` are covered by `tests/e2e` and
-   `tests/agent`, **not by the sweep**.
+   `tests/agent`, **not by the sweep**. `reschedule_meeting` takes the same
+   model-supplied `timezone` argument family J sweeps, so that tool's override
+   path is proved by a unit test rather than across this matrix.
+7. Family J sweeps the **model-asserted `timezone` axis at one `now` instant and
+   one policy** (`p1-default`). Crossing it with all ten instants and all four
+   policies would be 2,800 cases for an axis whose interesting behaviour — which
+   window the resulting instant is judged in — depends on neither.
+8. **No policy in this matrix pins `BusinessHoursPolicy.timezone`**, so the
+   `policy` branch of `businessHoursAnchor` is never taken here; it is covered by
+   `tests/scheduling/schedulingValidator.test.ts`. The consequence is worth
+   stating rather than hiding: under such a policy a distant contact **can** be
+   booked outside their own working hours. That is the documented meaning of
+   pinning a zone, it is a decision made by whoever wrote the configuration row,
+   and it is not something a model can bring about.
 4. **The sweep stops at persistence.** `DueActionRunner` claim/lease/retry is
    proved by `tests/scheduling/dueActionRunner*.test.ts`; no sweep scenario
    places a call through the telephony double at all.
@@ -452,3 +540,31 @@ observed, not what is expected.
 | `npm run test` | **33 files passed, 1 skipped; 455 tests passed, 2 skipped** (the 2 skips are the optional live-OpenAI test) |
 | `npm run slice:demo` | OK, exit 0 — 13 audit events on one `correlationId`, `FutureAction` persisted and dispatched through the telephony double |
 | `npm run qa:sweep -- --determinism` | OK, exit 0 — **509 scenarios, 2169 applicable checks, 0 violations, 0 network attempts**, and a second full run produced byte-identical classifications for every scenario id |
+
+### 8.1 Re-verification after the § 5.6 / § 5.7 fixes
+
+Same conditions, same machine, on **2026-09-23**, after the two defects an
+independent QA review reproduced were fixed and the sweep was extended to cover
+them. The corpus grew from 509 to 601 scenarios (families **J** and **K**) and
+the invariant count from 11 to 12 (**INV-14**).
+
+| Command | Result |
+|---|---|
+| `npm install` | OK (same 5 dev-only advisories, § 7) |
+| `npm run db:setup` | OK — generate, push, seed all clean, no credential, no network |
+| `npm run typecheck` | OK, exit 0 |
+| `npm run test` | **36 files passed, 1 skipped; 500 tests passed, 2 skipped** |
+| `npm run slice:demo` | OK, exit 0 — 13 audit events on one `correlationId`, all eight checks recorded, `FutureAction` persisted |
+| `npm run qa:sweep` | OK, exit 0 — **601 scenarios, 2791 applicable checks, 0 violations, 0 network attempts**, no vacuous invariant |
+| `npm run qa:sweep -- --determinism` | OK, exit 0 — same figures, and a second full run produced byte-identical classifications for every scenario id |
+
+**The new coverage was checked against the bug, not just against itself.** With
+the fix reverted and nothing else changed, `INV-14` fails **48** of its 80
+applicable checks in family J — across all five contact zones, including the
+reviewer's exact case (`FutureAction … starts at Wed 23:30 America/New_York …
+[stored zone Asia/Kolkata differs from the anchor]`) — `INV-02` fails alongside
+it, `INV-11` fails the four committed override cases, and family K's `INV-11`
+reports `declared REJECT but the system accepted it` for both sub-minute
+shortfalls. Six of the seven cases in `tests/e2e/timezoneOverride.test.ts` fail;
+the seventh is a control that is meant to pass either way. An invariant that
+cannot fail is not evidence, so this was established rather than assumed.

@@ -116,6 +116,8 @@ new SchedulingValidator({ clock, availability, resolver?, validatorVersion? })
 interface ValidateSlotInput {
   proposal: DateTimeProposal;
   policy: SchedulingPolicy;
+  persistedContactTimezone: string;  // REQUIRED. Contact.timezone, off the row.
+                                     // NOT proposal.timezone - see check 8 below.
   calendarRef?: string;          // required when the availability check runs
   checkBusinessHours?: boolean;  // default true
   checkAvailability?: boolean;   // default true iff calendarRef is supplied
@@ -142,9 +144,11 @@ costs a provider call:
 Boundaries, stated once so nobody has to guess:
 
 - lead time and horizon are **inclusive** at the boundary; `in_the_future` is **strict**
+- lead time is compared in **milliseconds**, not rounded minutes; the receipt records the true lead to sub-minute precision
 - a slot starting exactly at business-hours open is inside; one *ending* exactly at close is inside; one *starting* at close is outside
 - overlap is half-open, so a slot adjacent to a busy interval does **not** conflict
 - the horizon is measured in fixed 24-hour days, not calendar days
+- check 8 is evaluated in an **anchor** zone resolved by `businessHoursAnchor` from persisted data only — `BusinessHoursPolicy.timezone`, else `Contact.timezone`, else `AgentConfiguration.defaultTimezone`. It is NOT the zone the slot was agreed in, because that one can come from a model-supplied tool argument. `ValidateSlotInput.persistedContactTimezone` is required for this reason. See `docs/DECISIONS.md` § 5.6.
 
 Skipped checks are named in `provenance.notes.skippedChecks`, so a reader can
 always tell a check that passed from one that never ran.

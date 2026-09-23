@@ -38,25 +38,37 @@ function validatorWith(provider = new DeterministicAvailabilityProvider()): Sche
   return new SchedulingValidator({ clock, availability: provider });
 }
 
+/**
+ * `timezone` is the zone the PHRASE is read in - the leg a model can influence.
+ * `persistedContactTimezone` is `Contact.timezone` off the row, and defaults to
+ * `timezone` so that the ordinary case ("the contact really is in Sydney")
+ * stays a one-liner. The cases where they DIFFER are the override cases, and
+ * they are spelled out explicitly.
+ */
 async function validate(
   raw: string,
   options: {
     policy?: SchedulingPolicy;
     provider?: DeterministicAvailabilityProvider;
     timezone?: string;
+    persistedContactTimezone?: string;
     durationMinutes?: number;
     calendarRef?: string | null;
+    nowUtc?: string;
   } = {},
 ): Promise<ValidationResult<ResolvedSlot>> {
   const provider = options.provider ?? new DeterministicAvailabilityProvider();
+  const timezone = options.timezone ?? NY;
   return validatorWith(provider).validate({
     proposal: {
       raw,
-      timezone: options.timezone ?? NY,
+      timezone,
       ...(options.durationMinutes !== undefined ? { durationMinutes: options.durationMinutes } : {}),
     },
     policy: options.policy ?? policyWith(),
+    persistedContactTimezone: options.persistedContactTimezone ?? timezone,
     ...(options.calendarRef === null ? {} : { calendarRef: options.calendarRef ?? CALENDAR }),
+    ...(options.nowUtc !== undefined ? { nowUtc: options.nowUtc } : {}),
   });
 }
 
@@ -110,6 +122,33 @@ describe('IN_THE_PAST and BELOW_MIN_LEAD_TIME', () => {
     const strict = policyWith({ minLeadTimeMinutes: 240 });
     expect(codeOf(await validate('2026-03-04T15:30:00Z', { policy: strict }))).toBe('BELOW_MIN_LEAD_TIME');
     expect(codeOf(await validate('2026-03-04T19:00:00Z', { policy: strict }))).toBe('ok');
+  });
+
+  // The gate compares MILLISECONDS. Rounding the lead to the nearest minute
+  // first let anything up to 30 seconds short clear the minimum, and then wrote
+  // the rounded - i.e. wrong - number into the receipt.
+  it('rejects a lead time HALF A MINUTE below the minimum', async () => {
+    // now 15:00:30Z, target 15:30:00Z: 29.5 minutes against a minimum of 30.
+    const result = await validate('2026-03-04T15:30:00Z', { nowUtc: '2026-03-04T15:00:30.000Z' });
+    expect(codeOf(result)).toBe('BELOW_MIN_LEAD_TIME');
+    expect(result.provenance.checks.find((check) => check.name === 'min_lead_time')?.detail).toBe(
+      'lead time 29.5 min is below the configured minimum of 30 min.',
+    );
+  });
+
+  it('rejects a lead time ONE SECOND below the minimum', async () => {
+    const result = await validate('2026-03-04T15:30:00Z', { nowUtc: '2026-03-04T15:00:01.000Z' });
+    expect(codeOf(result)).toBe('BELOW_MIN_LEAD_TIME');
+  });
+
+  it('records the TRUE lead time on a pass, not one rounded towards the policy', async () => {
+    // 30.5 minutes. The receipt has to say 30.5, because a reader re-running the
+    // arithmetic by hand gets 30.5 and must not find the receipt disagreeing.
+    const result = await validate('2026-03-04T15:30:30Z', { nowUtc: '2026-03-04T15:00:00.000Z' });
+    expect(codeOf(result)).toBe('ok');
+    expect(result.provenance.checks.find((check) => check.name === 'min_lead_time')?.detail).toBe(
+      'lead time 30.5 min >= 30 min',
+    );
   });
 });
 
@@ -178,6 +217,67 @@ describe('OUTSIDE_BUSINESS_HOURS', () => {
     );
   });
 
+  it('reads the window in the CONTACT\'S persisted zone, not the one the proposal asked for', async () => {
+    // THE BYPASS THIS CLOSES.
+    //
+    // The contact's row says America/New_York. A model asserts Asia/Kolkata and
+    // asks for a perfectly innocent-sounding "10:00". 10:00 Kolkata on
+    // 2026-03-05 is 04:30Z, which is 23:30 on 2026-03-04 in New York. Judged in
+    // the ASSERTED zone that reads as mid-morning and every check passes; judged
+    // in the contact's own zone it is half past eleven at night.
+    const result = await validate('2026-03-05T10:00', {
+      timezone: 'Asia/Kolkata',
+      persistedContactTimezone: NY,
+    });
+    expect(codeOf(result)).toBe('OUTSIDE_BUSINESS_HOURS');
+    expect(result.ok ? '' : result.reason).toMatch(/23:30/);
+  });
+
+  it('still lets the asserted zone decide which INSTANT the phrase names', async () => {
+    // The override is not disabled, only demoted. A New York contact who says
+    // they are in Denver this week gets "10:00" read as 10:00 Denver = 12:00
+    // New York, which IS inside 09:00-17:00 - so it is accepted, and stored in
+    // the zone it was agreed in.
+    const result = await validate('2026-03-05T10:00', {
+      timezone: 'America/Denver',
+      persistedContactTimezone: NY,
+    });
+    expect(codeOf(result)).toBe('ok');
+    expect(result.ok ? result.value.startUtc : '').toBe('2026-03-05T17:00:00.000Z');
+    expect(result.ok ? result.value.timezone : '').toBe('America/Denver');
+  });
+
+  it('records BOTH zones in the receipt, and says when they differed', async () => {
+    const result = await validate('2026-03-05T10:00', {
+      timezone: 'America/Denver',
+      persistedContactTimezone: NY,
+    });
+    expect(result.provenance.notes?.businessHours).toEqual({
+      anchorTimezone: NY,
+      anchorSource: 'contact',
+      persistedContactTimezone: NY,
+      slotTimezone: 'America/Denver',
+      slotTimezoneWasOverridden: true,
+      startLocalInAnchorZone: '2026-03-05T12:00',
+      endLocalInAnchorZone: '2026-03-05T12:30',
+    });
+    expect(result.provenance.checks.find((check) => check.name === 'business_hours')?.detail).toContain(
+      `Evaluated in ${NY} (the contact zone)`,
+    );
+  });
+
+  it('refuses rather than guessing when the anchor zone is not a zone this runtime knows', async () => {
+    // A configuration error: `BusinessHoursPolicy.timezone` came from a row and
+    // is unreadable. Evaluating the window in it would produce a nonsense
+    // weekday, which could "pass".
+    const broken = policyWith({
+      businessHours: { ...weekdayBusinessHours('09:00', '17:00'), timezone: 'Mars/Olympus_Mons' },
+    });
+    const result = await validate('2026-03-05T10:00', { policy: broken });
+    expect(codeOf(result)).toBe('POLICY_VIOLATION');
+    expect(result.ok ? '' : result.reason).toMatch(/anchor zone "Mars\/Olympus_Mons" \(from the policy\)/);
+  });
+
   it('honours a policy that pins its own timezone', async () => {
     // Business hours are New York's; the contact is in Sydney. 09:30 New York
     // is inside the window even though it is the middle of the Sydney night.
@@ -191,6 +291,7 @@ describe('OUTSIDE_BUSINESS_HOURS', () => {
     const result = await validatorWith().validate({
       proposal: { raw: '2026-03-05T17:00', timezone: NY },
       policy: policyWith(),
+      persistedContactTimezone: NY,
       checkBusinessHours: false,
       checkAvailability: false,
     });
@@ -265,6 +366,7 @@ describe('CONFLICT_WITH_BUSY_INTERVAL', () => {
     const result = await validatorWith().validate({
       proposal: { raw: '2026-03-05T14:00', timezone: NY },
       policy: policyWith(),
+      persistedContactTimezone: NY,
       checkAvailability: true,
     });
     expect(codeOf(result)).toBe('POLICY_VIOLATION');

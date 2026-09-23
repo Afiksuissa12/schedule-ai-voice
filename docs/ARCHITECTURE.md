@@ -192,10 +192,25 @@ The ordered checks are `SCHEDULING_CHECK_NAMES` in `src/scheduling/checkLog.ts`:
 Boundaries, stated so nobody has to guess:
 
 - lead time and horizon are **inclusive** at the boundary; `in_the_future` is **strict**
+- lead time is compared in **milliseconds**, not rounded minutes, and the receipt
+  records the true lead to sub-minute precision (`lead time 29.5 min is below ...`)
 - a slot starting exactly at business-hours open is inside; one *ending* exactly
   at close is inside; one *starting* at close is outside
 - overlap is half-open, so a slot adjacent to a busy interval does **not** conflict
 - the horizon is measured in fixed 24-hour days, not calendar days
+
+**Which clock check 8 is measured on is a guardrail, not a detail.** Every
+time-bearing tool takes an optional `timezone` argument the model fills in, and
+it decides which *instant* a phrase names — but never which *window* that instant
+is judged against. `businessHoursAnchor` resolves the window's zone from
+persisted data only (`BusinessHoursPolicy.timezone`, else `Contact.timezone`,
+else `AgentConfiguration.defaultTimezone`) and takes no slot-zone parameter at
+all, so no model-supplied value can reach it.
+`ValidateSlotInput.persistedContactTimezone` is required, so a call site that
+forgets it fails `npm run typecheck`. Both zones land in
+`provenance.notes.businessHours`, including a `slotTimezoneWasOverridden` flag.
+`INV-14` re-checks the property across the sweep; `docs/DECISIONS.md` § 5.6
+records the bypass this closes.
 
 The check order is itself evidence: "we refused this because the timezone was
 not real" is a different story from "we refused it because it clashed, having
@@ -359,7 +374,7 @@ UTTERANCE_RECEIVED -> AGENT_TURN_STARTED -> PROVIDER_INVOKED -> AGENT_DECISION
 | `tests/scheduling/` | Resolver grammar, the nine ordered checks, DST, policy from the persisted row, provider boundary, runner restart/backoff |
 | `tests/agent/` | Prompt composition, the nine-tool contract, dispatcher ordering, conversation durability, qualification rubric |
 | `tests/e2e/` | The slice end to end, 13 adversarial turns, the bounded turn loop |
-| `tests/invariants/` | **The sweep**: 509 generated scenarios x 11 per-scenario invariants, plus determinism and the network trap |
+| `tests/invariants/` | **The sweep**: 601 generated scenarios x 12 per-scenario invariants, plus determinism and the network trap |
 
 ### The invariant sweep
 
@@ -369,11 +384,11 @@ writing one test per example.
 
 | File | Role |
 |---|---|
-| `dimensions.ts` | The axes: 5 timezones, 10 `now` instants, 17 expressions, 4 policies, 4 availability states. Pure data. |
+| `dimensions.ts` | The axes: 5 contact timezones, 7 model-ASSERTED timezones, 10 `now` instants (plus 5 sub-minute ones for the lead-time boundary), 17 expressions, 4 policies, 4 availability states. Pure data. |
 | `dimensions.test.ts` | Re-derives every factual claim the dimensions make (that a local time really is in a DST gap, that Kolkata really has a half-hour offset) so a comment can never quietly become a lie |
-| `scenarios.ts` | Crosses them into **509** scenarios in 9 named families. Pure function, fixed seed, stable ids |
+| `scenarios.ts` | Crosses them into **601** scenarios in 11 named families. Pure function, fixed seed, stable ids |
 | `runner.ts` | Drives each scenario through `AgentTurnService.handleTurn` - the real front door |
-| `invariants.ts` | The 11 per-scenario properties |
+| `invariants.ts` | The 12 per-scenario properties |
 | `networkTrap.ts` | Patches `fetch`/`http`/`https`/`net` and records any outbound attempt |
 | `sweep.ts` | generate → run → check → summarize |
 | `sweep.test.ts` | Asserts zero violations, plus **non-vacuity** guards |

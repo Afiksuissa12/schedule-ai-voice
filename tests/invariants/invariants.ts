@@ -270,8 +270,16 @@ const meetingIsWellFormedAndInHours: Invariant = {
       }
 
       // Business hours are wall-clock, and are read in the policy's own zone
-      // when it names one, otherwise in the zone the meeting was agreed in.
-      const zone = policyZone ?? meeting.timezone;
+      // when it names one, otherwise in the CONTACT'S PERSISTED zone.
+      //
+      // This used to read `policyZone ?? meeting.timezone`, and that was the
+      // oracle agreeing with the bug rather than catching it. `Meeting.timezone`
+      // is the zone the slot was AGREED in, which a model can influence through
+      // the optional `timezone` argument - so measuring the window in it asks
+      // "was this inside business hours according to the zone whoever booked it
+      // nominated?", which is always yes. `observation.contact.timezone` comes
+      // off the contact row and the model cannot reach it. See INV-14.
+      const zone = policyZone ?? observation.contact.timezone;
       const startLocal = DateTime.fromISO(meeting.startUtc, { zone });
       const endLocal = DateTime.fromISO(meeting.endUtc, { zone });
       const date = startLocal.toFormat('yyyy-LL-dd');
@@ -784,6 +792,128 @@ const noTurnThrows: Invariant = {
 };
 
 // ---------------------------------------------------------------------------
+// INV-14: the one the 509-scenario sweep used to be blind to.
+// ---------------------------------------------------------------------------
+
+const scheduledInstantsSitInsideTheContactsOwnHours: Invariant = {
+  id: 'INV-14-hours-hold-in-the-contacts-persisted-zone',
+  title:
+    'Every persisted Meeting and FutureAction sits inside configured business hours when RENDERED IN THE ' +
+    "CONTACT'S PERSISTED TIMEZONE",
+  because:
+    'A business-hours window is meaningless until you say whose wall clock it is measured on, and whoever ' +
+    'gets to answer that gets to decide the verdict. Every time-bearing tool takes an optional `timezone` ' +
+    'argument the MODEL fills in, and it used to decide both which instant a phrase named AND which window ' +
+    'that instant was judged against - so a courteous "10am" in a zone the model chose booked a real US ' +
+    'contact for 23:30 their own time with `business_hours: passed` written into the receipt. This ' +
+    'invariant takes the persisted instant and re-reads it on the clock of the person who will actually ' +
+    "be phoned, using `Contact.timezone` off the row. The row's OWN `timezone` column is deliberately not " +
+    'consulted: that is the value the model can influence, so trusting it would make the oracle agree with ' +
+    'the bug. Overlaps INV-02 for meetings on purpose - INV-02 checks a row is well formed, this checks ' +
+    'the guardrail was anchored, and it is the only invariant that asks the question of a FutureAction.',
+  check(observation) {
+    const rows: { kind: string; id: string; startUtc: string; endUtc: string | null; storedZone: string }[] = [
+      ...observation.meetings.map((meeting) => ({
+        kind: 'Meeting',
+        id: meeting.id,
+        startUtc: meeting.startUtc,
+        endUtc: meeting.endUtc as string | null,
+        storedZone: meeting.timezone,
+      })),
+      ...observation.futureActions.map((action) => ({
+        kind: 'FutureAction',
+        id: action.id,
+        startUtc: action.scheduledForUtc,
+        // A FutureAction has no end column. Only the start is checked, and the
+        // detail says so rather than quietly implying the end was covered.
+        endUtc: null,
+        storedZone: action.timezone,
+      })),
+    ];
+    if (rows.length === 0) {
+      return [notApplicable(this.id, observation.scenarioId, 'no scheduled row persisted')];
+    }
+
+    const { windows, timezone: policyZone, holidays } = windowsFrom(observation.businessHoursJson);
+    // The two model-unreachable sources, in the order the application uses them.
+    const zone = policyZone ?? observation.contact.timezone;
+    const anchorSource = policyZone === undefined ? 'Contact.timezone' : 'BusinessHoursPolicy.timezone';
+
+    return rows.map((row) => {
+      const startLocal = DateTime.fromISO(row.startUtc, { zone });
+      if (!startLocal.isValid) {
+        return fail(
+          this.id,
+          observation.scenarioId,
+          `${row.kind} ${row.id}: ${row.startUtc} could not be read in ${zone} (from ${anchorSource})`,
+        );
+      }
+      const date = startLocal.toFormat('yyyy-LL-dd');
+      const overrode = row.storedZone !== zone ? ` [stored zone ${row.storedZone} differs from the anchor]` : '';
+
+      if (holidays.includes(date)) {
+        return fail(
+          this.id,
+          observation.scenarioId,
+          `${row.kind} ${row.id} falls on configured holiday ${date} in ${zone}${overrode}`,
+        );
+      }
+
+      const sameDay = windows.filter((window) => window.isoWeekday === startLocal.weekday);
+      if (sameDay.length === 0) {
+        return fail(
+          this.id,
+          observation.scenarioId,
+          `${row.kind} ${row.id} is a ${startLocal.weekdayLong} (${date} ${zone}), which has no configured ` +
+            `business-hours window${overrode}`,
+        );
+      }
+
+      const startMinutes = startLocal.hour * 60 + startLocal.minute;
+      const fitsStart = sameDay.some(
+        (window) => startMinutes >= minutesOf(window.startLocal) && startMinutes < minutesOf(window.endLocal),
+      );
+      if (!fitsStart) {
+        return fail(
+          this.id,
+          observation.scenarioId,
+          `${row.kind} ${row.id} starts at ${startLocal.toFormat('ccc HH:mm')} ${zone} - which is the clock ` +
+            `of the person who will be contacted - and that is outside every configured window ` +
+            `(${sameDay.map((window) => `${window.startLocal}-${window.endLocal}`).join(', ')})${overrode}`,
+        );
+      }
+
+      if (row.endUtc !== null) {
+        const endLocal = DateTime.fromISO(row.endUtc, { zone });
+        const endMinutes =
+          endLocal.toFormat('yyyy-LL-dd') === date ? endLocal.hour * 60 + endLocal.minute : 24 * 60 + 1;
+        const fitsEnd = sameDay.some(
+          (window) =>
+            startMinutes >= minutesOf(window.startLocal) &&
+            startMinutes < minutesOf(window.endLocal) &&
+            endMinutes <= minutesOf(window.endLocal),
+        );
+        if (!fitsEnd) {
+          return fail(
+            this.id,
+            observation.scenarioId,
+            `${row.kind} ${row.id} runs to ${endLocal.toFormat('ccc HH:mm')} ${zone}, past every configured ` +
+              `window${overrode}`,
+          );
+        }
+      }
+
+      return pass(
+        this.id,
+        observation.scenarioId,
+        `${row.kind} ${row.id} at ${startLocal.toFormat('ccc HH:mm')} ${zone} (anchor: ${anchorSource})` +
+          `${overrode}${row.endUtc === null ? '; start only, the row has no end column' : ''}`,
+      );
+    });
+  },
+};
+
+// ---------------------------------------------------------------------------
 
 /**
  * Invariants 09 (determinism) and 10 (no network I/O) are properties of the
@@ -804,6 +934,7 @@ export const INVARIANTS: readonly Invariant[] = [
   declaredDirectionHolds,
   dstCodesOnlyInDstZones,
   noTurnThrows,
+  scheduledInstantsSitInsideTheContactsOwnHours,
 ];
 
 /** Run every invariant over every observation. */

@@ -328,6 +328,16 @@ export class ToolDispatcher {
   // decisions made here are which checks to ask for and which zone to read the
   // proposal in - and the zone comes from a persisted row, never from a
   // calculation.
+  //
+  // TWO ZONES, AND THEY ARE NOT INTERCHANGEABLE
+  // -------------------------------------------------------------------------
+  // `timezone` below is the zone the model's PHRASE is read in, and the model
+  // may legitimately influence it ("I'm in Denver this week"). It goes in as
+  // `proposal.timezone`. `persistedContactTimezone` is `Contact.timezone` off
+  // the row, it is passed separately, and it is what the business-hours window
+  // is evaluated in. Collapsing the two hands the model the guardrail: assert a
+  // zone in which 23:30 reads as 10:00 and the check passes on its own terms.
+  // See `businessHoursAnchor` in `src/scheduling/businessHours.ts`.
   // -------------------------------------------------------------------------
 
   private async validateTime(
@@ -345,9 +355,14 @@ export class ToolDispatcher {
     const override = timeBearing.timezoneField ? args[timeBearing.timezoneField] : undefined;
     const duration = timeBearing.durationField ? args[timeBearing.durationField] : undefined;
 
-    // Zone precedence: what the contact said they were in > the persisted
-    // contact row > the configuration default. The MEETING's own zone wins for
-    // a reschedule, because that is the zone it was agreed in.
+    // ---- the zone the PHRASE is read in ------------------------------------
+    // Precedence: what the contact said they were in > the persisted contact row
+    // > the configuration default. The MEETING's own zone wins for a reschedule,
+    // because that is the zone it was agreed in.
+    //
+    // This is the only thing the model's `timezone` argument decides. It chooses
+    // which INSTANT "10am" names; it does not choose the business-hours window
+    // that instant is judged against - see `persistedContactTimezone` below.
     const timezone =
       (typeof override === 'string' && override.trim().length > 0 ? override.trim() : undefined) ??
       subject.meeting?.timezone ??
@@ -372,6 +387,11 @@ export class ToolDispatcher {
         ...(typeof duration === 'number' ? { durationMinutes: duration } : {}),
       },
       policy: ctx.policy,
+      // FROM THE ROW, always. Never `args[timeBearing.timezoneField]`, never
+      // `timezone` above, never `slot.timezone`. This is the value the
+      // business-hours window is read in, and the whole point is that the model
+      // cannot reach it.
+      persistedContactTimezone: subject.contact.timezone,
       checkBusinessHours: timeBearing.checkBusinessHours,
       checkAvailability: timeBearing.checkAvailability,
       ...(subject.calendarRef ? { calendarRef: subject.calendarRef } : {}),

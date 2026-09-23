@@ -233,6 +233,10 @@ export class MeetingSchedulingService {
         ...(input.proposal.durationMinutes !== undefined ? { durationMinutes: input.proposal.durationMinutes } : {}),
       },
       policy,
+      // FROM THE ROW, never from `input.proposal.timezone`. The proposal's zone
+      // decides which instant the phrase names; this one decides whose office
+      // hours that instant is judged against. See `businessHoursAnchor`.
+      persistedContactTimezone: contact.timezone,
       calendarRef: connection.calendarRef,
       nowUtc,
     });
@@ -392,6 +396,9 @@ export class MeetingSchedulingService {
         ...(input.proposal.durationMinutes !== undefined ? { durationMinutes: input.proposal.durationMinutes } : {}),
       },
       policy,
+      // See `schedule` above. A reschedule reads the phrase in the meeting's own
+      // agreed zone, but the window is still the contact's persisted one.
+      persistedContactTimezone: contact.timezone,
       ...(connection ? { calendarRef: connection.calendarRef } : { checkAvailability: false }),
       nowUtc,
     });

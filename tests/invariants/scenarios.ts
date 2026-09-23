@@ -21,15 +21,20 @@
  * coverage - and the gaps in it - can be read off rather than inferred.
  */
 import {
+  ASSERTED_TIMEZONES,
   AVAILABILITY_PROBE_EXPRESSION,
   AVAILABILITY_PROBE_MINUTES,
   AVAILABILITY_STATES,
+  LEAD_TIME_BOUNDARY_CASES,
+  LEAD_TIME_BOUNDARY_ZONE,
   LEAD_TIME_EXPRESSIONS,
   NOW_INSTANTS,
+  OVERRIDE_PROBE_EXPRESSION,
   POLICIES,
   REJECTED_EXPRESSIONS,
   seededRandom,
   SWEEP_SEED,
+  TIMEZONE_OVERRIDE_CASES,
   TIMEZONES,
   VALID_EXPRESSIONS,
   type AvailabilityDimension,
@@ -73,7 +78,9 @@ export type FamilyKey =
   | 'F-availability-matrix'
   | 'G-malformed-calls'
   | 'H-idempotency-replay'
-  | 'I-qualification-cap';
+  | 'I-qualification-cap'
+  | 'J-timezone-override'
+  | 'K-lead-time-boundary';
 
 export interface Scenario {
   /** Stable across runs and across machines. Quoted in every failure message. */
@@ -111,11 +118,19 @@ const DEFAULT_POLICY = POLICIES[0] as PolicyDimension;
 const FREE_DIARY = AVAILABILITY_STATES[0] as AvailabilityDimension;
 const BASELINE_NOW = NOW_INSTANTS[0] as NowDimension;
 
-function followupArgs(raw: string, reason = 'agreed callback'): ArgsSpec {
-  return { kind: 'object', value: { contact_id: CONTACT_ID_SENTINEL, when: raw, reason } };
+function followupArgs(raw: string, reason = 'agreed callback', timezone?: string): ArgsSpec {
+  return {
+    kind: 'object',
+    value: {
+      contact_id: CONTACT_ID_SENTINEL,
+      when: raw,
+      reason,
+      ...(timezone === undefined ? {} : { timezone }),
+    },
+  };
 }
 
-function meetingArgs(raw: string, durationMinutes?: number): ArgsSpec {
+function meetingArgs(raw: string, durationMinutes?: number, timezone?: string): ArgsSpec {
   return {
     kind: 'object',
     value: {
@@ -123,8 +138,16 @@ function meetingArgs(raw: string, durationMinutes?: number): ArgsSpec {
       when: raw,
       title: 'Intro call - Northwind',
       ...(durationMinutes === undefined ? {} : { duration_minutes: durationMinutes }),
+      ...(timezone === undefined ? {} : { timezone }),
     },
   };
+}
+
+/** The same call shape for either scheduling tool, so a family can cross tools. */
+function schedulingArgs(tool: 'schedule_followup' | 'schedule_meeting', raw: string, timezone?: string): ArgsSpec {
+  return tool === 'schedule_meeting'
+    ? meetingArgs(raw, undefined, timezone)
+    : followupArgs(raw, 'agreed callback', timezone);
 }
 
 function availabilityArgs(raw: string, durationMinutes: number): ArgsSpec {
@@ -646,6 +669,140 @@ function familyI(): Scenario[] {
   return out;
 }
 
+/**
+ * J. The model-supplied `timezone` argument, crossed with every contact zone.
+ *
+ * WHY THIS FAMILY EXISTS
+ * ---------------------------------------------------------------------------
+ * Families A-I never populate the optional `timezone` argument, so for all 509 of
+ * them the zone a slot was agreed in IS the contact's persisted zone. That made
+ * an entire class of bug invisible: an accepted call could be checked against a
+ * window the MODEL chose rather than the one the contact lives in, and every
+ * invariant would still read green, because no invariant looked at the contact's
+ * own clock.
+ *
+ * So this family drives the axis directly. Two blocks:
+ *
+ *  - the SWEEP: every contact zone x every asserted zone x both scheduling
+ *    tools, direction `EITHER`, policed by `INV-14`, which re-reads each
+ *    persisted instant in the CONTACT'S persisted zone.
+ *  - the COMMITTED cases: six hand-checked (contact zone, asserted zone, local
+ *    time) triples whose effect on the contact's clock is a pure tzdata fact,
+ *    four of which must be refused and two of which must still be accepted.
+ *    `dimensions.test.ts` re-derives all six from Luxon on every run.
+ */
+function familyJ(): Scenario[] {
+  const out: Scenario[] = [];
+
+  for (const timezone of TIMEZONES) {
+    for (const asserted of ASSERTED_TIMEZONES) {
+      for (const tool of ['schedule_followup', 'schedule_meeting'] as const) {
+        out.push({
+          id: `J-tz-${timezone.key}-${assertedKey(asserted)}-${tool === 'schedule_meeting' ? 'mt' : 'fu'}`,
+          family: 'J-timezone-override',
+          nowUtc: BASELINE_NOW.nowUtc,
+          world: worldFrom(timezone, DEFAULT_POLICY),
+          availability: FREE_DIARY,
+          utterance: `Could you make it ${OVERRIDE_PROBE_EXPRESSION}? I'm in ${asserted} at the moment.`,
+          toolName: tool,
+          args: schedulingArgs(tool, OVERRIDE_PROBE_EXPRESSION, asserted),
+          replay: false,
+          // Honestly EITHER: whether 10:00 in the asserted zone lands inside the
+          // contact's working day depends on both zones and the weekday, and
+          // working that out here would mean reimplementing the resolver.
+          direction: 'EITHER',
+          labels: {
+            timezone: timezone.zone,
+            now: BASELINE_NOW.key,
+            expression: 'override-probe',
+            policy: DEFAULT_POLICY.key,
+            availability: FREE_DIARY.key,
+            tool,
+            assertedTimezone: asserted,
+          },
+        });
+      }
+    }
+  }
+
+  for (const override of TIMEZONE_OVERRIDE_CASES) {
+    const timezone = TIMEZONES.find((candidate) => candidate.zone === override.contactZone);
+    if (timezone === undefined) {
+      throw new Error(`Override case ${override.key} names contact zone "${override.contactZone}", which is not a swept zone.`);
+    }
+    for (const tool of ['schedule_followup', 'schedule_meeting'] as const) {
+      out.push({
+        id: `J-tzc-${override.key}-${tool === 'schedule_meeting' ? 'mt' : 'fu'}`,
+        family: 'J-timezone-override',
+        nowUtc: BASELINE_NOW.nowUtc,
+        world: worldFrom(timezone, DEFAULT_POLICY),
+        availability: FREE_DIARY,
+        utterance: `Could you make it ${override.whenLocal}? I'm in ${override.assertedZone}.`,
+        toolName: tool,
+        args: schedulingArgs(tool, override.whenLocal, override.assertedZone),
+        replay: false,
+        direction: override.direction,
+        labels: {
+          timezone: override.contactZone,
+          now: BASELINE_NOW.key,
+          expression: override.key,
+          policy: DEFAULT_POLICY.key,
+          availability: FREE_DIARY.key,
+          tool,
+          assertedTimezone: override.assertedZone,
+        },
+      });
+    }
+  }
+
+  return out;
+}
+
+/**
+ * K. The minimum-lead-time boundary, measured in SECONDS.
+ *
+ * Every `now` in `NOW_INSTANTS` sits on a whole minute, so the whole corpus was
+ * blind to a gate that rounded the lead time to the nearest minute before
+ * comparing it: a shortfall of up to 30 seconds read as a pass, and the receipt
+ * then recorded the rounded figure as if it were the real one. These five cases
+ * straddle the 30-minute minimum in `p1-default` by one second, thirty seconds
+ * and exactly zero, in both directions, and every one commits to a direction.
+ */
+function familyK(): Scenario[] {
+  const timezone = TIMEZONES.find((candidate) => candidate.zone === LEAD_TIME_BOUNDARY_ZONE) as TimezoneDimension;
+  const out: Scenario[] = [];
+  for (const boundary of LEAD_TIME_BOUNDARY_CASES) {
+    for (const tool of ['schedule_followup', 'schedule_meeting'] as const) {
+      out.push({
+        id: `K-lead-${boundary.key}-${tool === 'schedule_meeting' ? 'mt' : 'fu'}`,
+        family: 'K-lead-time-boundary',
+        nowUtc: boundary.nowUtc,
+        world: worldFrom(timezone, DEFAULT_POLICY),
+        availability: FREE_DIARY,
+        utterance: `Can you do ${boundary.whenLocal}?`,
+        toolName: tool,
+        args: schedulingArgs(tool, boundary.whenLocal),
+        replay: false,
+        direction: boundary.direction,
+        labels: {
+          timezone: timezone.zone,
+          now: boundary.key,
+          expression: boundary.key,
+          policy: DEFAULT_POLICY.key,
+          availability: FREE_DIARY.key,
+          tool,
+        },
+      });
+    }
+  }
+  return out;
+}
+
+/** `Asia/Kolkata` -> `asia-kolkata`, so a scenario id stays a safe seed suffix. */
+function assertedKey(zone: string): string {
+  return zone.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+}
+
 // ---------------------------------------------------------------------------
 
 /** Human-readable purpose of each family, reproduced in the sweep report. */
@@ -659,6 +816,12 @@ export const FAMILY_PURPOSE: Readonly<Record<FamilyKey, string>> = {
   'G-malformed-calls': 'Unknown tools, unparseable arguments, fabricated ids, bogus timezones.',
   'H-idempotency-replay': 'The identical tool call dispatched twice in the same conversation.',
   'I-qualification-cap': 'The decision-maker hard cap across evidence strengths and proposed scores.',
+  'J-timezone-override':
+    "The model-supplied `timezone` argument crossed with every contact zone, plus six hand-checked " +
+    "cases whose effect on the contact's own clock is known. Policed by INV-14.",
+  'K-lead-time-boundary':
+    'Sub-minute `now` instants straddling the configured minimum lead time by one and thirty seconds, ' +
+    'in both directions.',
 };
 
 /**
@@ -678,6 +841,8 @@ export function generateScenarios(): readonly Scenario[] {
     ...familyG(),
     ...familyH(),
     ...familyI(),
+    ...familyJ(),
+    ...familyK(),
   ];
 
   const seen = new Set<string>();
