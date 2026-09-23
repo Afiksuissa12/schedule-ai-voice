@@ -580,6 +580,51 @@ asked for. It stays off by default because it costs a second round trip per turn
 in) so a demo or benchmark can inspect what the model was handed rather than rebuilding an
 assembler that might not match.
 
+#### It wires BOTH routes to the business profile, and for a while it wired only one
+
+The profile reaches the model two ways, and § 6 makes the second load-bearing rather than
+convenient: the assembler writes it into the turn's background, and `get_contact_context`
+answers from it **on demand** — which is what the budget ladder falls back to when policy
+facts are shed from the window, so that "they remain reachable on demand".
+
+The first version of this option wired the assembler and **not** the dispatcher. So a
+runtime built exactly as documented above returned `ok: true` from `get_contact_context`
+with **no `business` key at all**, while its own background carried the profile the whole
+time. Nothing errored. The ladder's documented fallback fell back to nothing, and the
+symptom — an agent that changes the subject when asked what something costs — is
+indistinguishable from the model simply choosing not to answer. It was found at QA by
+dispatching the tool, not by reading the wiring, and no test covered it.
+
+The profile is now resolved **once**, above the dispatcher, and the same value is handed to
+both collaborators. Two `loadBusinessProfile()` calls could return two different documents
+if the file changed between them, and a background that disagrees with a tool result is
+worse than either being absent.
+
+`businessProfile: null` and an omitted `contextAssembly` both leave the dispatcher without
+a profile, and `handlers.ts` spreads the block in only when one is present — so
+`get_contact_context` on the Baseline V1 path is byte-identical to what it always returned.
+That is what keeps the 601-scenario sweep at 0 violations.
+
+#### The budget and the model cannot disagree about the window
+
+`budget.modelNumCtx` is normally omitted. When the same `buildAgentRuntime` call is also
+building the local provider (`llmProviderConfig: { kind: 'local' }`), the budget's window
+is **derived** from that provider's `num_ctx`; an explicit one that is *larger* raises
+`ConfigurationError`, and a smaller one is left alone because a caller budgeting under the
+window is being careful.
+
+This exists because the two numbers arrived from different slices — 16384 from this layer,
+8192 from the provider — and Ollama's response to a prompt that does not fit is to **drop
+whole older messages, silently**, reporting the post-drop `prompt_eval_count` so the turn
+looks like it fitted. The system prompt survives, so the guardrails hold; **the
+conversation history is what is lost**, which is precisely what this layer exists to
+preserve. See `LOCAL_PROVIDER.md` § 6 for the canary that establishes that, and
+`resolveContextBudget` in `src/app/composition.ts` for the reconciliation.
+
+When the provider is passed as an already-built instance via `llm`, its window is not
+visible to the composition root — `LlmProvider` exposes no context length — so the default
+stands and such a caller should pass both numbers. The demo and the benchmark both do.
+
 ---
 
 ## 11. How to run everything

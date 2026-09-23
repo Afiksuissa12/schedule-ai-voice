@@ -1,0 +1,110 @@
+/**
+ * THE CANDIDATE SET, and the argument for each member.
+ *
+ * "It is popular" is not a reason and does not appear below. Every model here
+ * is here because it tests a specific hypothesis about what this product needs,
+ * and the set is deliberately small: five models over a twenty-scenario
+ * multi-turn corpus is already hundreds of real generations on one laptop GPU,
+ * and a larger set would have meant a shallower corpus. The corpus is the part
+ * that decides whether the answer is trustworthy.
+ *
+ * THE HARDWARE CONSTRAINT, measured on the host and not re-derived here:
+ * NVIDIA RTX 4060 Laptop, 8188 MiB VRAM. The working budget is ~7.5 GiB for
+ * weights plus KV cache, which puts the ceiling at 7-9B parameters at 4-bit.
+ * Anything that cannot demonstrably fit is listed as REJECTED with the reason,
+ * because "we did not try it" and "we tried it and it did not fit" are
+ * different statements and the Founder Review needs the second one.
+ */
+
+export interface Candidate {
+  readonly tag: string;
+  /** The hypothesis this model is in the set to test. */
+  readonly rationale: string;
+}
+
+export const CANDIDATES: readonly Candidate[] = [
+  {
+    tag: 'qwen2.5:7b-instruct',
+    rationale:
+      'Named in the mission brief, and the strongest instruction-follower of the 7B generation. It is the ' +
+      'control for structured output: if a model cannot reliably emit a native tool call, nothing else about ' +
+      'it matters, and qwen2.5 is the one most likely to. It is also the provider task\'s current default, so ' +
+      'it is the incumbent this benchmark has to beat or confirm.',
+  },
+  {
+    tag: 'mistral:7b-instruct',
+    rationale:
+      'Named in the mission brief. The oldest architecture in the set and the smallest at 7.2B, which makes ' +
+      'it the floor: it answers "how much does the extra billion parameters actually buy on this task?" If it ' +
+      'keeps up, the cheapest option wins and that is worth knowing.',
+  },
+  {
+    tag: 'llama3.1:8b-instruct-q4_K_M',
+    rationale:
+      'Named in the mission brief. NOTE THE TAG: plain `llama3.1:8b-instruct` does not exist in the Ollama ' +
+      'registry - the instruct builds are only published with an explicit quantization suffix - so the brief\'s ' +
+      'name would never have resolved. Llama 3.1 was trained with tool use as a first-class objective and is ' +
+      'the reference point most external tool-calling evaluations are stated against.',
+  },
+  {
+    tag: 'aya-expanse:8b',
+    rationale:
+      'ADDED, and the addition this harness would defend hardest. The corpus the Founder mandated contains ' +
+      'Hebrew and mixed Hebrew/English conversations, and every other candidate is a predominantly-English ' +
+      'model that happens to have seen some Hebrew. aya-expanse is Cohere\'s explicitly multilingual release, ' +
+      'trained across 23 languages including Hebrew. Without it the Hebrew result would only tell us how badly ' +
+      'English-first models cope, not whether the requirement is achievable at this size at all.',
+  },
+  {
+    tag: 'hermes3:8b',
+    rationale:
+      'ADDED to isolate one variable. It is a fine-tune of Llama-3.1-8B specifically tuned for multi-turn ' +
+      'conversation and tool use, and its base model is ALSO in this set. So the pair answers a question no ' +
+      'single model can: does a conversation-focused fine-tune measurably improve human-likeness, or is the ' +
+      'base model already at the ceiling of what 8B can do here? Note it ships at Q4_0 rather than Q4_K_M, ' +
+      'which is a slightly cruder quantization - recorded, and a mild confound worth stating.',
+  },
+];
+
+export interface RejectedCandidate {
+  readonly tag: string;
+  readonly reason: string;
+}
+
+/**
+ * Considered and not pulled. Listed so the shortlist is an argument rather than
+ * an assertion.
+ */
+export const REJECTED: readonly RejectedCandidate[] = [
+  {
+    tag: 'qwen2.5:14b-instruct',
+    reason:
+      'REJECTED ON VRAM, on the registry\'s published 4-bit size of roughly 9 GiB for the weights alone, ' +
+      'before any KV cache, against an 8188 MiB card. NOT MEASURED HERE - it was not pulled, precisely ' +
+      'because it could only run by spilling into system RAM, at which point every latency number would ' +
+      'describe the spill rather than the model. Worth revisiting on a 12 GiB card.',
+  },
+  {
+    tag: 'mistral-small:22b, gemma2:27b and larger',
+    reason:
+      'REJECTED ON VRAM, decisively and without measurement: 13 GiB and up at 4-bit, against 8 GiB of card. ' +
+      'Out of scope for this machine at any context length.',
+  },
+  {
+    tag: 'llama3.2:3b, qwen2.5:3b and other sub-4B models',
+    reason:
+      'REJECTED ON EXPECTED CAPABILITY, not on size - they would fit comfortably. The fixed prompt floor for ' +
+      'a real turn here is 3,714 tokens of system prompt and tool schemas, and the mission asks for 7-9B ' +
+      'unless there is a stated reason otherwise. This harness has no evidence either way about 3B models on ' +
+      'this task; the reason is the brief, not a measurement. If latency turns out to be the binding ' +
+      'constraint for voice, this is the first assumption that should be re-tested.',
+  },
+  {
+    tag: 'gemma2:9b',
+    reason:
+      'DEPRIORITISED, not disqualified. It is the other credible multilingual-ish option at this size, but ' +
+      'the multilingual slot in the set went to aya-expanse:8b, which is explicitly trained for it, and a ' +
+      'sixth model would have cost corpus depth. No claim is made here about its tool-calling support: it ' +
+      'was not pulled and therefore not measured. A follow-up run that adds it would be cheap.',
+  },
+];

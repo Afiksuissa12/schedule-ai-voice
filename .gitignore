@@ -20,6 +20,13 @@ dist/
 coverage/
 *.tsbuildinfo
 
+# Benchmark run output. The raw per-scenario records are large and regenerable,
+# so they stay out of git - but results.json, models.json, COMPARISON.md and the
+# transcripts are meant to be COMMITTED, because the Founder Review depends on
+# them and a judged score nobody can check against its transcript is not
+# evidence. See EVAL_HARNESS.md section 8.
+eval-output/runs/
+
 # agent coordination mailbox (runtime state, not source)
 .agent-inbox/
 .agent-outbox/

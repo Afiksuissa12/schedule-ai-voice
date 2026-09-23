@@ -94,6 +94,20 @@ export const DEFAULT_RETRY_BACKOFF_MS = 250;
 /** Status codes worth trying again. A 400 or a 404 will not fix itself. */
 const RETRYABLE_STATUSES = new Set([502, 503, 504]);
 
+/**
+ * A request whose deadline is still running, and whose owner is now the caller.
+ *
+ * `release` MUST be called once the body is finished with, on every path. See
+ * `attempt` for why the deadline deliberately outlives the function that set it.
+ */
+interface AttemptedRequest {
+  readonly response: Response;
+  readonly release: () => void;
+  readonly signal: AbortSignal;
+  /** The resolved URL, so an error raised later can still name it. */
+  readonly url: string;
+}
+
 export class OllamaClient {
   readonly baseUrl: string;
   private readonly timeoutMs: number;
@@ -109,18 +123,18 @@ export class OllamaClient {
 
   /** `GET <path>` parsed as JSON. Used by the probe CLI for `/api/version`, `/api/tags`, `/api/ps`. */
   async getJson<T>(path: string): Promise<T> {
-    const response = await this.attempt(path, { method: 'GET' });
-    return this.readJson<T>(response, path);
+    const attempted = await this.attempt(path, { method: 'GET' });
+    return this.withDeadline(attempted, () => this.readJson<T>(attempted.response, path));
   }
 
   /** `POST <path>` with a JSON body, parsed as JSON. Used for `/api/show`. */
   async postJson<T>(path: string, body: unknown): Promise<T> {
-    const response = await this.attempt(path, {
+    const attempted = await this.attempt(path, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-    return this.readJson<T>(response, path);
+    return this.withDeadline(attempted, () => this.readJson<T>(attempted.response, path));
   }
 
   /**
@@ -129,12 +143,14 @@ export class OllamaClient {
    * same assembler.
    */
   async chat(request: OllamaChatRequest): Promise<OllamaChatChunk[]> {
-    const response = await this.attempt('/api/chat', {
+    const attempted = await this.attempt('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...request, stream: false }),
     });
-    const chunk = await this.readJson<OllamaChatChunk>(response, '/api/chat');
+    const chunk = await this.withDeadline(attempted, () =>
+      this.readJson<OllamaChatChunk>(attempted.response, '/api/chat'),
+    );
     if (chunk.error) {
       throw new OllamaProtocolError(`Ollama reported an error completing the turn: ${chunk.error}`, {
         details: { baseUrl: this.baseUrl, model: request.model, error: chunk.error },
@@ -159,24 +175,41 @@ export class OllamaClient {
     request: OllamaChatRequest,
     onChunk: (chunk: OllamaChatChunk) => void,
   ): Promise<void> {
-    const response = await this.attempt('/api/chat', {
+    const attempted = await this.attempt('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...request, stream: true }),
     });
+    const { response } = attempted;
 
-    await this.ensureOk(response, '/api/chat');
+    // BOTH OF THESE THROW, AND BOTH ARE INSIDE A `try` THAT RELEASES.
+    // `attempt` no longer clears its own timer, so every exit from this method
+    // has to clear it instead - and these two are exits. Leaving them outside
+    // the release meant an error status or a bodyless 200 returned promptly to
+    // the caller while an armed `setTimeout` kept the Node event loop alive for
+    // the rest of `timeoutMs`, which on a CLI is a 120-second hang after the
+    // work is visibly finished. `ensureOk` also reads the error body, which is
+    // exactly the kind of read the deadline is here to bound.
+    let body: ReadableStream<Uint8Array>;
+    try {
+      await this.ensureOk(response, '/api/chat');
 
-    if (!response.body) {
-      throw new OllamaProtocolError(
-        `Ollama returned a streaming response with no body from ${this.baseUrl}/api/chat.`,
-        { details: { baseUrl: this.baseUrl, model: request.model } },
-      );
+      if (!response.body) {
+        throw new OllamaProtocolError(
+          `Ollama returned a streaming response with no body from ${this.baseUrl}/api/chat.`,
+          { details: { baseUrl: this.baseUrl, model: request.model } },
+        );
+      }
+      body = response.body;
+    } catch (error) {
+      attempted.release();
+      if (attempted.signal.aborted) throw this.timedOut(attempted.url, error);
+      throw error;
     }
 
     const assembler = new NdjsonLineAssembler();
     const decoder = new TextDecoder();
-    const reader = response.body.getReader();
+    const reader = body.getReader();
 
     const handleLine = (line: string): void => {
       const chunk = parseChunk(line, this.baseUrl);
@@ -201,12 +234,18 @@ export class OllamaClient {
       }
       for (const line of assembler.push(decoder.decode())) handleLine(line);
       for (const line of assembler.flush()) handleLine(line);
+    } catch (error) {
+      // The deadline now covers this loop, so an abort here is a real timeout
+      // and must surface as the typed error rather than as a raw AbortError.
+      if (attempted.signal.aborted) throw this.timedOut(attempted.url, error);
+      throw error;
     } finally {
+      attempted.release();
       // Releasing matters on the throwing path: an unreleased reader holds the
       // socket open until GC, and a provider that times out repeatedly would
       // leak connections rather than fail cleanly.
       reader.releaseLock();
-      await response.body.cancel().catch(() => undefined);
+      await body.cancel().catch(() => undefined);
     }
   }
 
@@ -219,8 +258,33 @@ export class OllamaClient {
    * retried; every other status is returned to the caller untouched. A timeout
    * is NOT retried - the deadline is the operator's stated patience, and
    * spending it three times over is not what they asked for.
+   *
+   * THE DEADLINE COVERS THE WHOLE REQUEST, INCLUDING THE BODY - and that is why
+   * this returns a `release` rather than clearing its own timer.
+   *
+   * It did clear its own timer, in a `finally`, and that was a real defect found
+   * at Mission 2 integration by running the benchmark. `fetch` resolves when the
+   * response HEADERS arrive, not when the body is consumed, so `return response`
+   * ran the `finally`, cancelled the abort timer, and left `chatStream` reading
+   * the entire NDJSON body with NO DEADLINE AT ALL. `timeoutMs` bounded only the
+   * connect phase, while `.env.example` and `LOCAL_PROVIDER.md` § 7 both
+   * described it as a hard per-request deadline.
+   *
+   * Two consequences, and the first is the one that matters for a voice product:
+   * a rambling or wedged model could hold a turn open indefinitely and the
+   * contact would hear silence; and the benchmark's documented promise that "a
+   * model that stalls gets a recorded ERROR and the run continues" did not hold
+   * on the streaming path, so a stalled candidate ate wall-clock instead of being
+   * recorded as a failure. Reproduced with a fake server that sends headers
+   * instantly and then never ends the body: a 3,000 ms `timeoutMs` had still not
+   * fired after 15 seconds.
+   *
+   * So the timer now outlives this function, and EVERY caller releases it in its
+   * own `finally`, after it has finished with the body. The signal is handed back
+   * too, so a caller can tell a deliberate abort from a transport failure and
+   * raise the typed `OllamaTimeoutError` either way.
    */
-  private async attempt(path: string, init: RequestInit): Promise<Response> {
+  private async attempt(path: string, init: RequestInit): Promise<AttemptedRequest> {
     const url = `${this.baseUrl}${path}`;
     let lastError: unknown;
 
@@ -229,27 +293,25 @@ export class OllamaClient {
 
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+      const release = (): void => clearTimeout(timer);
       try {
         const response = await fetch(url, { ...init, signal: controller.signal });
         if (RETRYABLE_STATUSES.has(response.status) && attempt < this.maxRetries) {
           // Drain so the connection can be reused rather than abandoned.
           await response.text().catch(() => undefined);
+          release();
           lastError = new OllamaRequestError(`Ollama returned ${response.status} from ${url}.`, response.status);
           continue;
         }
-        return response;
+        // NOT released here. The caller owns it from this point, because the
+        // caller is the one that knows when the body is finished with.
+        return { response, release, signal: controller.signal, url };
       } catch (error) {
+        release();
         if (controller.signal.aborted) {
-          throw new OllamaTimeoutError(
-            `Ollama did not respond within ${this.timeoutMs}ms at ${url}. ` +
-              'Raise LOCAL_LLM_TIMEOUT_MS, or check whether the model is still loading (a cold 7B load ' +
-              'can take several seconds before the first token).',
-            { cause: error, details: { baseUrl: this.baseUrl, url, timeoutMs: this.timeoutMs } },
-          );
+          throw this.timedOut(url, error);
         }
         lastError = error;
-      } finally {
-        clearTimeout(timer);
       }
     }
 
@@ -266,6 +328,34 @@ export class OllamaClient {
           lastError: lastError instanceof Error ? lastError.message : String(lastError),
         },
       },
+    );
+  }
+
+  /**
+   * Run `read` under the attempt's deadline, then release it.
+   *
+   * The whole point of `attempt` handing the timer back: the body is read HERE,
+   * inside the deadline, instead of after it has been cancelled.
+   */
+  private async withDeadline<T>(attempted: AttemptedRequest, read: () => Promise<T>): Promise<T> {
+    try {
+      return await read();
+    } catch (error) {
+      if (attempted.signal.aborted) throw this.timedOut(attempted.url, error);
+      throw error;
+    } finally {
+      attempted.release();
+    }
+  }
+
+  /** The one place the timeout message is written, now that two paths raise it. */
+  private timedOut(url: string, cause: unknown): OllamaTimeoutError {
+    return new OllamaTimeoutError(
+      `Ollama did not complete the request within ${this.timeoutMs}ms at ${url}. ` +
+        'Raise LOCAL_LLM_TIMEOUT_MS, or check whether the model is still loading (a cold 7B load can take ' +
+        'several seconds before the first token). Note that this deadline covers the WHOLE request including ' +
+        'generation, so a model that rambles until it fills its context window will trip it.',
+      { cause, details: { baseUrl: this.baseUrl, url, timeoutMs: this.timeoutMs } },
     );
   }
 
