@@ -39,9 +39,18 @@
  * chokepoint means the services are never even ENTERED for a bad datetime, so
  * "a tool call must never directly mutate persisted state without passing
  * through validation" holds for any future service that is less careful than
- * today's two. The validator is pure and deterministic, so running it twice
- * against the same `now` cannot disagree with itself - and `nowUtc` is pinned
- * once per turn in `ToolDispatchContext` precisely so that it cannot.
+ * today's two.
+ *
+ * Two validations are only safe if the second cannot reach a different answer
+ * than the first, and that is arranged rather than hoped for. `nowUtc` is pinned
+ * once per turn in `ToolDispatchContext`; the handlers THREAD that instant into
+ * every service call, so the services resolve the same phrase against the same
+ * `now` instead of reading the clock again; and they are handed the slot this
+ * file already validated, which `assertResolutionsAgree` reconciles their answer
+ * against before a row is written. The first makes the two resolutions identical
+ * and the second proves it. See `src/scheduling/pinnedSlot.ts` for the failure
+ * this closes - a contact speaking seconds before their own local midnight had
+ * "tomorrow" validated as one day and persisted as the next.
  */
 import type { AuditEventType } from '../../audit/types.js';
 import type { Database } from '../../db/database.js';

@@ -48,7 +48,14 @@ export interface ToolDispatchContext {
   readonly policy: SchedulingPolicy;
   /** Parsed from `AgentConfiguration.allowedToolsJson`. */
   readonly allowedToolNames: readonly string[];
-  /** `now` for the whole turn, taken once from the injected Clock. */
+  /**
+   * `now` for the whole turn, taken once from the injected Clock.
+   *
+   * Threaded onward into every service call, so the services validate against
+   * this instant rather than reading the clock a second time. A service that
+   * re-resolved the model's phrase against a later `now` could persist a row
+   * the turn's own `TOOL_CALL_VALIDATED` contradicts.
+   */
   readonly nowUtc: IsoUtcString;
 }
 
@@ -91,7 +98,9 @@ export interface ToolHandlerInput {
    * The slot `SchedulingValidator` produced, for a time-bearing tool.
    *
    * Non-null here means the datetime has ALREADY passed every deterministic
-   * check. A handler never re-derives it and never second-guesses it.
+   * check. A handler never re-derives it and never second-guesses it - it hands
+   * this slot, and `ctx.nowUtc`, to the service, which reconciles its own
+   * re-validation against them rather than persisting a second opinion.
    */
   readonly slot: ResolvedSlot | null;
   readonly provenance: ValidationProvenance | null;

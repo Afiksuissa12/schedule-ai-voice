@@ -46,6 +46,7 @@ import { ConflictError } from '../shared/errors.js';
 import { stringifyJson } from '../shared/json.js';
 import { buildProvenance, ValidationCheckLog } from './checkLog.js';
 import type { ResolvedSlot } from './dateTimeResolver.js';
+import { assertResolutionsAgree } from './pinnedSlot.js';
 import { formatOffset } from './zoneMath.js';
 import { schedulingPolicyFromAgentConfiguration, type SchedulingPolicy } from './policy.js';
 import { SCHEDULING_VALIDATOR_VERSION, type SchedulingValidator } from './schedulingValidator.js';
@@ -58,7 +59,34 @@ export interface MeetingProposal {
   readonly durationMinutes?: number;
 }
 
-export interface ScheduleMeetingInput {
+/**
+ * What a caller that has ALREADY validated the proposal hands over.
+ *
+ * `ToolDispatcher` is that caller: it pins `now` once per turn, validates the
+ * model's raw phrase against it, and audits the result. Both fields exist so
+ * that the service's own re-validation uses the same `now` and can be checked
+ * against the same answer. See `pinnedSlot.ts` for why.
+ */
+interface PinnedResolution {
+  /**
+   * The instant the caller pinned for the whole turn.
+   *
+   * When present it is the only `now` this call uses: the clock is not read
+   * again, so the proposal cannot resolve against a later instant than the one
+   * the caller already validated and audited.
+   *
+   * Absent - a direct call that has pinned nothing - the clock is read once.
+   */
+  readonly nowUtc?: IsoUtcString;
+  /**
+   * The slot the caller already validated against `nowUtc`, supplied purely so
+   * the service's re-validation can be reconciled with it. A disagreement is
+   * refused rather than persisted.
+   */
+  readonly validatedSlot?: ResolvedSlot;
+}
+
+export interface ScheduleMeetingInput extends PinnedResolution {
   readonly organizationId: string;
   readonly contactId: string;
   readonly conversationId?: string | null;
@@ -77,7 +105,7 @@ export interface ScheduleMeetingInput {
   readonly toolCallId?: string | null;
 }
 
-export interface RescheduleMeetingInput {
+export interface RescheduleMeetingInput extends PinnedResolution {
   readonly meetingId: string;
   readonly agentConfigurationId: string;
   readonly proposal: MeetingProposal;
@@ -86,7 +114,12 @@ export interface RescheduleMeetingInput {
   readonly reason?: string;
 }
 
-export interface CancelMeetingInput {
+/**
+ * Cancelling resolves no datetime, so there is no slot to reconcile - but its
+ * audit events still carry an `occurredAt`, and that must be the turn's pinned
+ * instant like every other event in the chain.
+ */
+export interface CancelMeetingInput extends Pick<PinnedResolution, 'nowUtc'> {
   readonly meetingId: string;
   readonly correlationId: string;
   readonly toolCallId?: string | null;
@@ -128,7 +161,10 @@ export class MeetingSchedulingService {
 
   async schedule(input: ScheduleMeetingInput): Promise<ValidationResult<ScheduledMeeting>> {
     const checks = new ValidationCheckLog();
-    const nowUtc = this.clock.nowUtc();
+    // The caller's pinned instant when there is one. Reading the clock here
+    // instead would re-resolve the raw phrase against a LATER `now` than the one
+    // the caller validated and audited - see `pinnedSlot.ts`.
+    const nowUtc = input.nowUtc ?? this.clock.nowUtc();
 
     const reject = async (
       code: (typeof ValidationErrorCode)[keyof typeof ValidationErrorCode],
@@ -210,6 +246,10 @@ export class MeetingSchedulingService {
     }
 
     const slot = validated.value;
+    // Same `now`, same phrase, same policy - so this must be the same slot the
+    // caller validated. Checked before the transaction opens, so a disagreement
+    // costs a loud failure and not a row the audit trail contradicts.
+    assertResolutionsAgree('schedule_meeting', input.validatedSlot, slot, nowUtc);
     const provenance = mergeProvenance(checks, validated.provenance);
     const provenanceJson = stringifyJson(provenance);
 
@@ -283,7 +323,14 @@ export class MeetingSchedulingService {
     }
 
     // ---- external system, last -----------------------------------------------
-    const externalCalendarEventId = await this.pushToCalendar(meeting, slot, connection.calendarRef, input, contact);
+    const externalCalendarEventId = await this.pushToCalendar(
+      meeting,
+      slot,
+      connection.calendarRef,
+      input,
+      contact,
+      nowUtc,
+    );
 
     const stored = externalCalendarEventId
       ? await this.db.meetings.update(meeting.id, { externalCalendarEventId })
@@ -301,7 +348,8 @@ export class MeetingSchedulingService {
 
   async reschedule(input: RescheduleMeetingInput): Promise<ValidationResult<ScheduledMeeting>> {
     const checks = new ValidationCheckLog();
-    const nowUtc = this.clock.nowUtc();
+    // The caller's pinned instant when there is one - see `schedule` above.
+    const nowUtc = input.nowUtc ?? this.clock.nowUtc();
 
     const meeting = await this.db.meetings.findById(input.meetingId);
     if (!meeting) {
@@ -355,6 +403,7 @@ export class MeetingSchedulingService {
     }
 
     const slot = validated.value;
+    assertResolutionsAgree('reschedule_meeting', input.validatedSlot, slot, nowUtc);
     const provenance = mergeProvenance(checks, validated.provenance);
 
     const updated = await this.db.withTransaction(async (tx) => {
@@ -426,7 +475,9 @@ export class MeetingSchedulingService {
 
   async cancel(input: CancelMeetingInput): Promise<ValidationResult<ScheduledMeeting>> {
     const checks = new ValidationCheckLog();
-    const nowUtc = this.clock.nowUtc();
+    // The caller's pinned instant when there is one, so this cancellation's
+    // audit events sit on the same `occurredAt` as the rest of the turn.
+    const nowUtc = input.nowUtc ?? this.clock.nowUtc();
 
     const meeting = await this.db.meetings.findById(input.meetingId);
     if (!meeting) {
@@ -519,6 +570,7 @@ export class MeetingSchedulingService {
     calendarRef: string,
     input: ScheduleMeetingInput,
     contact: Contact,
+    occurredAt: IsoUtcString,
   ): Promise<string | null> {
     if (!this.calendar.capabilities().canWrite) {
       return null;
@@ -550,7 +602,7 @@ export class MeetingSchedulingService {
       input.toolCallId ?? null,
       'createEvent',
       ref.externalEventId,
-      this.clock.nowUtc(),
+      occurredAt,
     );
 
     return ref.externalEventId;

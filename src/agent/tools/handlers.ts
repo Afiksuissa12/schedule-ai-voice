@@ -197,6 +197,12 @@ const scheduleMeeting: ToolHandler = async (input) => {
     title: args.title,
     description: args.description ?? null,
     ...(input.subject.calendarConnectionId ? { calendarConnectionId: input.subject.calendarConnectionId } : {}),
+    // ONE `now` for the turn. The chokepoint resolved `args.when` against
+    // `ctx.nowUtc` and audited the answer; handing both over means the service's
+    // own re-validation runs against the same instant and is reconciled with the
+    // same slot, so the row that lands is the one the trail already explained.
+    nowUtc: input.ctx.nowUtc,
+    validatedSlot: slot,
     // Same conversation + same agreed instant = same meeting, however many
     // times a retried turn asks for it.
     idempotencyKey: deriveIdempotencyKey('meeting', {
@@ -255,6 +261,9 @@ const rescheduleMeeting: ToolHandler = async (input) => {
       timezone: slot.timezone,
       ...(args.duration_minutes !== undefined ? { durationMinutes: args.duration_minutes } : {}),
     },
+    // See `scheduleMeeting` above: one `now`, one resolution, reconciled.
+    nowUtc: input.ctx.nowUtc,
+    validatedSlot: slot,
     correlationId: input.ctx.correlationId,
     toolCallId: input.toolCallId,
     ...(args.reason ? { reason: args.reason } : {}),
@@ -298,6 +307,8 @@ const cancelMeeting: ToolHandler = async (input) => {
 
   const result = await input.deps.meetings.cancel({
     meetingId: args.meeting_id,
+    // No datetime to resolve, but its audit events belong on the turn's instant.
+    nowUtc: input.ctx.nowUtc,
     correlationId: input.ctx.correlationId,
     toolCallId: input.toolCallId,
     ...(args.reason ? { reason: args.reason } : {}),
@@ -347,6 +358,9 @@ const scheduleFollowup: ToolHandler = async (input) => {
     // structured POLICY_VIOLATION rather than a silent downgrade to a call.
     ...(args.action_type ? { type: args.action_type } : {}),
     proposal: { raw: args.when, timezone: slot.timezone },
+    // See `scheduleMeeting` above: one `now`, one resolution, reconciled.
+    nowUtc: input.ctx.nowUtc,
+    validatedSlot: slot,
     ...(args.reason ? { reason: args.reason } : {}),
     idempotencyKey: deriveIdempotencyKey('future-action', {
       conversationId: input.ctx.conversationId,
