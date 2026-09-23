@@ -1577,6 +1577,19 @@ investigation that promotion deliberately deferred.
 **Nothing was remediated, and that is a considered decision, not an omission.**
 No `npm audit fix` was run, blind or forced, and no dependency was upgraded.
 
+**Re-verified on this branch after all four fixes**, because a review that quotes
+an audit should quote the one you would get. `npm audit` still reports
+**5 vulnerabilities (2 moderate, 3 high)** and `npm ls` still resolves
+`@vitest/mocker@3.2.7` under `vitest@3.2.7`, and `deepmerge-ts@7.1.5` under
+`@prisma/config@6.19.3` under `prisma@6.19.3` — every version and path in § 11.1
+unchanged. A direct scan of `tests/` still finds **zero** uses of `vi.mock`,
+`vi.spyOn` or `mockObject`, and the runtime dependencies are still exactly
+`@prisma/client`, `luxon`, `openai` and `zod`. Mission 2 added **no** package:
+the Ollama transport is global `fetch`, which is why a whole local-model layer
+arrived with a dependency footprint of zero. **An independent QA pass reached the
+same conclusion separately** — dev-only, not on any runtime path, do not
+`npm audit fix --force` in this mission.
+
 ### 11.1 The exact advisories, packages, versions and paths
 
 | Advisory | Package | Installed | Vulnerable range | Severity / CVSS | CWE |
@@ -1688,7 +1701,9 @@ Each line was checked directly by this review, not copied from a self-report.
 - **No secrets were introduced.** A scan of every tracked file on this branch for
   API-key, AWS-key, private-key, Slack, GitHub and Google-key shapes returns
   nothing. `.env` is untracked (`git ls-files` confirms only `.env.example`).
-  `OPENAI_API_KEY=` is still empty in `.env.example`.
+  `OPENAI_API_KEY=` is still empty in `.env.example`. **Re-run on this branch**
+  after the evaluation layer and the three fixes were added — same result, and
+  `git ls-files | grep '^\.env'` still returns `.env.example` alone.
 - **No real external communication occurred.** Every LLM call in this mission
   went to the **local Ollama instance on the host** at
   `http://host.docker.internal:11434` (version 0.34.3). **No vendor API was
@@ -1721,6 +1736,12 @@ Each line was checked directly by this review, not copied from a self-report.
   `ScriptedLlmProvider`; the local model is opt-in and requires an explicit
   configuration to be handed in.
 - **`prisma/schema.prisma` was not touched.** No table, no column, no index (§ 10.2).
+- **No dependency was added, removed or upgraded.** `git diff master HEAD` over
+  `package.json` is **15 insertions and 1 deletion, all of them npm scripts** —
+  the `dependencies` and `devDependencies` blocks are byte-identical to `master`,
+  and `package-lock.json` does not appear in the diff at all. The Ollama
+  transport is global `fetch`, so an entire local-model layer plus a five-model
+  benchmark arrived with a dependency footprint of **zero** (§ 11).
 - **The "unchanged" claims above are a diff, not an assertion.**
   `git diff --name-only master HEAD` over this whole branch does not contain
   `tests/`, `prisma/`, `docs/` or `vitest.config.ts` — **nothing, not one file** —
