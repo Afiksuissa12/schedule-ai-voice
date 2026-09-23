@@ -1,0 +1,176 @@
+/**
+ * The shapes the harness writes to disk.
+ *
+ * These types are the CONTRACT with the Founder Review task, which consumes
+ * this harness's output as raw evidence. Everything here is plain JSON: no
+ * class instances, no `Date` objects, no `undefined`-only fields that vanish
+ * through `JSON.stringify`. A results file has to be readable by something that
+ * never imported this repository.
+ *
+ * `null` means "not measured" throughout, matching the provider's metrics
+ * contract. It never means zero.
+ */
+import type { LlmTurnMetrics } from '../ports/llm.js';
+import type { CoverageKey, ScenarioLanguage } from './corpus/schema.js';
+import type { JudgeResult } from './rubric/judge.js';
+
+/** One proposed tool call, exactly as the model produced it. */
+export interface RecordedToolCall {
+  readonly toolCallId: string;
+  readonly toolName: string;
+  readonly argumentsJson: string;
+}
+
+/** What the REAL dispatcher did with it. */
+export interface RecordedToolOutcome {
+  readonly toolCallId: string;
+  readonly toolName: string;
+  readonly ok: boolean;
+  readonly summary: string | null;
+  readonly code: string | null;
+  readonly reason: string | null;
+  readonly persisted: { readonly type: string; readonly id: string } | null;
+}
+
+/** Per-turn programmatic verdicts. Every field is reproducible. */
+export interface TurnChecks {
+  readonly fabricatedTimestamps: ReadonlyArray<{
+    readonly pattern: string;
+    readonly matched: string;
+    readonly toolName: string;
+    readonly field: string;
+  }>;
+  readonly toolSelection: {
+    readonly applicable: boolean;
+    readonly passed: boolean;
+    readonly failures: readonly string[];
+    readonly assertionsChecked: number;
+    readonly assertionsPassed: number;
+  };
+  readonly unnecessaryCalls: readonly string[];
+  readonly toolCalls: ReadonlyArray<{
+    readonly toolName: string;
+    readonly known: boolean;
+    readonly jsonParsed: boolean;
+    readonly schemaValid: boolean;
+    readonly schemaErrors: readonly string[];
+    readonly hallucinatedContactId: boolean;
+    readonly hallucinatedMeetingId: boolean;
+  }>;
+  readonly passthrough: { readonly applicable: boolean; readonly passed: boolean; readonly detail: string };
+  readonly text: {
+    readonly applicable: boolean;
+    readonly passed: boolean;
+    readonly failures: readonly string[];
+    readonly lengthChars: number;
+    readonly lengthWords: number;
+    readonly lengthScore: number | null;
+    readonly concreteDatesAsserted: readonly string[];
+  };
+  readonly repetition: { readonly maxSimilarity: number; readonly verbatimRepeat: boolean; readonly score: number };
+  readonly language: {
+    readonly expected: ScenarioLanguage;
+    readonly hebrewLetterRatio: number;
+    readonly matched: boolean;
+    readonly detail: string;
+  };
+  readonly schedulingIntent: { readonly applicable: boolean; readonly recognised: boolean; readonly detail: string };
+  readonly toolFailure: {
+    readonly expected: boolean;
+    readonly occurred: boolean;
+    /** Codes the real dispatcher returned, so a reader can see it was genuine. */
+    readonly codes: readonly string[];
+  };
+}
+
+export interface TurnRecord {
+  readonly index: number;
+  readonly utterance: string;
+  readonly note: string;
+  /** Everything the agent said this turn, in order. */
+  readonly assistantMessages: readonly string[];
+  /** The last thing it said - what would be spoken aloud. */
+  readonly assistantText: string | null;
+  readonly toolCalls: readonly RecordedToolCall[];
+  readonly toolOutcomes: readonly RecordedToolOutcome[];
+  readonly iterations: number;
+  readonly stopReason: string;
+  /** Provider telemetry for the LAST provider call of this turn. */
+  readonly metrics: LlmTurnMetrics | null;
+  /** Summed across every provider call this turn made. */
+  readonly turnLatencyMs: number;
+  readonly providerCalls: number;
+  readonly checks: TurnChecks;
+  /** Set when the turn threw. The scenario continues to be recorded. */
+  readonly error: string | null;
+}
+
+export type ScenarioStatus = 'OK' | 'PARTIAL' | 'ERROR';
+
+export interface ScenarioRun {
+  readonly harnessVersion: string;
+  readonly corpusVersion: string;
+  readonly rubricVersion: string;
+  readonly judgePromptVersion: string;
+
+  readonly modelId: string;
+  readonly providerName: string;
+  /**
+   * Which context layer produced this run.
+   *
+   * `assembled` is the production path: the CONTEXT task's
+   * `ConversationContextAssembler` plus the `sales-scheduler-local@v2` prompt.
+   * `baseline-v1` is the Baseline V1 path with no assembled background. Runs
+   * from the two are NOT comparable and the report must never mix them.
+   */
+  readonly contextMode: 'baseline-v1' | 'assembled';
+  readonly systemPromptRef: string | null;
+  readonly scenarioId: string;
+  readonly title: string;
+  readonly objective: string;
+  readonly language: ScenarioLanguage;
+  readonly coverage: readonly CoverageKey[];
+
+  readonly status: ScenarioStatus;
+  /** Present when the scenario could not be completed. */
+  readonly error: string | null;
+
+  readonly contactId: string;
+  readonly conversationId: string;
+  readonly nowUtc: string;
+  readonly priorConversation: ReadonlyArray<{ readonly role: string; readonly text: string }>;
+
+  readonly turns: readonly TurnRecord[];
+
+  /** Keyed by judge model id. A failure is recorded, not omitted. */
+  readonly judges: Record<string, JudgeResult>;
+
+  readonly startedAtIso: string;
+  readonly durationMs: number;
+  /** Cumulative tool-call health from the provider at the end of the scenario. */
+  readonly providerStats: {
+    readonly turns: number;
+    readonly nativeToolCalls: number;
+    readonly recoveredToolCalls: number;
+    readonly malformedToolCalls: number;
+    readonly malformedRate: number | null;
+  } | null;
+}
+
+/** What `/api/show` and `/api/ps` said about a model. */
+export interface ModelInventoryEntry {
+  readonly tag: string;
+  readonly present: boolean;
+  readonly parameterSize: string | null;
+  readonly quantizationLevel: string | null;
+  readonly family: string | null;
+  readonly contextLength: number | null;
+  readonly diskSizeBytes: number | null;
+  readonly capabilities: readonly string[];
+  /** Resident size from `/api/ps` while loaded. Null if never observed. */
+  readonly vramBytes: number | null;
+  readonly vramContextLength: number | null;
+  /** Why this model is in the candidate set, or why it was rejected. */
+  readonly rationale: string;
+  readonly withinVramBudget: boolean | null;
+}
