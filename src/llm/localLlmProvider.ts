@@ -92,10 +92,18 @@ export const DEFAULT_LOCAL_LLM_TEMPERATURE = 0;
  * conversation, which a second turn exhausts.
  *
  * That matters more than it looks, because Ollama does not error on an
- * over-long prompt: it SILENTLY TRUNCATES from the front, and the front is
- * where the system prompt's guardrail clauses live. An agent quietly stripped
- * of its instructions, still talking, is precisely the failure this
- * architecture exists to prevent - so the default has to have real headroom.
+ * over-long prompt and does not report one: it SILENTLY DROPS whole older
+ * MESSAGES. Measured against Ollama 0.34.3 with a canary system prompt
+ * ("answer with exactly ZANZIBAR-7") and an oversized filler message: at
+ * `num_ctx` 2048 the filler's ~6,200 tokens vanished entirely,
+ * `prompt_eval_count` fell from 5,555 to 49, and the model still answered
+ * ZANZIBAR-7. So the guardrail clauses SURVIVE - the earlier claim that
+ * truncation strips the system prompt was wrong - and what is lost instead is
+ * the conversation history, in silence, with `prompt_eval_count` reporting the
+ * post-drop figure so the turn looks like it fitted. A model that has quietly
+ * forgotten what the contact said two turns ago, still talking confidently, is
+ * the failure this milestone's memory layer exists to prevent - so the default
+ * has to have real headroom.
  *
  * Measured cost of that headroom on the mission host (RTX 4060 Laptop, 8188
  * MiB), `qwen2.5:7b-instruct` Q4_K_M resident, from `/api/ps`:

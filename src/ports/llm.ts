@@ -134,12 +134,21 @@ export interface LlmTurnMetrics {
   /**
    * `promptTokens / contextLength`, as a fraction. Null when either is unknown.
    *
-   * This is a SAFETY number, not a performance one. A local runtime typically
-   * does not error on an over-long prompt - it truncates from the front, which
-   * is where the system prompt's guardrail clauses are. An agent silently
-   * stripped of its instructions while still talking is the worst failure this
-   * system has, so the one number that predicts it is reported on every turn
-   * and a caller approaching 1.0 should shorten the transcript.
+   * This is a SAFETY number, not a performance one. A local runtime does not
+   * error on an over-long prompt and does not report one. Measured against
+   * Ollama 0.34.3 with a canary system prompt: it drops whole older MESSAGES
+   * and keeps the system prompt, so the guardrail clauses survive and the
+   * CONVERSATION HISTORY is what disappears - which is exactly what a memory
+   * layer exists to guarantee.
+   *
+   * READ THIS NUMBER KNOWING WHAT IT CANNOT TELL YOU. `promptTokens` is what the
+   * runtime reports it actually evaluated, i.e. the count AFTER any dropping, so
+   * on an over-long turn this fraction converges on ~1.0 and looks like a
+   * comfortably full window rather than a lossy one. It predicts "approaching
+   * the limit" well and cannot detect "already over it" at all. A caller
+   * approaching 1.0 should shorten the transcript; a caller that wants the
+   * stronger guarantee should make the budget and the model agree up front,
+   * which is what `resolveContextBudget` in `src/app/composition.ts` does.
    */
   readonly contextUtilization: number | null;
   readonly toolCallHealth?: LlmToolCallHealth;

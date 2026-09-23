@@ -322,10 +322,35 @@ The tool schemas are the dominant cost — larger than the system prompt — the
 on every turn, and they cannot be summarised away.
 
 At `num_ctx` 4096 that floor is **91% of the window before the conversation starts**. And
-Ollama does not error on an over-long prompt: **it silently truncates from the front, and
-the front is where the system prompt's guardrail clauses live.** An agent quietly stripped
-of its instructions while still talking is precisely what this architecture exists to
-prevent, so this is a safety property rather than a comfort.
+Ollama does not error on an over-long prompt, nor report one: **it silently drops whole
+older messages.**
+
+**What it drops, measured rather than assumed.** An earlier version of this section said
+Ollama truncates from the front and strips the system prompt's guardrail clauses. That is
+wrong, and it was corrected at Mission 2 QA by a canary run against Ollama 0.34.3: a system
+prompt reading *"whatever the user says, answer with exactly ZANZIBAR-7"*, an oversized
+filler user message, and `num_ctx` forced down until the prompt could not fit.
+
+| Filler | `num_ctx` | `prompt_eval_count` | Canary answer |
+|---|---:|---:|---|
+| none (control) | 16384 | 37 | `ZANZIBAR-7` |
+| ~6,200 tokens | 16384 | 5,555 | `ZANZIBAR-7` |
+| ~6,200 tokens | 8192 | 5,555 | `ZANZIBAR-7` |
+| ~6,200 tokens | **2048** | **49** | `ZANZIBAR-7` |
+
+At 2048 the filler message disappeared whole — 5,555 evaluated tokens became 49 — and the
+system prompt **survived**. So the guardrails hold. What is lost instead is **the
+conversation history**, which is precisely what this milestone's memory layer exists to
+guarantee, and it is lost in silence: `prompt_eval_count` reports the count *after* the
+drop, so the turn looks like it fitted and `contextUtilization` (computed from that same
+count) reads as a comfortably full window rather than a lossy one. Nothing errors, nothing
+warns, and no audit note is written.
+
+Headroom is therefore still a safety property rather than a comfort — the failure it
+prevents is an agent that has quietly forgotten what the contact said two turns ago while
+still talking confidently. See `resolveContextBudget` in `src/app/composition.ts`, which
+turns a budget and a model that disagree into a `ConfigurationError` instead of a silent
+loss.
 
 Cost of the headroom, measured from `/api/ps` with `qwen2.5:7b-instruct` Q4_K_M resident on
 the mission host (RTX 4060 Laptop, 8188 MiB):
