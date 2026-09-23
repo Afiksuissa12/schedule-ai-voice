@@ -35,11 +35,12 @@ import type { Repositories } from '../db/repositories/index.js';
 import type { FutureAction } from '../domain/entities.js';
 import type { FutureActionType } from '../domain/enums.js';
 import { parseValidationProvenance } from '../domain/provenance.js';
-import type { Clock } from '../ports/clock.js';
+import type { Clock, IsoUtcString } from '../ports/clock.js';
 import type { ValidationProvenance, ValidationResult } from '../ports/validation.js';
 import { validationFailed, validationOk, ValidationErrorCode } from '../ports/validation.js';
 import { buildProvenance, ValidationCheckLog } from '../scheduling/checkLog.js';
 import type { ResolvedSlot } from '../scheduling/dateTimeResolver.js';
+import { assertResolutionsAgree } from '../scheduling/pinnedSlot.js';
 import { schedulingPolicyFromAgentConfiguration } from '../scheduling/policy.js';
 import { SCHEDULING_VALIDATOR_VERSION, type SchedulingValidator } from '../scheduling/schedulingValidator.js';
 import { ConflictError } from '../shared/errors.js';
@@ -61,6 +62,23 @@ export interface ScheduleFutureActionInput {
   /** Only `CALL_CONTACT` is executable in this slice. Defaults to it. */
   readonly type?: FutureActionType;
   readonly proposal: FutureActionProposal;
+  /**
+   * The instant the CALLER pinned for the whole turn.
+   *
+   * When present it is the only `now` this call uses: the clock is not read
+   * again, so the proposal cannot resolve against a later instant than the one
+   * the caller already validated and audited. See `pinnedSlot.ts`.
+   *
+   * Absent - a direct call that has pinned nothing - the clock is read once.
+   */
+  readonly nowUtc?: IsoUtcString;
+  /**
+   * The slot the caller ALREADY validated against `nowUtc`.
+   *
+   * Supplied purely so the service's own re-validation can be checked against
+   * it. A disagreement is refused rather than persisted.
+   */
+  readonly validatedSlot?: ResolvedSlot;
   /** Why the callback was promised. Ends up in the payload and in audit summaries. */
   readonly reason?: string;
   /** Originating number. Falls back to the runner's configured number. */
@@ -103,7 +121,10 @@ export class FutureActionService {
 
   async schedule(input: ScheduleFutureActionInput): Promise<ValidationResult<ScheduledFutureAction>> {
     const checks = new ValidationCheckLog();
-    const nowUtc = this.clock.nowUtc();
+    // The caller's pinned instant when there is one. Reading the clock here
+    // instead would re-resolve the raw phrase against a LATER `now` than the one
+    // the caller validated and audited - see `pinnedSlot.ts`.
+    const nowUtc = input.nowUtc ?? this.clock.nowUtc();
     const type = input.type ?? 'CALL_CONTACT';
 
     const reject = async (
@@ -206,6 +227,10 @@ export class FutureActionService {
     }
 
     const slot = validated.value;
+    // Same `now`, same phrase, same policy - so this must be the same slot the
+    // caller validated. Checked before the transaction opens, so a disagreement
+    // costs a loud failure and not a row the audit trail contradicts.
+    assertResolutionsAgree('schedule_followup', input.validatedSlot, slot, nowUtc);
     const provenance = mergeProvenance(checks, validated.provenance);
 
     const payload: CallContactPayload = CallContactPayloadSchema.parse({
