@@ -1,41 +1,47 @@
 /**
- * `AgentLlmMessage` - `LlmMessage` plus the one field a tool-calling transcript
- * cannot be rebuilt without.
+ * DEPRECATED compatibility shim. Prefer `LlmMessage` from `src/ports/llm.ts`.
  *
- * THE PROBLEM
+ * WHAT HAPPENED
  * ---------------------------------------------------------------------------
- * `LlmMessage` in `src/ports/llm.ts` is `{ role, content, toolCallId? }`. That
- * is enough for plain chat, but a tool-calling transcript has a shape it cannot
- * express: an ASSISTANT turn that called a tool carries a tool NAME as well as
- * an id, and OpenAI's API rejects a `tool` result message that is not preceded
- * by an assistant message declaring that exact call.
+ * This file used to define `AgentLlmMessage extends LlmMessage` purely to add a
+ * `toolName?: string` the port could not express, and its own header said:
  *
- * THE FIX, AND WHY IT IS NOT A PORT CHANGE
+ *   > An additive `toolName?: string` on the port itself would be tidier [...]
+ *   > This type is deliberately written so that, if it lands, deleting this
+ *   > file is the whole migration.
+ *
+ * It landed. `LlmMessage.toolName` is now part of the port, because the local
+ * provider needs exactly the same field OpenAI did - Ollama's `/api/chat` also
+ * rejects a `tool` result that no preceding assistant message declared - and a
+ * field two of three providers need is a port field, not an extension.
+ *
+ * WHY THE FILE STILL EXISTS
  * ---------------------------------------------------------------------------
- * `AgentLlmMessage` EXTENDS `LlmMessage`. An `AgentLlmMessage[]` is assignable
- * wherever a `ReadonlyArray<LlmMessage>` is wanted, so the port is untouched
- * and every provider keeps working: a provider that does not care about
- * `toolName` simply never looks at it. `OpenAiLlmProvider` narrows to it when
- * rebuilding `tool_calls`.
+ * "Deleting this file" would have been the whole migration if it had no
+ * external importers. It has several, in directories this task does not own
+ * (`src/conversation`, `src/agent/prompt`) and in a test file that cannot be
+ * edited. So the file is reduced to what it is now genuinely worth: an ALIAS
+ * and a one-line accessor, both of which compile to nothing.
  *
- * An additive `toolName?: string` on the port itself would be tidier, and has
- * been suggested to the foundation task through the coordination mailbox. This
- * type is deliberately written so that, if it lands, deleting this file is the
- * whole migration.
+ * `AgentLlmMessage` is now literally `LlmMessage`, so an importer needs no
+ * change to become correct, and the real migration - deleting these two
+ * exports and their imports - is a mechanical follow-up for whoever owns those
+ * directories.
  */
 import type { LlmMessage } from '../ports/llm.js';
 
-export interface AgentLlmMessage extends LlmMessage {
-  /**
-   * Set on an ASSISTANT message that requested a tool call, and on the `tool`
-   * message carrying that call's result. Together with `toolCallId` it is
-   * enough to rebuild a provider-native tool-calling transcript from the
-   * database alone.
-   */
-  readonly toolName?: string;
-}
+/**
+ * @deprecated Use `LlmMessage` from `src/ports/llm.ts`. This is an alias for
+ * it, kept so existing importers keep compiling.
+ */
+export type AgentLlmMessage = LlmMessage;
 
-/** Narrow a port message to its agent projection without an unchecked cast. */
+/**
+ * @deprecated Read `message.toolName` directly - it is a port field now.
+ *
+ * Kept because it is the documented accessor and removing it would break
+ * importers this task does not own. It no longer casts anything.
+ */
 export function toolNameOf(message: LlmMessage): string | undefined {
-  return (message as AgentLlmMessage).toolName;
+  return message.toolName;
 }
