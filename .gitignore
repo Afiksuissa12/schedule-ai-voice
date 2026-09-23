@@ -1,0 +1,31 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+
+# local databases (never commit a database file)
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# environment / secrets (NEVER commit a real .env)
+.env
+.env.*
+!.env.example
+
+# test + tooling scratch space
+.tmp/
+coverage/
+*.tsbuildinfo
+
+# agent coordination mailbox (runtime state, not source)
+.agent-inbox/
+.agent-outbox/
+
+# editor / OS noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
