@@ -411,3 +411,44 @@ generated report prints in full every run:
    dedicated test, not a matrix dimension.
 6. **The live OpenAI provider is not exercised** — by design, but it means the
    sweep says nothing about whether a real model emits well-formed calls.
+
+---
+
+## 7. Known dependency advisories — not fixed, deliberately
+
+`npm audit` on a clean checkout reports **5 vulnerabilities (2 moderate, 3
+high)**. Recorded here rather than silently patched, because every available fix
+is a breaking major upgrade and that is a decision, not a chore.
+
+| Advisory | Package | Severity | Where it sits | Suggested fix |
+|---|---|---|---|---|
+| [GHSA-82fw-gwwq-j7x9](https://github.com/advisories/GHSA-82fw-gwwq-j7x9) — path traversal / arbitrary file read via mock redirect | `@vitest/mocker` (via `vitest`) | moderate | **devDependency** | `vitest@5` (breaking) |
+| [GHSA-ggr8-5vv4-36mx](https://github.com/advisories/GHSA-ggr8-5vv4-36mx) — stack exhaustion merging recursive object graphs | `deepmerge-ts` (via `@prisma/config` → `prisma` CLI) | high | **devDependency** | `prisma@6.12` (breaking, a *downgrade*) |
+
+**Assessment:** all five are in **devDependencies** — the test runner and the
+Prisma CLI. Neither is in the runtime dependency tree (`@prisma/client`,
+`luxon`, `openai`, `zod`), so **nothing that would ship is affected**, and
+neither advisory is reachable from untrusted input in this repository: the
+mocker path is exercised only by test code we write, and the Prisma CLI reads
+our own `schema.prisma`.
+
+**Recommendation:** upgrade `vitest` to 5.x as a separate, reviewable change
+rather than inside this mission. `npm audit fix --force` would *downgrade*
+Prisma, which is worse than the advisory it closes.
+
+---
+
+## 8. Verification actually observed
+
+The commands below were run against a **clean `git clone` into an empty
+directory**, with `OPENAI_API_KEY` unset, on 2026-09-23. This records what was
+observed, not what is expected.
+
+| Command | Result |
+|---|---|
+| `npm install` | OK (5 dev-only advisories, § 7) |
+| `npm run db:generate` | OK — created `.env` from `.env.example`, `OPENAI_API_KEY` empty; Prisma Client v6.19.3 |
+| `npm run typecheck` | OK, exit 0 |
+| `npm run test` | **33 files passed, 1 skipped; 455 tests passed, 2 skipped** (the 2 skips are the optional live-OpenAI test) |
+| `npm run slice:demo` | OK, exit 0 — 13 audit events on one `correlationId`, `FutureAction` persisted and dispatched through the telephony double |
+| `npm run qa:sweep -- --determinism` | OK, exit 0 — **509 scenarios, 2169 applicable checks, 0 violations, 0 network attempts**, and a second full run produced byte-identical classifications for every scenario id |
