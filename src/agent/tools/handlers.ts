@@ -24,6 +24,7 @@ import { DateTime } from 'luxon';
 
 import type { z } from 'zod';
 
+import type { BusinessProfile } from '../../context/businessProfile.js';
 import { ValidationErrorCode } from '../../ports/validation.js';
 import { stringifyJson } from '../../shared/json.js';
 import { deriveIdempotencyKey } from '../../shared/ids.js';
@@ -143,9 +144,53 @@ const getContactContext: ToolHandler = async (input) => {
       })),
       source: 'database',
       requested_contact_id: args.contact_id,
+      // Present only when a business profile is wired in. Spread rather than
+      // set to null so that, without one, this key does not exist and the
+      // payload is byte-identical to Baseline V1's.
+      ...(input.deps.businessProfile ? { business: businessBlock(input.deps.businessProfile) } : {}),
     },
   });
 };
+
+/**
+ * The company facts `get_contact_context` hands back.
+ *
+ * A DIGEST, not the whole profile. The full document is already in the turn's
+ * background; repeating it inside a tool result would double its cost in a
+ * context window that is the scarcest thing this milestone has. What is here is
+ * the part a model most often wants at the exact moment it looks a contact up:
+ * who we are, what the headline numbers are, and - most usefully - what we
+ * cannot do, so a promise is refused before it is made rather than after.
+ *
+ * Note the absence of anything to say. Every value is a fact.
+ */
+function businessBlock(profile: BusinessProfile): Record<string, unknown> {
+  return {
+    profile_ref: profile.profileRef,
+    company_name: profile.company.name,
+    what_we_are: profile.company.whatWeAre,
+    products: profile.products.map((product) => ({
+      name: product.name,
+      summary: product.summary,
+      does_not_do: product.limitations,
+    })),
+    pricing: {
+      currency: profile.pricing.currency,
+      plans: profile.pricing.plans.map((plan) => ({
+        name: plan.name,
+        headline_price: plan.headlinePrice,
+        billing_period: plan.billingPeriod,
+      })),
+      discount_facts: profile.pricing.discountFacts,
+    },
+    agent_may_not_commit: profile.pricing.agentMayNotCommit,
+    policies: profile.policies.map((policy) => ({ topic: policy.topic, fact: policy.fact })),
+    objective: profile.objectives.primary,
+    // Said plainly, because a model that has just been handed a pile of facts
+    // is a model about to recite them.
+    how_to_use_this: 'Facts you may draw on. Not sentences to read out, and not a list to work through.',
+  };
+}
 
 // ---------------------------------------------------------------------------
 // 2. check_availability

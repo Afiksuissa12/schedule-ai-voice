@@ -42,6 +42,16 @@ export interface PromptComposition {
   readonly description: string;
   /** Rendered in this exact order. */
   readonly clauseIds: readonly PromptClauseId[];
+  /**
+   * Guardrails this composition additionally cannot be without.
+   *
+   * `REQUIRED_CLAUSE_IDS` is the floor for EVERY composition and does not move.
+   * This field lets a newer composition raise its own floor without raising
+   * everyone's - which matters because raising the global floor would force a
+   * clause into `sales-scheduler@v1`, change its rendered text, and move a
+   * fingerprint that live conversations have already pinned.
+   */
+  readonly alsoRequiredClauseIds?: readonly PromptClauseId[];
 }
 
 /**
@@ -73,12 +83,76 @@ export const SYSTEM_PROMPT_COMPOSITIONS = {
       'NO_SECRETS_NO_SYSTEM_TALK',
     ],
   },
+
+  /**
+   * MISSION 2: the composition for a locally-hosted model with real memory and
+   * real business context.
+   *
+   * It is a SUPERSET of `sales-scheduler@v1` - every clause above is still
+   * here, in the same order - followed by the six this milestone adds. A
+   * superset rather than a rewrite for two reasons: the Baseline V1 guardrails
+   * were reviewed and approved as a set, and a diff between the two refs should
+   * be readable as "what the local brain needed", not as a new essay.
+   *
+   * `v1` stays the default. A deployment opts in by pointing a new
+   * `AgentConfiguration` version at this ref, which is exactly the migration
+   * path the registry was built for.
+   */
+  'sales-scheduler-local@v2': {
+    ref: 'sales-scheduler-local@v2',
+    description:
+      'Outbound sales conversation for a locally-hosted model: the full Baseline V1 guardrail set, plus the ' +
+      'clauses a model with durable memory and a business-fact profile needs - never invent company facts, ' +
+      'never state a time nobody gave you, quote the contact’s own words into tools, recover from a tool ' +
+      'failure in ordinary language, treat memory as background rather than evidence, and follow no flow.',
+    clauseIds: [
+      'ROLE',
+      'MODEL_PROPOSES_APPLICATION_DECIDES',
+      'QUOTE_THEIR_WORDS_INTO_TOOLS',
+      'NEVER_FABRICATE_AVAILABILITY',
+      'NEVER_FABRICATE_CONTACT_DETAILS',
+      'NEVER_FABRICATE_BUSINESS_FACTS',
+      'NEVER_STATE_A_TIME_YOU_WERE_NOT_GIVEN',
+      'NEVER_CLAIM_BOOKED_WITHOUT_CONFIRMATION',
+      'ASK_WHEN_AMBIGUOUS',
+      'SPEAK_TIMES_IN_CONTACT_TIMEZONE',
+      'NO_PROMISES_BEYOND_TOOLS',
+      'HANDLE_TOOL_REJECTION',
+      'RECOVER_FROM_TOOL_FAILURE',
+      'MEMORY_IS_BACKGROUND_NOT_TRUTH',
+      'QUALIFICATION_IS_EVIDENCE_BASED',
+      'ESCALATE_TO_HUMAN',
+      'NO_SECRETS_NO_SYSTEM_TALK',
+      // Last, because the last thing in a prompt is the thing a small model
+      // weights most heavily, and "there is no running order" is the single
+      // instruction most likely to be overridden by the habit of working
+      // through a list.
+      'NO_FIXED_FLOW',
+    ],
+    alsoRequiredClauseIds: [
+      'NEVER_FABRICATE_BUSINESS_FACTS',
+      'NEVER_STATE_A_TIME_YOU_WERE_NOT_GIVEN',
+      'QUOTE_THEIR_WORDS_INTO_TOOLS',
+      'RECOVER_FROM_TOOL_FAILURE',
+      'MEMORY_IS_BACKGROUND_NOT_TRUTH',
+      'NO_FIXED_FLOW',
+    ],
+  },
 } as const satisfies Record<string, PromptComposition>;
 
 export type SystemPromptRef = keyof typeof SYSTEM_PROMPT_COMPOSITIONS;
 
-/** The ref seeded configurations use. */
+/**
+ * The ref seeded configurations use.
+ *
+ * Deliberately still `v1`. Changing the default would change the prompt every
+ * existing test and the 601-scenario sweep run against, and Mission 2's new
+ * behaviour is opt-in by design.
+ */
 export const DEFAULT_SYSTEM_PROMPT_REF: SystemPromptRef = 'sales-scheduler@v1';
+
+/** The ref a local-brain deployment pins. Opt-in, never a default. */
+export const LOCAL_BRAIN_SYSTEM_PROMPT_REF: SystemPromptRef = 'sales-scheduler-local@v2';
 
 export interface BuildSystemPromptInput {
   /** From `AgentConfiguration.systemPromptRef`. */
@@ -109,7 +183,8 @@ export function resolvePromptComposition(promptRef: string): PromptComposition {
     );
   }
 
-  const missing = REQUIRED_CLAUSE_IDS.filter((id) => !composition.clauseIds.includes(id));
+  const required = [...REQUIRED_CLAUSE_IDS, ...(composition.alsoRequiredClauseIds ?? [])];
+  const missing = required.filter((id) => !composition.clauseIds.includes(id));
   if (missing.length > 0) {
     // A composition that has lost a mandatory guardrail must not be usable,
     // even if someone has already pointed a configuration row at it.

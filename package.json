@@ -29,7 +29,11 @@
     "llm:probe": "tsx src/llm/cli/probe.ts",
     "llm:smoke": "tsx src/llm/cli/smoke.ts",
     "llm:mapcheck": "tsx src/llm/cli/mappingSelfCheck.ts",
-    "llm:verify": "npm run llm:mapcheck && npm run llm:probe && npm run llm:smoke"
+    "llm:verify": "npm run llm:mapcheck && npm run llm:probe && npm run llm:smoke",
+    "check:anti-scripting": "tsx src/cli/antiScriptingCli.ts",
+    "context:prove": "tsx src/cli/contextProve.ts",
+    "context:render": "tsx src/cli/contextRender.ts",
+    "context:verify": "npm run check:anti-scripting && npm run context:prove"
   },
   "dependencies": {
     "@prisma/client": "^6.16.2",

@@ -36,6 +36,10 @@
  * `src/app`.
  */
 import { ConversationService } from '../conversation/conversationService.js';
+import { ConversationContextAssembler } from '../conversation/contextAssembler.js';
+import { ConversationMemoryWriter } from '../conversation/conversationMemoryWriter.js';
+import type { ContextBudgetConfig } from '../conversation/contextWindow.js';
+import { loadBusinessProfile, type BusinessProfile } from '../context/businessProfile.js';
 import { createDatabase, type Database } from '../db/database.js';
 import { DueActionRunner } from '../followup/dueActionRunner.js';
 import { FutureActionService } from '../followup/futureActionService.js';
@@ -100,6 +104,52 @@ export function createLlmProvider(config: LlmProviderConfig): LlmProvider {
   }
 }
 
+/**
+ * An explicit request for the Mission 2 context layer.
+ *
+ * OFF UNLESS ASKED FOR, on the same principle as `llmProviderConfig` directly
+ * above: omitting this leaves `AgentTurnService` in its Baseline V1 shape -
+ * unbounded transcript, no background, no rolling summary. Nothing in the
+ * process environment turns it on.
+ *
+ * It lives here because the alternative is worse. The assembler needs the same
+ * `db` and `clock` as everything else, and the memory writer needs the same
+ * `llm`; a caller assembling those by hand would be building a second, silent
+ * composition root whose `clock` could drift from this one's. The whole point
+ * of this file is that there is exactly one dependency graph to read.
+ */
+export interface ContextAssemblyConfig {
+  /**
+   * The business facts, if any.
+   *
+   * Omitted loads the committed default profile. `null` is a deliberate and
+   * supported choice, not a broken one: the agent keeps contact facts, memory
+   * and continuity, and simply has nothing to say about pricing - which beats
+   * having something wrong to say about it.
+   */
+  readonly businessProfile?: BusinessProfile | null;
+  /**
+   * Load the profile from a file instead of using the committed default.
+   * Ignored when `businessProfile` is given, so the two can never fight.
+   */
+  readonly profilePath?: string | null;
+  /** Sized for the target model's context window. Defaults are conservative. */
+  readonly budget?: Partial<ContextBudgetConfig>;
+  /**
+   * Keep the rolling summary current after each turn.
+   *
+   * Off by default because it costs a SECOND round trip to the model per turn,
+   * and that is a cost a caller should opt into knowingly. It reuses the
+   * runtime's `llm` - summarising through a different model than the one
+   * holding the conversation is a configuration nobody asked for.
+   */
+  readonly memory?: boolean | {
+    readonly refreshAfterTurns?: number;
+    readonly keepRecentTurns?: number;
+    readonly maxTurnsPerRefresh?: number;
+  };
+}
+
 export interface BuildAgentRuntimeOptions {
   /** Pass a `FixedClock` in tests and in the demo. */
   readonly clock?: Clock;
@@ -122,6 +172,10 @@ export interface BuildAgentRuntimeOptions {
   readonly maxToolIterations?: number;
   readonly fromE164?: string;
   readonly dueActionRunnerId?: string;
+  /**
+   * Opt into durable memory and business context. Omitting it is Baseline V1.
+   */
+  readonly contextAssembly?: ContextAssemblyConfig | null;
 }
 
 export interface AgentRuntime {
@@ -136,6 +190,14 @@ export interface AgentRuntime {
   readonly conversations: ConversationService;
   readonly agent: AgentTurnService;
   readonly dueActions: DueActionRunner;
+  /**
+   * The context layer, or null when this runtime did not opt in.
+   *
+   * Exposed so a demo or a benchmark can inspect exactly what the model was
+   * handed, rather than rebuilding an assembler that might not match.
+   */
+  readonly contextAssembler: ConversationContextAssembler | null;
+  readonly memoryWriter: ConversationMemoryWriter | null;
   /** Close the database. Only closes a client this function opened. */
   shutdown(): Promise<void>;
 }
@@ -183,6 +245,34 @@ export function buildAgentRuntime(options: BuildAgentRuntimeOptions = {}): Agent
 
   const conversations = new ConversationService({ db, clock });
 
+  // The Mission 2 context layer, built only when asked for. Note that the
+  // assembler shares this function's `db` and `clock`: the background a turn
+  // reasons against is read from the same database, at the same `now`, as the
+  // tools that will act on it.
+  const contextConfig = options.contextAssembly ?? null;
+  const contextAssembler = contextConfig
+    ? new ConversationContextAssembler({
+        db,
+        clock,
+        businessProfile:
+          contextConfig.businessProfile !== undefined
+            ? contextConfig.businessProfile
+            : loadBusinessProfile({ profilePath: contextConfig.profilePath ?? null }),
+        ...(contextConfig.budget ? { budget: contextConfig.budget } : {}),
+      })
+    : null;
+
+  const memoryOptions = contextConfig?.memory ?? false;
+  const memoryWriter =
+    memoryOptions === false
+      ? null
+      : new ConversationMemoryWriter({
+          db,
+          clock,
+          llm,
+          ...(memoryOptions === true ? {} : memoryOptions),
+        });
+
   const agent = new AgentTurnService({
     db,
     clock,
@@ -190,6 +280,7 @@ export function buildAgentRuntime(options: BuildAgentRuntimeOptions = {}): Agent
     conversations,
     dispatcher,
     ...(options.maxToolIterations !== undefined ? { maxIterations: options.maxToolIterations } : {}),
+    ...(contextAssembler ? { contextAssembly: { assembler: contextAssembler, memoryWriter } } : {}),
   });
 
   const dueActions = new DueActionRunner({
@@ -212,6 +303,8 @@ export function buildAgentRuntime(options: BuildAgentRuntimeOptions = {}): Agent
     conversations,
     agent,
     dueActions,
+    contextAssembler,
+    memoryWriter,
     async shutdown() {
       // A caller who supplied the database owns its lifecycle; closing it here
       // would disconnect a client that is still in use.

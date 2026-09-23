@@ -47,6 +47,8 @@ import { ConfigurationError, NotFoundError } from '../shared/errors.js';
 import { newCorrelationId } from '../shared/ids.js';
 import { parseJson } from '../shared/json.js';
 import { ConversationService } from '../conversation/conversationService.js';
+import type { AssembledContext, ConversationContextAssembler } from '../conversation/contextAssembler.js';
+import type { ConversationMemoryWriter } from '../conversation/conversationMemoryWriter.js';
 import { buildSystemPrompt, type BuiltSystemPrompt } from './prompt/systemPrompt.js';
 import { buildTurnContext } from './prompt/turnContext.js';
 import type { ToolDispatchContext } from './tools/context.js';
@@ -63,6 +65,32 @@ import { toModelPayload, toModelPayloadJson, type ToolOutcome } from './tools/re
  */
 export const DEFAULT_MAX_TOOL_ITERATIONS = 5;
 
+/**
+ * MISSION 2, OPT-IN: durable memory and business context for this turn.
+ *
+ * ABSENT BY DEFAULT, DELIBERATELY. With `contextAssembly` undefined this class
+ * behaves exactly as Baseline V1 did - the same unbounded transcript, the same
+ * turn-context block, the same disclosure keys, the same audit detail. That is
+ * what lets `npm test` stay at 500/2 and `npm run qa:sweep` stay at 601/0/0
+ * while a genuinely different context layer exists in the same file.
+ *
+ * Supplying it switches on three things at once, and they belong together:
+ * the assembled background, the bounded transcript window that background's
+ * summary exists to compensate for, and (optionally) the writer that keeps the
+ * summary current.
+ */
+export interface ContextAssemblyOptions {
+  readonly assembler: ConversationContextAssembler;
+  /**
+   * Keeps the rolling summary up to date after a turn finishes.
+   *
+   * Optional even here. Without it the window still bounds the transcript and
+   * the background still carries contact facts, continuity and commitments -
+   * there is simply no recap of the part of the conversation that scrolled off.
+   */
+  readonly memoryWriter?: ConversationMemoryWriter | null;
+}
+
 export interface AgentTurnServiceOptions {
   readonly db: Database;
   readonly clock: Clock;
@@ -70,6 +98,7 @@ export interface AgentTurnServiceOptions {
   readonly conversations: ConversationService;
   readonly dispatcher: ToolDispatcher;
   readonly maxIterations?: number;
+  readonly contextAssembly?: ContextAssemblyOptions | null;
 }
 
 export interface HandleTurnInput {
@@ -98,6 +127,21 @@ export interface AgentTurnResult {
   readonly iterations: number;
   readonly stopReason: TurnStopReason;
   readonly promptFingerprint: string;
+  /**
+   * The background this turn assembled, or null when the deployment has not
+   * opted in. Returned so a benchmark can drive real candidate models through
+   * the real context and see exactly what they were handed.
+   */
+  readonly assembledContext?: AssembledContext | null;
+  /** What the rolling-summary refresh did, when one is wired. */
+  readonly memoryRefresh?: MemoryRefreshSummary | null;
+}
+
+/** The compaction outcome, flattened onto the turn result. */
+export interface MemoryRefreshSummary {
+  readonly status: 'NOT_DUE' | 'REFRESHED' | 'FAILED';
+  readonly turnsCompacted: number;
+  readonly failureReason: string | null;
 }
 
 export class AgentTurnService {
@@ -107,6 +151,7 @@ export class AgentTurnService {
   private readonly conversations: ConversationService;
   private readonly dispatcher: ToolDispatcher;
   private readonly maxIterations: number;
+  private readonly contextAssembly: ContextAssemblyOptions | null;
 
   constructor(options: AgentTurnServiceOptions) {
     this.db = options.db;
@@ -115,6 +160,7 @@ export class AgentTurnService {
     this.conversations = options.conversations;
     this.dispatcher = options.dispatcher;
     this.maxIterations = options.maxIterations ?? DEFAULT_MAX_TOOL_ITERATIONS;
+    this.contextAssembly = options.contextAssembly ?? null;
   }
 
   async handleTurn(input: HandleTurnInput): Promise<AgentTurnResult> {
@@ -154,10 +200,27 @@ export class AgentTurnService {
     });
     const tools = llmToolDefinitions(allowedToolNames);
     const qualification = await this.db.qualificationStates.findByContactId(contact.id);
+
+    // ---- the background, when this deployment has opted in -----------------
+    // Assembled ONCE per turn, on the same principle as `nowUtc` and the pinned
+    // configuration: a turn reasons against one snapshot of the world, not
+    // against a world that shifts under it between iterations. Anything that
+    // changes mid-turn changes because a tool changed it, and that tool handed
+    // the model an authoritative result saying so.
+    const assembled = this.contextAssembly
+      ? await this.contextAssembly.assembler.assemble({
+          conversationId: conversation.id,
+          // Measured, not estimated: the real prompt and the real schemas the
+          // provider is about to be sent.
+          fixedOverheadChars: prompt.text.length + JSON.stringify(tools).length,
+        })
+      : null;
+
     const turnContext = buildTurnContext({
       contact,
       nowUtc,
       qualification,
+      ...(assembled ? { background: assembled.rendered } : {}),
     });
 
     await this.db.audit.record({
@@ -184,6 +247,30 @@ export class AgentTurnService {
         // Exactly what this turn told the model about the contact. The proof
         // that no more than this was disclosed.
         turnContextDisclosed: turnContext.disclosed,
+        // How the background was bounded, when there was one. Absent entirely
+        // on the Baseline V1 path, so the audit detail of an unchanged turn is
+        // itself unchanged.
+        ...(assembled
+          ? {
+              contextAssembly: {
+                version: assembled.version,
+                businessProfileRef: assembled.facts.business?.profileRef ?? null,
+                renderedChars: assembled.rendered.text.length,
+                factsBudgetChars: assembled.budget.factsBudgetChars,
+                transcriptBudgetChars: assembled.budget.transcriptBudgetChars,
+                modelNumCtx: assembled.budget.config.modelNumCtx,
+                reductionsApplied: assembled.reductionsApplied,
+                hardTruncated: assembled.hardTruncated,
+                transcript: assembled.facts.transcript,
+                memorySource: assembled.facts.runningSummary?.source ?? 'ABSENT',
+                durableFactCount: assembled.facts.durableFacts.length,
+                unresolvedCount: assembled.facts.unresolved.length,
+                commitmentCount: assembled.facts.commitments.length,
+                openKnowledgeGoalCount: assembled.facts.openKnowledgeGoals.length,
+                hasPreviousConversation: assembled.facts.previousConversation !== null,
+              },
+            }
+          : {}),
         nowUtc,
       },
       occurredAt: nowUtc,
@@ -212,9 +299,22 @@ export class AgentTurnService {
       // REBUILT FROM THE DATABASE, every iteration. Not appended to a local
       // array - the rows are the transcript, and they already include the tool
       // results written moments ago.
-      const messages: AgentLlmMessage[] = await this.conversations.buildMessages(conversation.id, {
-        leadingMessages: [{ role: 'system', content: turnContext.text }],
-      });
+      //
+      // The window is recomputed every iteration too, on the same fresh read:
+      // a turn that calls three tools adds six rows to the transcript while it
+      // runs, and a window selected once at the top would either miss them or
+      // overflow the budget it was chosen to respect.
+      const messages: AgentLlmMessage[] = assembled
+        ? (
+            await this.conversations.buildWindowedMessages(conversation.id, {
+              maxTurns: assembled.budget.config.maxRecentTurns,
+              maxChars: assembled.budget.transcriptBudgetChars,
+              leadingMessages: [{ role: 'system', content: turnContext.text }],
+            })
+          ).messages
+        : await this.conversations.buildMessages(conversation.id, {
+            leadingMessages: [{ role: 'system', content: turnContext.text }],
+          });
 
       const completion = await this.callModel(
         { conversation, contact, correlationId, nowUtc, prompt, iteration },
@@ -265,6 +365,37 @@ export class AgentTurnService {
       }
     }
 
+    // ---- keep the rolling summary current, after the talking is done -------
+    // Last, and fenced. The turn's result is already decided by this point:
+    // every row is written, every audit event is recorded, and the words the
+    // caller will speak are in `assistantMessages`. A compaction that fails,
+    // hangs on a provider, or returns nonsense can therefore cost context on a
+    // future turn and nothing at all on this one.
+    //
+    // `refresh` is documented never to throw, and the try/catch is here anyway:
+    // "documented never to throw" is a promise about today's code, and a
+    // dropped call is too expensive a way to find out it has changed.
+    let memoryRefresh: MemoryRefreshSummary | null = null;
+    if (this.contextAssembly?.memoryWriter) {
+      try {
+        const result = await this.contextAssembly.memoryWriter.refresh({
+          conversationId: conversation.id,
+          correlationId,
+        });
+        memoryRefresh = {
+          status: result.status,
+          turnsCompacted: result.turnsCompacted,
+          failureReason: result.failureReason,
+        };
+      } catch (error) {
+        memoryRefresh = {
+          status: 'FAILED',
+          turnsCompacted: 0,
+          failureReason: error instanceof Error ? error.message : String(error),
+        };
+      }
+    }
+
     return {
       correlationId,
       conversationId: conversation.id,
@@ -275,6 +406,8 @@ export class AgentTurnService {
       iterations,
       stopReason,
       promptFingerprint: prompt.fingerprint,
+      assembledContext: assembled,
+      memoryRefresh,
     };
   }
 

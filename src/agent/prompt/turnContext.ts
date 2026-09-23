@@ -33,6 +33,7 @@
  */
 import { DateTime } from 'luxon';
 
+import type { RenderedContext } from '../../conversation/contextAssembly.js';
 import type { Contact, QualificationState } from '../../domain/entities.js';
 import type { IsoUtcString } from '../../ports/clock.js';
 import type { AgentLlmMessage } from '../../llm/agentMessage.js';
@@ -45,6 +46,23 @@ export interface TurnContextInput {
   readonly qualification?: QualificationState | null;
   /** The organization's zone, used only to label the business's own hours. */
   readonly organizationTimezone?: string;
+  /**
+   * MISSION 2, OPT-IN: the full assembled background from
+   * `ConversationContextAssembler` - memory, continuity, commitments, loose
+   * ends, open unknowns and business facts.
+   *
+   * ABSENT BY DEFAULT, AND THAT IS LOAD-BEARING. With this undefined, every
+   * line below and every key in `disclosed` is exactly what Baseline V1
+   * produced, byte for byte. The 500-test suite and the 601-scenario sweep
+   * exercise that path and must keep seeing it unchanged, so the richer context
+   * arrives as an argument rather than as a rewrite.
+   *
+   * When it IS present the legacy block is REPLACED rather than prefixed. The
+   * assembled background already carries the contact's name, id, timezone and
+   * local clock, and a 7B model handed the same four facts twice in two
+   * different phrasings spends attention reconciling them instead of listening.
+   */
+  readonly background?: RenderedContext | null;
 }
 
 export interface BuiltTurnContext {
@@ -66,6 +84,24 @@ export function buildTurnContext(input: TurnContextInput): BuiltTurnContext {
     qualificationBand: input.qualification?.band ?? null,
     qualificationScore: input.qualification?.score ?? null,
   };
+
+  // The assembled background supersedes this block entirely. The seven keys
+  // above are still recorded, unchanged, so an audit query written against
+  // Baseline V1 events keeps working across the switch; `background` is added
+  // alongside as the complete record of everything else that was disclosed.
+  if (input.background) {
+    return {
+      text: input.background.text,
+      disclosed: {
+        ...disclosed,
+        // What the prompt says, and how it was labelled internally - kept apart
+        // so that "every disclosed string is in the text" stays exactly true of
+        // `background` rather than nearly true. See contextAssembly.ts.
+        background: input.background.disclosed,
+        backgroundMetadata: input.background.disclosureMetadata,
+      },
+    };
+  }
 
   const lines = [
     '# This call',
