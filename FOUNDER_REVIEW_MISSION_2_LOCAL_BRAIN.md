@@ -38,16 +38,17 @@ persistence and external actions.
 
 **That is built, it runs on your own hardware, and it is opt-in.** One command —
 `npm run demo:local` — drives a real 7B model through three real turns of a real
-conversation, using the real context assembler, the real business profile, the
-real nine tools, the real validation chokepoint and the real audit trail. Every
-word the agent says is generated; § 6.4 proves it against every string literal in
-the source tree.
+conversation (a fourth if the model asks to confirm rather than acting, or if its
+proposal is refused — § 8.6.1), using the real context assembler, the real
+business profile, the real nine tools, the real validation chokepoint and the
+real audit trail. Every word the agent says is generated; § 6.4 proves it against
+every string literal in the source tree.
 
 **Baseline V1 is unchanged, verified by re-running it.** 500 passed / 2 skipped,
 601 scenarios / 2,791 applicable checks / 0 violations / 0 network attempts,
 determinism byte-identical. Numbers and raw output in § 7.
 
-**Three things you should read before the good news, because they are the
+**Five things you should read before the good news, because they are the
 substance of this review:**
 
 1. **The five-model benchmark did not complete, and one candidate finished.**
@@ -65,7 +66,15 @@ substance of this review:**
 3. **Hebrew scheduling does not work, and it is not the model's fault** (§ 8.3).
    `src/scheduling/naturalLanguage.ts` is English-only. A perfect model cannot
    book a Hebrew time request today.
-4. **A correction carried in from QA, because it changes which fix is right**
+4. **The flagship demo could exit 1, and this review said it passed** (§ 8.6.1).
+   `npm run demo:local` scored the model's own conversational judgement as a
+   failed check: when it asked to confirm the contact's bare "at 3" — which the
+   system prompt explicitly tells it to do — the run printed `RESULT: FAIL` and
+   exited 1. QA-1 measured **1 in 17 runs** on the configured default while § 7.1
+   reported a flat "PASS". **Fixed:** the exit code now depends only on what
+   application code guarantees, and the contact gets one more turn in which a
+   clarifying question can actually be answered.
+5. **A correction carried in from QA, because it changes which fix is right**
    (§ 8.1). Three files in this repository said Ollama truncates an over-long
    prompt from the front and strips the system prompt's guardrail clauses. It
    does not. It drops whole older **messages** and keeps the system prompt — so
@@ -716,6 +725,12 @@ is written down anywhere in this repository**, and § 6.4 is the proof.
 
 ### 6.1 Three turns, as they happened
 
+This is a run in which the model booked on turn 3. On the runs where it asks to
+confirm the bare "at 3" instead — or where its proposal is refused — the contact
+now answers once more and a fourth turn appears under its own heading. **§ 8.6.1
+has why, the measured rate, and a transcript of the refusal-then-correction
+case.**
+
 ```
   ---- turn 1 of 3 ------------------------------------------------
   CONTACT:  Hi, it's Jordan. You caught me at a better time than last week.
@@ -1062,13 +1077,21 @@ choice. These CLIs stand in, and all of them were re-run by this review:
 | `npm run check:anti-scripting` | no | **PASS** — no canned dialogue; non-vacuity self-test fired all five rules; one allowance, printed with its justification |
 | `npm run context:prove` | no | **PASS — 9/9 proofs**, including determinism, boundedness over 100 turns, cross-session continuity, the disclosure record, the budget ladder, and five ways a summariser can fail without costing a turn |
 | `npm run eval:corpus` | no | **Corpus 1.0.0 VALID** — 19 scenarios, 59 turns, en=15 / he=3 / mixed=1, all 26 required shapes claimed |
-| `npm run demo:local` | yes | **PASS** — every check held (§ 6.1, § 6.4) |
+| `npm run demo:local` | yes | **PASS** — every check held (§ 6.1, § 6.4). **Read § 8.6 before quoting this row:** until the fix recorded there, this command's overall result was not deterministic, and an earlier version of this row said "PASS" without saying so |
 
 `npm run demo:local` was re-run on this branch after the fixes and passed again:
 3 contact utterances, 4 model calls, **tool-call health native=1 recovered=0
 malformed=0**, one `FutureAction` persisted with 2,250 bytes of provenance, and
 the runtime anti-scripting check green with its known-scripted control line
 caught. Transcript in § 6.1.
+
+**What this row does and does not claim, corrected.** QA-1 ran this command 17
+consecutive times against the configured default and got **16 PASS and 1 FAIL** —
+the failing run exiting **1** on a check that scored the model's conversational
+choice, not the build. The row above now means what a reader assumes it means,
+because the command's exit code no longer depends on that choice. **§ 8.6 has the
+defect, the rate, the fix and the re-measurement**, and is the authority for this
+row.
 
 Re-run on this branch after the fixes, the offline ones are unchanged:
 `llm:mapcheck` **62 checks / 0 failures**, `check:anti-scripting` **PASS**,
@@ -1418,6 +1441,149 @@ the scripted suite covers the tool path, and the dispatcher would have accepted
 the call had it been made — but it is exactly the kind of thing that only shows up
 by holding a real conversation, and it is the single most important number to
 weigh if this model is adopted.
+
+#### 8.6.1 FIXED — and it was failing the flagship demo, which this review did not say
+
+**The omission, stated first.** Everything above was true when written and is
+still true. What it did not say is that **the same behaviour made
+`npm run demo:local` exit non-zero.** The README calls that command "THE DEMO"
+and § 7.1 reported it as a flat **PASS**, while this section described the
+missed scheduling intent as an accepted characteristic of the model. Both were
+about the same event, and nothing joined them. A Founder running the command
+could have seen `RESULT: FAIL` with no warning anywhere in this document. **That
+is the reviewing defect here, and it is worse than the code defect it hid.**
+
+**Found by QA-1**, an independent pass that ran the command rather than reading
+about it.
+
+**The measurement, as QA-1 took it.** 17 consecutive real runs on `ebdbebb`, the
+branch unmodified — `qwen2.5:7b-instruct` Q4_K_M digest `845dbda0ea48`,
+`num_ctx` 16384, temperature 0, Ollama 0.34.3. **16 PASS, 1 FAIL.** The failing
+run, verbatim, turn 3 of 3:
+
+```
+  CONTACT:  Alright, that is worth a proper look. Can you call me back tomorrow afternoon at 3?
+  AGENT:    Sure thing, Jordan. I can arrange that for you. When is a good time tomorrow for you? Is 3 PM in the afternoon convenient?
+  (no tool call this turn - the model just talked, which is often correct)
+  ...
+  FutureActions 0, Meetings 0 (excluding the seeded call)
+  FAIL  the model got something onto the books through the real validation chokepoint
+  RESULT: FAIL - 1 check(s) failed:
+```
+
+QA-1 did not capture that run's shell exit code (its output was piped), so it
+confirmed the exit code on the same code path with a model this review already
+characterises as under-acting: `npm run demo:local -- --model mistral:7b-instruct`
+→ **EXIT=1**, same single failing check. `src/app/localBrainDemo.ts` set
+`process.exitCode = 1` on any failed check, so the qwen2.5 FAIL exited 1 too.
+
+**Why it is a harness defect and not only model behaviour.** Two structural
+facts, both in the demo rather than in the model:
+
+1. **The script had no room to answer.** `CONTACT_TURNS` was exactly three
+   utterances and the scheduling request was the last one. A model that replied
+   with a clarifying question had no fourth turn in which the question could be
+   answered, so no `FutureAction` could ever be created and the run was
+   **guaranteed** to fail from that point.
+2. **The demo failed the model for obeying the demo's own prompt.**
+   `ASK_WHEN_AMBIGUOUS` (`src/agent/prompt/clauses.ts`) instructs it verbatim:
+   *"'Three' with no am or pm … these are not times, they are the beginning of a
+   time. Ask."* Turn 3 ends on a bare "at 3". Asking is compliance, and the
+   check scored it as failure.
+
+So the run-level verdict of the headline demo was a coin toss on a behaviour the
+system prompt actively invites — a statement about `qwen2.5` wearing the clothes
+of a statement about this build.
+
+**Fixed, both ways QA-1 offered, because they fix different halves.**
+
+*The exit code no longer depends on model behaviour.* The booking is now printed
+as a labelled `OBSERVED` line — the same treatment `(no tool call this turn - the
+model just talked, which is often correct)` already got — and the checks that can
+fail the run are only the ones application code guarantees on every run with
+every model: no tool argument carrying an instant the model resolved for itself,
+no prewritten sentence reaching the contact, the non-vacuity control firing, one
+correlation id explaining the scheduling turn, and, when something *was* booked,
+the follow-up engine dispatching it. The scheduling-intent rate is a benchmark
+metric measured over many runs (**82.4%, n=17**, § 5.2); one demo run is not a
+sample, and the demo no longer pretends it is.
+
+*And the conversation can now finish.* One further contact utterance —
+`CLARIFICATION_ANSWER`, *"Afternoon, yes - 3 pm tomorrow. Go ahead and lock it
+in."* — is spoken **only** when the three scripted turns end with nothing
+persisted, under its own heading, once. It is a cap, not a retry loop, and since
+the booking is no longer a gate there is no pass/fail for a retry to rescue. Its
+condition is "nothing on the books" rather than "the model asked", because the
+third possibility is a proposal the **dispatcher refused** — and that case wants
+the same turn for a better reason.
+
+**QA-1's failing run, reproduced on the configured default and carried to a
+booking.** The 17th `qwen2.5:7b-instruct` run here — invoked with
+`--rolling-summary --json`, which is worth stating because the other sixteen were
+not — produced all but verbatim the utterance QA-1's FAIL produced, and then
+finished:
+
+```
+  ---- turn 3 of 3 ---------------------------------------------------------
+  CONTACT:  Alright, that is worth a proper look. Can you call me back tomorrow afternoon at 3?
+  AGENT:    Sure thing, Jordan. I can arrange that for you. When is a good time for you tomorrow? Is 3 PM in the afternoon convenient?
+  (no tool call this turn - the model just talked, which is often correct)
+
+  The scheduling request has gone by with nothing on the books yet: either the model
+  asked to confirm the bare "at 3" instead of acting - which is exactly what
+  ASK_WHEN_AMBIGUOUS tells it to do - or what it proposed was refused above. A real
+  contact would say something either way, so the script does: one more contact
+  utterance, once, only on runs that get here.
+
+  ---- turn 4 - the contact answers, because nothing was on the books yet ----
+  CONTACT:  Afternoon, yes - 3 pm tomorrow. Go ahead and lock it in.
+  AGENT:    Great, Jordan. I've arranged a callback for tomorrow afternoon at 3 PM your time. Looking forward to speaking with you then.
+  PROPOSED  schedule_followup
+            raw argumentsJson: {"contact_id":"cmugmp8k10008r279jn4xn83o",
+                                "when":"tomorrow afternoon at 3",
+                                "reason":"Review Northwind Dispatch with Jordan."}
+  ALLOWED   schedule_followup -> application code validated and persisted it
+  ...
+  RESULT: PASS - every check above held.
+```
+
+**EXIT=0.** Note what turn 4 still does *not* contain: `"when"` is
+`"tomorrow afternoon at 3"`, the contact's words, unresolved. Application code
+decided the instant, as it does on every other run.
+
+**Re-measured after the fix, on this branch, against the same host.**
+
+| Model | Turn 3 outcome | Fourth turn spoken | Persisted | Exit |
+|---|---|---|---|---|
+| `qwen2.5:7b-instruct` × **16 consecutive runs** | booked immediately, all 16 | no | 16 × 1 `FutureAction` | **0 × 16** |
+| `qwen2.5:7b-instruct`, 17th run (`--rolling-summary --json`) | **asked to confirm** — QA-1's failure, above | yes | `FutureAction`, `"when"` still unresolved | **0** |
+| `hermes3:8b` | proposed `schedule_followup` with an **invented** `contact_id`; **REFUSED** `UNKNOWN_CONTACT` | yes | corrected the id, **ALLOWED** — `FutureAction` at `2026-03-05T20:00:00Z`, 2,250 bytes of provenance | **0** |
+| `mistral:7b-instruct` | said nothing schedulable (its § 8.5 repetition) | yes | nothing — printed as an observation | **0** (was **1**) |
+| `aya-expanse:8b` | asked rather than acting | yes | nothing — printed as an observation | **0** |
+| `llama3.1:8b-instruct-q4_K_M` | booked immediately | no | 1 `FutureAction` | **0** |
+
+`--num-ctx 16384` was passed explicitly on every run above, so that the
+configuration matches QA-1's. It had to be: the environment this fix was verified
+in resolved `LOCAL_LLM_NUM_CTX` to **8192** from a `.env` outside the working
+tree, and the demo printed that provenance rather than hiding it — § 8.2's
+surprise doing its job a second time.
+
+**Read the rate honestly.** Two independent samples of 17 `qwen2.5:7b-instruct`
+runs — QA-1's before the fix and this task's after it — each saw the model ask
+rather than act **once**, so **1 in 17 (~6%) twice over, n=34**. Pooling them is
+defensible because nothing in this fix touches the model's path through turns
+1–3, but two events are two events: that figure is an order of magnitude, not a
+probability, and **neither it nor the benchmark's 82.4% scheduling-intent rate
+should be quoted as "how often the demo asks a question."** What is no longer in
+question is the consequence. Before: `RESULT: FAIL`, exit 1, conversation
+abandoned mid-exchange. After: the contact answers, the callback is booked, exit
+0 — and when the model does not recover, the run says so in plain words and
+still exits 0.
+
+**What was not changed.** No remaining check was weakened — each is the same
+assertion it was — and `hermes3:8b`'s run above is the evidence they still bite:
+an invented contact id was refused by name, on the record, in the output.
+Nothing in the demo retries a refusal or re-runs a model to get a better answer.
 
 ### 8.7 The benchmark run died, and the five-model comparison is incomplete
 
@@ -1877,6 +2043,11 @@ READY_TO_MERGE:
 - invariant sweep green:              YES   (601 scenarios, 2,791 applicable,
                                              0 violations, 0 network attempts)
 - determinism identical:              YES   (byte-identical second run)
+- demo:local exit code independent
+  of model behaviour:                 YES   (§ 8.6.1 — it was NOT, on ebdbebb.
+                                             Gated only on what application code
+                                             guarantees; 16/16 EXIT 0 re-measured
+                                             after the fix, plus four other models)
 - regressions:                        NONE
 - secrets committed:                  NO
 - real external communications:       NO    (local Ollama only; no vendor API)
