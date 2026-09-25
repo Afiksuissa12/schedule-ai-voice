@@ -1,21 +1,32 @@
 # Schedule AI Voice — Founder Review: Mission 2, Local AI Brain
 
 **Mission:** MISSION-2-LOCAL-BRAIN · **Branch under review:**
-`task/MISSION-2-LOCAL-BRAIN-INTEGRATOR-FIX-1` (the integrated branch plus the
-four QA defect fixes) · as of 2026-09-23 · prepared by the integration/review
-task and completed by the post-QA fix task of the Autonomous Development Team
+`task/MISSION-2-LOCAL-BRAIN-INTEGRATOR-FIX-3` (the integrated branch, the four QA
+defect fixes, and the two findings of an independent second QA pass) · as of
+2026-09-25 · prepared by the integration/review task and completed by the post-QA
+fix tasks of the Autonomous Development Team
 
 This package is for Founder review before promotion to `master`. **Nothing here
 has been merged.** Baseline V1 on `master` is untouched.
 
-> **Provenance of this document, stated up front because it was assembled in two
-> passes.** §§ 3–6 and § 11 were written by the review task against
+> **Provenance of this document, stated up front because it was assembled in
+> several passes.** §§ 3–6 and § 11 were written by the review task against
 > `task/MISSION-2-LOCAL-BRAIN-AUTO-REVIEW`. That branch was never merged, so the
 > integrated result shipped without this document, without the evaluation layer,
 > and without the fixes for three of the four defects below — which is what an
 > independent QA pass found and what this branch corrects. Where a number or a
 > claim has been re-measured on *this* branch, it says so. Where it has not, it
 > is the review task's original measurement and is attributed as such.
+>
+> **A second independent QA pass then found two more things, and both are
+> corrections to this document rather than to the code.** § 8.3 described the
+> Hebrew scheduling gap as a clean refusal; **it is not a refusal, it is a silent
+> wrong-day booking**, and § 8.3 now says so with the measurements. And every
+> artefact §§ 4, 5.2, 6.2 and 9 call "committed next to this file" — 57 files
+> under `eval-output/` — **had been dropped by the merge that carried this
+> document**, so none of its judged scores could be checked against a transcript.
+> Restored. Both are the same class of failure: **a claim in this review that
+> nobody had re-run.**
 
 > **Where this file lives, and where it should live.** It is at the repository
 > root rather than in `docs/` because the mission that produced it had no write
@@ -48,7 +59,7 @@ every string literal in the source tree.
 601 scenarios / 2,791 applicable checks / 0 violations / 0 network attempts,
 determinism byte-identical. Numbers and raw output in § 7.
 
-**Five things you should read before the good news, because they are the
+**Six things you should read before the good news, because they are the
 substance of this review:**
 
 1. **The five-model benchmark did not complete, and one candidate finished.**
@@ -75,8 +86,9 @@ substance of this review:**
    described the same finding as a clean refusal at the application layer; that
    was wrong, and the benign reading is what made it survive three passes. The fix
    belongs in `src/scheduling/` and was out of scope here — what this branch adds
-   is a benchmark scenario, a rubric gate and two test files that **fail** on it,
-   so it cannot go quiet again.
+   is two benchmark scenarios, a rubric gate and two vitest files that **pin the
+   wrong instant to the assertion**, so the defect cannot go quiet again and the
+   next branch to touch the resolver will be told the moment it changes.
 4. **The flagship demo could exit 1, and this review said it passed** (§ 8.6.1).
    `npm run demo:local` scored the model's own conversational judgement as a
    failed check: when it asked to confirm the contact's bare "at 3" — which the
@@ -93,6 +105,16 @@ substance of this review:**
    destroyed**, which lands the defect on this mission's own central claim rather
    than beside it. Demonstrated with a canary, independently reproduced here, and
    corrected everywhere it appeared.
+6. **The evidence this review cites was not in the repository** (§ 5.2). Every
+   artefact §§ 4, 5.2, 6.2 and 9 describe as "committed next to this file" — the
+   machine-readable `results.json`, the full `COMPARISON.md`, the measured-VRAM
+   inventory behind § 4 and **every transcript behind every judged score**, 57
+   files — was dropped by the merge that brought this document onto the
+   integration branch. For three branches **not one number in § 5.2 could be
+   checked against the conversation that produced it**, which fails this review's
+   own stated standard that *"a judged score nobody can check against its
+   transcript is not evidence."* Restored from the branch they were committed on,
+   and spot-checked against the prose that quotes them.
 
 ---
 
@@ -1373,7 +1395,7 @@ them in `src/scheduling/`:
    is the safe outcome, and punishing it would push the fix the wrong way. The
    gate's own text says it grades **application code, not the model**.
 3. **Two test files**, `tests/e2e/hebrewDigitClockTime.test.ts` and
-   `tests/eval/wrongDayGate.test.ts` (15 assertions), which record the defect
+   `tests/eval/wrongDayGate.test.ts` (15 tests), which record the defect
    against the real dispatcher and prove the gate fires on it. When the resolver
    is fixed, the first one fails on purpose and its message says what to change.
 
