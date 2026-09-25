@@ -46,9 +46,33 @@
  * ---------------------------------------------------------------------------
  * `CONTACT_TURNS` below is what the human says. That is INPUT - the same
  * category as a test fixture, and the same thing `slice:demo`'s single utterance
- * already is. Not one word the AGENT says is written down anywhere: § 7 of the
+ * already is. Not one word the AGENT says is written down anywhere: § 6 of the
  * output proves that by checking every generated sentence against every string
  * literal in `src/`.
+ *
+ * The contact also ANSWERS, once, if answering is what a human would do: see
+ * `CLARIFICATION_ANSWER`.
+ *
+ * WHAT THE EXIT CODE IS GATED ON - AND WHAT IT DELIBERATELY IS NOT
+ * ---------------------------------------------------------------------------
+ * The checks that can fail this run are the ones APPLICATION code guarantees,
+ * on every run, with every model, or the build is broken: no tool argument
+ * carrying an instant the model resolved for itself, no prewritten sentence
+ * reaching the contact, the non-vacuity control firing, one correlation id
+ * explaining the scheduling turn, and - when something did get booked - the
+ * follow-up engine dispatching it with no model involved.
+ *
+ * Whether the model proposes a booking AT ALL is not one of them, and used to
+ * be. That is model behaviour, it varies run to run, and this repository's own
+ * system prompt invites the variance: `ASK_WHEN_AMBIGUOUS` tells the model that
+ * "three" with no am or pm is "the beginning of a time" and to ask. The contact
+ * says "at 3". A model that asks to confirm it is obeying a guardrail clause,
+ * and a demo that exits 1 for that is reporting on the model while claiming to
+ * report on the build. So § 3 prints it as a labelled OBSERVATION - the same
+ * treatment `(no tool call this turn - the model just talked, which is often
+ * correct)` already gets - and the run's verdict stays a statement about the
+ * code. `FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 8.6 carries the measured
+ * rate; the benchmark's scheduling-intent metric is where that number belongs.
  *
  * Flags: `--model <tag>`, `--num-ctx <n>`, `--base-url <url>`, `--rolling-summary`,
  * `--keep`, `--json`.
@@ -111,6 +135,9 @@ const DEMO_NOW_UTC = '2026-03-04T15:00:00.000Z';
  *  3. A callback in the contact's own words. The architecture's load-bearing
  *     moment: the model must pass "tomorrow afternoon at 3" through UNRESOLVED
  *     and let application code decide what instant that is.
+ *
+ * A fourth utterance, `CLARIFICATION_ANSWER`, is spoken only on the runs that
+ * need it.
  */
 const CONTACT_TURNS: readonly string[] = [
   "Hi, it's Jordan. You caught me at a better time than last week.",
@@ -119,11 +146,43 @@ const CONTACT_TURNS: readonly string[] = [
 ];
 
 /**
+ * The one adaptive contact utterance: what Jordan says if the agent asks rather
+ * than acts.
+ *
+ * `ASK_WHEN_AMBIGUOUS` tells the model, in as many words, that a bare "three" is
+ * "the beginning of a time" and that it should ask. Turn 3 ends on "at 3". So on
+ * some fraction of runs - it is a real model, so the fraction is a rate, not a
+ * constant - the last thing that happens is a sensible question. With three
+ * fixed turns there was no room left to answer it, and the demo ended with the
+ * conversation hanging mid-exchange on the one turn it exists to show.
+ *
+ * A human would have answered, so the script answers: ONE further utterance,
+ * appended only when the scripted turns ended with nothing on the books, spoken
+ * under its own heading so a reader can see it happened and why. It is a cap,
+ * not a loop - the demo does not keep talking until it likes the result, and
+ * because the booking is no longer a gate (see the header) there is nothing for
+ * a retry to rescue. What it buys is that the interesting half of the demo -
+ * validated instant, provenance, `DueActionRunner`, audit chain - is reachable
+ * whether the model books immediately or confirms first.
+ *
+ * The condition is "nothing persisted", not "the model asked a question",
+ * because the third thing that can happen is a proposal the dispatcher REFUSED,
+ * and that case wants the same turn for a better reason: a refusal is only half
+ * a story until you see what the model does with it. `hermes3:8b` invented a
+ * contact id here, was refused by name, and corrected it on this turn.
+ *
+ * Worded to answer whichever confirming question got asked - am or pm, which
+ * afternoon, what time - without handing the model a resolved instant: "3 pm
+ * tomorrow" is still words, and application code still decides what they mean.
+ */
+const CLARIFICATION_ANSWER = 'Afternoon, yes - 3 pm tomorrow. Go ahead and lock it in.';
+
+/**
  * A line that IS in the source tree, used as the non-vacuity control for § 7.
  *
  * It is `ScriptedLlmProvider`'s own demo line, quoted from
  * `src/app/sliceDemo.ts`. The check must catch it; if it ever does not, the
- * check has stopped working and § 7's green result means nothing.
+ * check has stopped working and § 6's green result means nothing.
  */
 const KNOWN_RECITAL_CONTROL =
   "You're all set - I'll give you a ring tomorrow, Thursday the 5th, at 3 in the afternoon your time.";
@@ -265,8 +324,18 @@ async function main(): Promise<void> {
     const assistantUtterances: string[] = [];
     const correlationIds: string[] = [];
 
-    for (const [index, utterance] of CONTACT_TURNS.entries()) {
-      console.log(`\n  ---- turn ${index + 1} of ${CONTACT_TURNS.length} ${'-'.repeat(48)}`);
+    // Mutable, because of the one conditional utterance at the bottom of the
+    // loop. Nothing else appends to it.
+    const script: string[] = [...CONTACT_TURNS];
+    let clarificationOffered = false;
+
+    for (let index = 0; index < script.length; index += 1) {
+      const utterance = script[index] as string;
+      const turnHeading =
+        index < CONTACT_TURNS.length
+          ? `turn ${index + 1} of ${CONTACT_TURNS.length}`
+          : `turn ${index + 1} - the contact answers, because nothing was on the books yet`;
+      console.log(`\n  ---- ${turnHeading} ${'-'.repeat(48)}`);
       console.log(`  CONTACT:  ${utterance}`);
 
       metrics.openTurn(index);
@@ -342,6 +411,22 @@ async function main(): Promise<void> {
         );
       }
       console.log(`  (iterations ${turn.iterations}, stopped: ${turn.stopReason}, correlation ${turn.correlationId})`);
+
+      // The one adaptive moment in the script. See `CLARIFICATION_ANSWER`.
+      if (
+        index === CONTACT_TURNS.length - 1 &&
+        !clarificationOffered &&
+        !(await anythingOnTheBooks(runtime, world.contact.id))
+      ) {
+        clarificationOffered = true;
+        script.push(CLARIFICATION_ANSWER);
+        console.log('');
+        console.log('  The scheduling request has gone by with nothing on the books yet: either the model');
+        console.log('  asked to confirm the bare "at 3" instead of acting - which is exactly what');
+        console.log('  ASK_WHEN_AMBIGUOUS tells it to do - or what it proposed was refused above. A real');
+        console.log('  contact would say something either way, so the script does: one more contact');
+        console.log('  utterance, once, only on runs that get here.');
+      }
     }
 
     // ---- 3. what the model was actually allowed to change -----------------
@@ -363,10 +448,23 @@ async function main(): Promise<void> {
     }
 
     const scheduled = futureActions[0] ?? null;
-    check(
-      scheduled !== null || meetings.length > 0,
-      'the model got something onto the books through the real validation chokepoint',
-    );
+
+    // An OBSERVATION, deliberately not a `check`. See the header: whether the
+    // model proposes a booking is model behaviour and varies run to run, and
+    // `ASK_WHEN_AMBIGUOUS` actively invites the run where it confirms instead.
+    // Gating the exit code on it made the flagship demo's verdict a statement
+    // about qwen2.5 wearing the clothes of a statement about this build. The
+    // number that belongs to this behaviour is the benchmark's
+    // scheduling-intent rate, measured over many runs, not one run's pass/fail.
+    if (scheduled !== null || meetings.length > 0) {
+      console.log('  OBSERVED      the model got something onto the books through the real validation');
+      console.log('                chokepoint - which is what a scheduling agent is for.');
+    } else {
+      console.log('  OBSERVED      the model never proposed a booking, so nothing reached the chokepoint');
+      console.log('                this run. That is a fact about this model today, not a failed gate:');
+      console.log('                it either kept asking, or talked instead of acting. The rest of this');
+      console.log('                section is therefore empty, and § 4 has no promise to keep.');
+    }
 
     // THE gate, checked here and not only in the benchmark: did the model
     // manufacture an authoritative instant instead of passing the words through?
@@ -379,7 +477,7 @@ async function main(): Promise<void> {
       console.log(`        FABRICATED: ${offender}`);
     }
 
-    const passthrough = metrics.proposalsCarryingContactWords(CONTACT_TURNS);
+    const passthrough = metrics.proposalsCarryingContactWords(script);
     if (passthrough.length > 0) {
       console.log(`  Passthrough   the contact's own words survived into: ${passthrough.join(', ')}`);
     }
@@ -423,7 +521,11 @@ async function main(): Promise<void> {
     // ---- 7. the verdict ----------------------------------------------------
     heading('DONE');
     console.log(`  model             ${runtime.llm.name()}`);
-    console.log(`  turns             ${CONTACT_TURNS.length} contact utterances, ${metrics.count()} model calls`);
+    console.log(
+      `  turns             ${script.length} contact utterance(s)` +
+        (clarificationOffered ? ` (${CONTACT_TURNS.length} scripted + 1, because turn 3 booked nothing)` : '') +
+        `, ${metrics.count()} model calls`,
+    );
     console.log(`  tool-call health  ${metrics.healthLine()}`);
     console.log(`  latency           ${metrics.latencyLine()}`);
     console.log('  No vendor API was called. No key was read. No real number was dialled.');
@@ -451,6 +553,23 @@ async function main(): Promise<void> {
       }
     }
   }
+}
+
+/**
+ * Has anything actually been committed for this contact yet?
+ *
+ * Asked of the database rather than of the turn result on purpose: a proposal
+ * the dispatcher REFUSED is not a booking, and the only place that distinction
+ * is authoritative is the persisted row. Both tables start empty -
+ * `seedSliceWorld` seeds a finished call, never a meeting or a future action -
+ * so anything found here was put there by the model through the chokepoint.
+ */
+async function anythingOnTheBooks(runtime: AgentRuntime, contactId: string): Promise<boolean> {
+  const [futureActions, meetings] = await Promise.all([
+    runtime.db.futureActions.listByContact(contactId),
+    runtime.db.meetings.listByContact(contactId),
+  ]);
+  return futureActions.length > 0 || meetings.length > 0;
 }
 
 // ---------------------------------------------------------------------------

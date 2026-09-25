@@ -207,6 +207,22 @@ the persisted `FutureAction` and its provenance, the `DueActionRunner` keeping t
 promise with no model involved, the audit chain on one correlation id, and
 per-turn time-to-first-token and tokens/second.
 
+**A fourth contact utterance is spoken only when it is needed.** If the three
+scripted turns end with nothing on the books — because the model asked to confirm
+the contact's bare "at 3", which the `ASK_WHEN_AMBIGUOUS` guardrail clause tells
+it to do, or because what it proposed was refused — the contact answers, once.
+That is a cap, not a retry loop, and it is printed under its own heading.
+
+**What the run's exit code is gated on.** The failing checks are the ones
+application code guarantees on every run with every model: no tool argument
+carrying an instant the model resolved for itself, no prewritten sentence
+reaching the contact, the non-vacuity control firing, one correlation id
+explaining the scheduling turn, and — when something was booked — the follow-up
+engine dispatching it. **Whether the model proposes a booking at all is printed
+as a labelled observation, not scored as a check**, because it is model behaviour
+that varies run to run; the benchmark's scheduling-intent rate is the number that
+measures it. See `FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 8.6.
+
 Its last section is the directive's evidence: every sentence the agent said is
 checked against **every string literal under `src/`**, and the check carries a
 known-scripted control line that must be caught so a green result cannot be
