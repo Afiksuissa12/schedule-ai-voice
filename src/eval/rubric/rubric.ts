@@ -23,19 +23,30 @@
  * LLM judge, which is an OPINION and is labelled as one everywhere it appears.
  * Judge scores are never presented as measurements.
  *
- * THE GATE
+ * THE GATES
  * ---------------------------------------------------------------------------
- * `timestampFabrication` is not a weighted dimension. It is a GATE. The single
- * rule this architecture exists to enforce is that the model passes the
- * contact's words through and application code resolves them; a model that
- * manufactures an authoritative timestamp has taken an authority the design
- * denies it, and no amount of charm compensates. A turn that does it scores
- * zero on the technical category regardless of everything else, and the rate is
- * reported as its own headline number.
+ * Neither gate is a weighted dimension. A gate is a rule that, when tripped,
+ * zeroes the technical category for that turn no matter what else went right,
+ * and is reported as its own headline number.
+ *
+ * `timestampFabrication` guards the rule this architecture exists to enforce:
+ * the model passes the contact's words through and application code resolves
+ * them. A model that manufactures an authoritative timestamp has taken an
+ * authority the design denies it, and no amount of charm compensates.
+ *
+ * `wrongDayResolution` guards the other half of the same bargain, and it grades
+ * APPLICATION CODE rather than the model. Passthrough is only worth having if
+ * what application code does with the words is right. A `when` that is refused
+ * is safe - the contact is asked again. A `when` that is silently resolved to
+ * the wrong calendar day is a validated, persisted, audit-trailed booking a day
+ * out, with no warning anywhere, and it is the worse of the two failures by a
+ * long way. It was added in rubric 1.1.0 after exactly that was measured for
+ * Hebrew and mixed-language input; see
+ * `FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 8.3.
  */
 
 /** Bump on any change to a dimension, a weight, or a gate rule. */
-export const RUBRIC_VERSION = '1.0.0';
+export const RUBRIC_VERSION = '1.1.0';
 
 export type ScoringMethod = 'programmatic' | 'judged';
 
@@ -314,7 +325,7 @@ export const PROGRAMMATIC_DIMENSIONS: readonly RubricDimension[] = RUBRIC_CATEGO
 );
 
 /**
- * The gate. Documented as data so the report can print the rule alongside the
+ * The gates. Documented as data so the report can print each rule alongside its
  * number rather than restating it in prose that could drift.
  */
 export const TIMESTAMP_FABRICATION_GATE = {
@@ -330,6 +341,26 @@ export const TIMESTAMP_FABRICATION_GATE = {
     'headline metric, and a model with a non-zero rate must not be adopted as the default without an ' +
     'explicit Founder decision.',
 } as const;
+
+export const WRONG_DAY_RESOLUTION_GATE = {
+  key: 'wrongDayResolution',
+  label: 'Resolved a booking onto the wrong calendar day',
+  rule:
+    'A turn fails the gate when the corpus states which calendar day the contact named and a time-bearing ' +
+    'tool was nonetheless ACCEPTED for a different local calendar day. Comparison is on the local date in ' +
+    'the zone the slot resolved in. A refusal is NOT a failure here: refusing a `when` this product cannot ' +
+    'resolve asks the contact again and books nothing, which is the safe outcome. Only a booking that ' +
+    'happened, on the wrong day, trips it.',
+  consequence:
+    'The turn scores zero for the whole tool-and-structural category, and the model is ranked below every ' +
+    'model that trips no gate. THIS GATE GRADES APPLICATION CODE, NOT THE MODEL: a non-zero rate here is a ' +
+    'product defect in the resolver, and the run that produced it is evidence about `src/scheduling/`, not ' +
+    'about the candidate. It is scored inside the model comparison anyway because this harness is the only ' +
+    'place the whole chain runs end to end, and a wrong-day booking nothing reports is worse than a ' +
+    'refusal everything reports.',
+} as const;
+
+export const GATES = [TIMESTAMP_FABRICATION_GATE, WRONG_DAY_RESOLUTION_GATE] as const;
 
 /** Assert at module load that the weights are actually a weighting. */
 function assertWeights(): void {

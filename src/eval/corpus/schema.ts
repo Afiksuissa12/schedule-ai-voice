@@ -33,7 +33,7 @@
 import { z } from 'zod';
 
 /** Bump when the shape or the semantics of a field change. */
-export const CORPUS_SCHEMA_VERSION = '1.0.0';
+export const CORPUS_SCHEMA_VERSION = '1.1.0';
 
 /**
  * The conversational axes the mission requires the corpus to cover.
@@ -196,6 +196,46 @@ export const PassthroughExpectationSchema = z
   })
   .strict();
 
+/**
+ * WHICH CALENDAR DAY THE RESOLVED INSTANT LANDED ON.
+ *
+ * WHY THIS EXISTS, AND WHY IT IS NOT `expectsToolFailure`
+ * ---------------------------------------------------------------------------
+ * `expectsToolFailure` can only say "the product is expected to refuse this".
+ * It has no way to express the outcome that is actually dangerous: the product
+ * ACCEPTS the call and books a real, validated, audit-trailed meeting on the
+ * WRONG DAY.
+ *
+ * That is not hypothetical. `src/scheduling/naturalLanguage.ts` is English-only,
+ * and a `when` like `מחר ב-15:00` ("tomorrow at 15:00") does not fail: the
+ * grammar recognises the digits, silently DROPS the unrecognised Hebrew day word
+ * `מחר`, and falls through to the `implicit_today` branch. Every validator check
+ * then passes and the callback is dialled a day early. Under
+ * `expectsToolFailure` the harness would have scored that as a merely unmet
+ * expectation - "expected failure DID NOT OCCUR" - which reads like a model that
+ * did better than predicted rather than a mis-scheduling. See
+ * `FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 8.3.
+ *
+ * SEMANTICS. Applicable only when the turn actually produced a resolved instant
+ * (some successful time-bearing tool call). A REFUSAL is not scored here at all,
+ * because refusing an input this product cannot resolve is the safe outcome and
+ * must not be punished; what is scored is landing on a different day from the
+ * one the contact named. A turn that lands wrong trips a GATE - see
+ * `WRONG_DAY_RESOLUTION_GATE` in `src/eval/rubric/rubric.ts`.
+ */
+export const ResolvedDayExpectationSchema = z
+  .object({
+    /**
+     * The calendar date, in the zone the slot resolved in, that the contact's
+     * own words name. Written out rather than derived so the assertion can be
+     * checked by hand against the scenario's pinned `nowUtc`.
+     */
+    mustResolveToLocalDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    /** The words that name it, quoted into the failure message. */
+    contactSaid: z.string().min(1),
+  })
+  .strict();
+
 export const TextExpectationSchema = z
   .object({
     mustNotBeEmpty: z.boolean().optional(),
@@ -225,6 +265,7 @@ export const TurnSchema = z
     note: z.string().min(1),
     tools: ToolExpectationSchema.optional(),
     passthrough: PassthroughExpectationSchema.optional(),
+    resolvedDay: ResolvedDayExpectationSchema.optional(),
     text: TextExpectationSchema.optional(),
     /**
      * This turn is EXPECTED to produce at least one refused tool outcome from

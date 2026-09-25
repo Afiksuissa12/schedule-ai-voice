@@ -30,6 +30,18 @@ export interface RecordedToolOutcome {
   readonly code: string | null;
   readonly reason: string | null;
   readonly persisted: { readonly type: string; readonly id: string } | null;
+  /**
+   * The instant the REAL resolver committed to, as `yyyy-MM-ddTHH:mm` local
+   * wall-clock plus its zone. Lifted out of the tool's own `start_local` /
+   * `timezone` payload so the results file records WHICH MOMENT was booked and
+   * not only that something was.
+   *
+   * Null on a refusal, and on the tools that carry no time. Present because a
+   * booking on the wrong calendar day is otherwise invisible in this file - see
+   * `checks.resolvedDay`.
+   */
+  readonly resolvedStartLocal: string | null;
+  readonly resolvedTimezone: string | null;
 }
 
 /** Per-turn programmatic verdicts. Every field is reproducible. */
@@ -58,6 +70,20 @@ export interface TurnChecks {
     readonly hallucinatedMeetingId: boolean;
   }>;
   readonly passthrough: { readonly applicable: boolean; readonly passed: boolean; readonly detail: string };
+  /**
+   * Did the resolved instant land on the calendar day the contact named?
+   *
+   * Optional on the type because results files written before harness 1.1.0 do
+   * not carry it, and an older file must still be readable rather than
+   * exploding. Absent is treated as "not applicable", never as "passed".
+   */
+  readonly resolvedDay?: {
+    readonly applicable: boolean;
+    readonly passed: boolean;
+    readonly expectedLocalDate: string | null;
+    readonly observedLocalDates: readonly string[];
+    readonly detail: string;
+  };
   readonly text: {
     readonly applicable: boolean;
     readonly passed: boolean;
