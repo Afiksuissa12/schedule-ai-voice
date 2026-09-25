@@ -298,6 +298,97 @@ export function checkPassthrough(
 }
 
 // ---------------------------------------------------------------------------
+// THE SECOND GATE: the resolved instant landed on the wrong calendar day.
+// ---------------------------------------------------------------------------
+
+/** One resolved instant, as the real dispatcher reported it back. */
+export interface ResolvedInstant {
+  readonly toolName: string;
+  readonly ok: boolean;
+  /** `yyyy-MM-ddTHH:mm` in `resolvedTimezone`. Null when nothing resolved. */
+  readonly resolvedStartLocal: string | null;
+  readonly resolvedTimezone: string | null;
+}
+
+export interface ResolvedDayResult {
+  readonly applicable: boolean;
+  readonly passed: boolean;
+  readonly expectedLocalDate: string | null;
+  readonly observedLocalDates: readonly string[];
+  readonly detail: string;
+}
+
+/**
+ * Did the instant the product actually committed to land on the day the contact
+ * named?
+ *
+ * This is deliberately NOT a check on the model. The model's job ended when it
+ * passed the contact's words through; everything after that is application code,
+ * and this measures application code. It is in the rubric anyway because the
+ * harness is the only place in this repository where the whole chain runs end to
+ * end, and a wrong-day booking that nothing reports is worse than a refusal that
+ * everything reports.
+ *
+ * NOT APPLICABLE when nothing resolved - a refused `when` produces no instant,
+ * and refusing is the safe outcome. Comparison is on the LOCAL date, in the zone
+ * the slot resolved in, because "the day the contact named" is a wall-clock fact
+ * about their calendar and not about UTC.
+ */
+export function checkResolvedDay(turn: BenchmarkTurn, outcomes: readonly ResolvedInstant[]): ResolvedDayResult {
+  const expectation = turn.resolvedDay;
+  if (!expectation) {
+    return { applicable: false, passed: true, expectedLocalDate: null, observedLocalDates: [], detail: '' };
+  }
+
+  const resolved = outcomes.filter(
+    (o): o is ResolvedInstant & { resolvedStartLocal: string } => o.ok && typeof o.resolvedStartLocal === 'string',
+  );
+
+  if (resolved.length === 0) {
+    return {
+      applicable: false,
+      passed: true,
+      expectedLocalDate: expectation.mustResolveToLocalDate,
+      observedLocalDates: [],
+      detail:
+        'no instant was resolved on this turn (the call was refused, or none was made), so there is no ' +
+        'booking to be wrong about',
+    };
+  }
+
+  const observed = resolved.map((o) => ({
+    toolName: o.toolName,
+    localDate: o.resolvedStartLocal.slice(0, 10),
+    startLocal: o.resolvedStartLocal,
+    timezone: o.resolvedTimezone,
+  }));
+  const wrong = observed.filter((o) => o.localDate !== expectation.mustResolveToLocalDate);
+
+  if (wrong.length === 0) {
+    return {
+      applicable: true,
+      passed: true,
+      expectedLocalDate: expectation.mustResolveToLocalDate,
+      observedLocalDates: observed.map((o) => o.localDate),
+      detail: `resolved to ${expectation.mustResolveToLocalDate}, the day "${expectation.contactSaid}" names`,
+    };
+  }
+
+  return {
+    applicable: true,
+    passed: false,
+    expectedLocalDate: expectation.mustResolveToLocalDate,
+    observedLocalDates: observed.map((o) => o.localDate),
+    detail:
+      `the contact said "${expectation.contactSaid}" (= ${expectation.mustResolveToLocalDate}), but ` +
+      wrong
+        .map((o) => `${o.toolName} was accepted for ${o.startLocal}${o.timezone ? ` ${o.timezone}` : ''}`)
+        .join('; ') +
+      ' - a validated booking on the wrong calendar day',
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Assistant text expectations.
 // ---------------------------------------------------------------------------
 

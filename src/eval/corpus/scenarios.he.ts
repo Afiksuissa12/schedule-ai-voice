@@ -6,22 +6,49 @@
  * `src/scheduling/naturalLanguage.ts` is ENGLISH-ONLY. Its weekday table, its
  * relative-offset patterns and its time-of-day markers are all English literals,
  * so a `when` argument in Hebrew - however perfectly the model passed the
- * contact's words through - is refused as an unparseable datetime by the real
- * validator.
+ * contact's words through - is not understood by the real validator.
  *
  * That is a PRODUCT limitation, not a model limitation, and it would silently
  * wreck this measurement if it were ignored: every Hebrew model would look
  * equally incapable of scheduling, and the number would say nothing about the
  * models. So these scenarios are built to separate the two:
  *
- *  - Hebrew scheduling turns are marked `expectsToolFailure`. What is being
- *    scored there is whether the model still passed the contact's own Hebrew
- *    words through (a model behaviour) and whether it handled the refusal
+ *  - Hebrew scheduling turns whose time is spelled out IN WORDS are marked
+ *    `expectsToolFailure`, because the resolver genuinely refuses them. What is
+ *    being scored there is whether the model still passed the contact's own
+ *    Hebrew words through (a model behaviour) and whether it handled the refusal
  *    gracefully in Hebrew (a model behaviour) - NOT whether the booking landed.
  *  - The mixed scenario has the contact give the TIME in English inside a
  *    Hebrew sentence, which is how Israeli business calls actually sound. That
  *    path does resolve, so it measures scheduling competence without the
  *    resolver in the way.
+ *
+ * "NOT UNDERSTOOD" IS NOT THE SAME AS "REFUSED", AND THE DIFFERENCE IS THE BUG
+ * ---------------------------------------------------------------------------
+ * The paragraph above was, for one whole input class, wrong - and the corpus
+ * that encodes it had no scenario that could have caught it. A Hebrew or mixed
+ * `when` carrying a CLOCK TIME IN DIGITS is not refused. The grammar recognises
+ * the digits, silently DROPS the Hebrew day word it does not know, and falls
+ * through to its `implicit_today` branch. Measured, now = Wed 2026-03-04 09:00
+ * Asia/Jerusalem:
+ *
+ *   EN  'tomorrow at 15:00'            -> 2026-03-05 15:00  dayAnchor=tomorrow
+ *   HE  'מחר ב-15:00'      (tomorrow)  -> 2026-03-04 15:00  dayAnchor=implicit_today
+ *   HE  'יום חמישי ב-15:00' (Thursday) -> 2026-03-04 15:00  dayAnchor=implicit_today
+ *   MIX 'מחר at 3pm'                   -> 2026-03-04 15:00  dayAnchor=implicit_today
+ *
+ * Every downstream check then passes and a real meeting or callback is booked A
+ * DAY EARLY, with no warning anywhere. The original Hebrew scenarios only ever
+ * offered times spelled out in WORDS ('בשתיים', 'שבוע הבא'), which really are
+ * refused - so the one Hebrew input class that silently produces a wrong instant
+ * was untested.
+ *
+ * `hebrew-digit-clock-time` and `mixed-digit-clock-time` below close that gap,
+ * and they deliberately do NOT use `expectsToolFailure`: that field can only say
+ * "a refusal is expected", so a wrong-day booking would have scored as a merely
+ * unmet expectation. They use `resolvedDay` instead, which fails the run when the
+ * instant the product committed to lands on a different calendar day from the one
+ * the contact named. See `FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 8.3.
  *
  * EVAL_HARNESS.md reports the resolver gap as a headline finding with this
  * evidence behind it.
@@ -224,6 +251,99 @@ export const HEBREW_SCENARIOS: BenchmarkScenario[] = [
         schedulingIntent: true,
         tools: { mustCallOneOf: ['schedule_meeting', 'check_availability'], allowed: ['schedule_meeting', 'check_availability', 'get_contact_context'] },
         passthrough: { tool: 'schedule_meeting', field: 'when', mustContainAnyOf: ['tomorrow', '11'] },
+        replyLanguage: 'mixed',
+      },
+    ],
+  },
+
+  // -------------------------------------------------------------------------
+  // The two scenarios below exist because of a defect, and they are written to
+  // fail if it is ever reintroduced. Read the header of this file first.
+  // -------------------------------------------------------------------------
+  {
+    id: 'hebrew-digit-clock-time',
+    title: 'Hebrew with the time in DIGITS - the input class that books the wrong day',
+    language: 'he',
+    objective:
+      'Book the time the contact names in Hebrew, with the clock time written in digits - and land on the ' +
+      'day they actually named.',
+    coverage: ['language-hebrew', 'interested-lead', 'tomorrow-afternoon', 'what-does-the-company-do'],
+    world: { ...HE_WORLD },
+    turns: [
+      {
+        utterance: 'היי, כן. שמעתי עליכם. מה אתם עושים בדיוק?',
+        note: 'A short opening in Hebrew with the "what do you do" question attached. Nothing to call here.',
+        tools: { mustCallNone: true },
+        text: { ...SPOKEN, mustNotAssertConcreteDate: true },
+        replyLanguage: 'he',
+      },
+      {
+        utterance: 'נשמע רלוונטי. בוא נקבע - תתקשר אליי מחר ב-15:00.',
+        note:
+          "'Call me tomorrow at 15:00', in Hebrew, with the time in DIGITS. `now` is Wednesday 2026-03-04 " +
+          '10:00 Asia/Jerusalem, so the contact named THURSDAY 2026-03-05. The English-only resolver does ' +
+          'not refuse this: it reads 15:00, silently drops מחר, and resolves to TODAY - a validated booking ' +
+          'a day early. `resolvedDay` is what makes that a failure rather than a surprise, and it is ' +
+          'deliberately not `expectsToolFailure`, because a refusal here would be the SAFE outcome.',
+        schedulingIntent: true,
+        tools: {
+          mustCallOneOf: ['schedule_meeting', 'check_availability', 'schedule_followup'],
+          allowed: ['schedule_meeting', 'check_availability', 'schedule_followup', 'get_contact_context'],
+        },
+        passthrough: { tool: 'schedule_meeting', field: 'when', mustContainAnyOf: ['מחר', '15:00'] },
+        resolvedDay: { mustResolveToLocalDate: '2026-03-05', contactSaid: 'מחר ב-15:00' },
+        replyLanguage: 'he',
+      },
+      {
+        utterance: 'מעולה. אז נדבר. תודה, ביי.',
+        note: 'A three-word close. Anything long here is tone-deaf, and claiming a day that was never agreed is worse.',
+        tools: { allowed: ['record_call_outcome', 'update_qualification', 'schedule_meeting', 'schedule_followup'] },
+        text: { ...SPOKEN, maxChars: 260 },
+        replyLanguage: 'he',
+      },
+    ],
+  },
+
+  // -------------------------------------------------------------------------
+  {
+    id: 'mixed-digit-clock-time',
+    title: 'Code-switched callback with the time in DIGITS - the same defect, the other language mix',
+    language: 'mixed',
+    objective:
+      'Secure a callback from a contact who code-switches and gives the time in digits, and have it land on ' +
+      'the day they named.',
+    coverage: ['language-mixed', 'busy-right-now', 'tomorrow-afternoon'],
+    world: {
+      ...HE_WORLD,
+      contactFullName: 'מאיה בן-דוד',
+    },
+    turns: [
+      {
+        utterance: 'היי, אני ב-meeting עוד שתי דקות, אז ממש בקצרה.',
+        note: 'A bad moment, code-switched. The right reply is very short.',
+        tools: { mustNotCall: ['schedule_meeting', 'check_availability'] },
+        text: { ...SPOKEN, maxChars: 320 },
+        replyLanguage: 'mixed',
+      },
+      {
+        utterance: 'בוא נעשה ככה - call me back מחר ב-16:00, works better for me.',
+        note:
+          "A callback for 'tomorrow at 16:00' with the day word in Hebrew and the frame in English - the " +
+          'commonest real shape, and the one that resolves to TODAY. Contact named THURSDAY 2026-03-05.',
+        schedulingIntent: true,
+        tools: {
+          mustCallOneOf: ['schedule_followup', 'schedule_meeting', 'check_availability'],
+          allowed: ['schedule_followup', 'schedule_meeting', 'check_availability', 'get_contact_context'],
+        },
+        passthrough: { tool: 'schedule_followup', field: 'when', mustContainAnyOf: ['מחר', '16:00'] },
+        resolvedDay: { mustResolveToLocalDate: '2026-03-05', contactSaid: 'מחר ב-16:00' },
+        replyLanguage: 'mixed',
+      },
+      {
+        utterance: 'סבבה, ביי.',
+        note: 'Two words. The measurement is whether the model can also say two.',
+        tools: { allowed: ['record_call_outcome', 'update_qualification', 'schedule_followup'] },
+        text: { ...SPOKEN, maxChars: 240 },
         replyLanguage: 'mixed',
       },
     ],

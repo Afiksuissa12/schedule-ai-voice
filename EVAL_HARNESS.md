@@ -208,21 +208,23 @@ sentence measures conformity to whoever wrote the fixture, not conversation qual
 
 ### Coverage against the required list
 
-19 scenarios, **59 turns**, covering all 26 required shapes. (An earlier draft of this line said 66;
-`npm run eval:corpus` reports 59 and the per-scenario counts sum to 59. 59 is the real number.)
+**Corpus 1.1.0: 21 scenarios, 65 turns**, covering all 26 required shapes. (Corpus 1.0.0 had 19 and
+59; an earlier draft of this line said 66, and `npm run eval:corpus` is the authority. The two added
+scenarios are `hebrew-digit-clock-time` and `mixed-digit-clock-time` — see *Wrong-day resolution* in
+§ 6.)
 
 | Required shape | Scenario(s) |
 | --- | --- |
 | normal introduction | `intro-interested-lead`, `hebrew-intro-and-booking` |
-| interested lead | `intro-interested-lead`, `hebrew-intro-and-booking` |
+| interested lead | `intro-interested-lead`, `hebrew-intro-and-booking`, `hebrew-digit-clock-time` |
 | uninterested lead | `uninterested-lead`, `hebrew-price-objection` |
-| busy right now | `busy-right-now`, `hebrew-busy-callback` |
-| what exactly does the company do | `what-does-the-company-do`, `hebrew-intro-and-booking` |
+| busy right now | `busy-right-now`, `hebrew-busy-callback`, `mixed-digit-clock-time` |
+| what exactly does the company do | `what-does-the-company-do`, `hebrew-intro-and-booking`, `hebrew-digit-clock-time` |
 | contact changes topic unexpectedly | `topic-change-and-callback`, `mixed-hebrew-english` |
 | question before answering | `what-does-the-company-do` |
 | incomplete information | `incomplete-information`, `mixed-hebrew-english` |
 | "maybe call me sometime next week" | `vague-next-week`, `hebrew-busy-callback` |
-| "tomorrow afternoon should work" | `intro-interested-lead`, `hebrew-intro-and-booking`, `mixed-hebrew-english` |
+| "tomorrow afternoon should work" | `intro-interested-lead`, `hebrew-intro-and-booking`, `mixed-hebrew-english`, `hebrew-digit-clock-time`, `mixed-digit-clock-time` |
 | reschedule | `reschedule-existing-meeting` |
 | cancellation | `cancellation` |
 | not the decision maker | `not-decision-maker` |
@@ -232,8 +234,8 @@ sentence measures conformity to whoever wrote the fixture, not conversation qual
 | reference back several turns earlier | `topic-change-and-callback`, `resumed-session`, `mixed-hebrew-english` |
 | continuing a previous session | `resumed-session` |
 | English | 15 scenarios |
-| Hebrew | `hebrew-intro-and-booking`, `hebrew-busy-callback`, `hebrew-price-objection` |
-| mixed Hebrew/English | `mixed-hebrew-english` |
+| Hebrew | `hebrew-intro-and-booking`, `hebrew-busy-callback`, `hebrew-price-objection`, `hebrew-digit-clock-time` |
+| mixed Hebrew/English | `mixed-hebrew-english`, `mixed-digit-clock-time` |
 | ambiguous date and time language | `vague-next-week`, `hebrew-busy-callback` |
 | interrupts the expected sales direction | `price-objection-interrupt`, `hebrew-price-objection` |
 | unexpected but relevant product question | `what-does-the-company-do` |
@@ -326,7 +328,12 @@ argument. All of those are objectively checkable, so they are checked rather tha
 
 ---
 
-## 6. The gate: manufactured timestamps
+## 6. The gates
+
+There are two. **Neither is a weighted dimension.** A gate zeroes the entire tool-and-structural
+category for the turn that trips it, and ranks the run below every run that trips nothing.
+
+### Manufactured timestamps
 
 **This is not a weighted dimension. It is a gate.**
 
@@ -351,6 +358,44 @@ model outright. **Known limitation:** the gate requires a year, so a model that 
 having never been told the date is *not* caught by the gate. That behaviour is left to the judged
 dimensions and to the prose check. Tightening the gate to catch it would produce false positives on
 legitimate sales behaviour - offering a time is not the same as asserting a resolved one.
+
+### Wrong-day resolution
+
+Added in rubric 1.1.0, and it is the mirror image of the first gate: it grades **application code, not
+the model.**
+
+> A turn fails the gate when the corpus states which calendar day the contact named and a time-bearing
+> tool was nonetheless **accepted** for a different local calendar day. Comparison is on the local date
+> in the zone the slot resolved in.
+
+**A refusal is explicitly not a failure here.** Refusing a `when` the product cannot resolve books
+nothing and asks the contact again, which is the safe outcome; scoring it as a failure would push the
+fix in the wrong direction. Only a booking that *happened*, on the wrong day, trips it.
+
+**Why it exists.** `src/scheduling/naturalLanguage.ts` is English-only, and until this was measured the
+consequence was described everywhere as a clean refusal. It is not, for the commonest real case: a
+Hebrew or mixed `when` with the clock time **in digits** (`מחר ב-15:00`, "tomorrow at 15:00") has its
+digits recognised, its Hebrew day word **silently dropped**, and is resolved to *today* - a validated,
+persisted, audit-trailed booking a day early with no warning anywhere. `expectsToolFailure`, the only
+field the corpus previously had, could only have scored that as "expected failure DID NOT OCCUR": an
+unmet expectation, reading like a model that did better than predicted. The full finding, with the
+parser table and the end-to-end repro, is `FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 8.3.
+
+**How a scenario states it.** A turn carries
+`resolvedDay: { mustResolveToLocalDate: '2026-03-05', contactSaid: 'מחר ב-15:00' }`. The date is
+written out rather than derived, so the assertion can be checked by hand against the scenario's pinned
+`nowUtc`. `hebrew-digit-clock-time` and `mixed-digit-clock-time` are the two scenarios that use it.
+
+**The denominator is not "all turns".** The per-model rate is over turns where a day was asserted *and*
+an instant actually resolved. A rate over every turn would shrink toward zero as the corpus grew, and a
+model that was refused, or that never reached a time-bearing tool, is reported as `n/a` rather than
+credited with a pass it did not earn.
+
+**Expect failures here, and read them correctly.** A candidate that obeys the passthrough rule and
+sends the Hebrew through verbatim **fails** this gate; one that silently translates it into English
+**passes** it while failing the passthrough check. That incentive is inverted, it lives in the
+resolver, and no rubric weighting can fix it - which is the argument for doing the `src/scheduling/`
+work rather than deferring it.
 
 ---
 
@@ -433,6 +478,11 @@ eval-output/                           (override the root with EVAL_OUT_DIR)
 The first four are meant to be **committed** next to the Founder Review — a judged score nobody can
 check against its transcript is not evidence. `runs/` is gitignored: it is large, it is regenerable,
 and it is the resume checkpoint rather than a result.
+
+> **This is not a formality.** All 57 of those files were dropped during the branch merge that carried
+> the Founder Review, so for three branches the review cited evidence that was not in the repository.
+> `.gitignore` has one line for this (`eval-output/runs/`) and it means what it says: everything else
+> under `eval-output/` is committed. Restored — see `FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 5.2.
 
 `results.json` carries the harness, corpus, rubric and judge-prompt versions, the full rubric with
 weights and rationales, the candidate set and the rejected list, the coverage map, the per-model

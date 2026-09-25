@@ -29,7 +29,7 @@ import {
  * Recorded in every results file, so two runs can be compared only when they
  * measured the same thing.
  */
-export const CORPUS_VERSION = '1.0.0';
+export const CORPUS_VERSION = '1.1.0';
 
 const RAW_SCENARIOS: BenchmarkScenario[] = [...ENGLISH_SCENARIOS, ...HEBREW_SCENARIOS];
 

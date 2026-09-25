@@ -18,7 +18,13 @@ import { REQUIRED_COVERAGE } from '../corpus/schema.js';
 import { CANDIDATES, REJECTED } from '../models/candidates.js';
 import { JUDGE_MODELS } from '../rubric/judge.js';
 import { JUDGE_PROMPT_VERSION } from '../rubric/judgePrompt.js';
-import { RUBRIC_CATEGORIES, RUBRIC_VERSION, TIMESTAMP_FABRICATION_GATE } from '../rubric/rubric.js';
+import {
+  GATES,
+  RUBRIC_CATEGORIES,
+  RUBRIC_VERSION,
+  TIMESTAMP_FABRICATION_GATE,
+  WRONG_DAY_RESOLUTION_GATE,
+} from '../rubric/rubric.js';
 import { scoreModel, scoreScenario, type ModelScore } from '../rubric/score.js';
 import { HARNESS_VERSION } from '../runner/runScenario.js';
 import type { ScenarioRun } from '../types.js';
@@ -42,14 +48,13 @@ export function buildReport(input: ReportInput): Report {
     if (runs.length > 0) scores.push(scoreModel(runs));
   }
 
-  // The ranking rule, applied here and stated in the markdown: a model that
-  // trips the fabrication gate is ranked BELOW every model that does not,
+  // The ranking rule, applied here and stated in the markdown: a model whose run
+  // tripped EITHER gate is ranked BELOW every model whose run tripped neither,
   // regardless of composite. A charming model that invents timestamps is not a
-  // better product than a duller one that does not.
+  // better product than a duller one that does not, and neither is one whose
+  // conversations ended in a booking on the wrong day.
   const ranked = [...scores].sort((a, b) => {
-    if (a.timestampFabrication.passedGate !== b.timestampFabrication.passedGate) {
-      return a.timestampFabrication.passedGate ? -1 : 1;
-    }
+    if (a.passedAllGates !== b.passedAllGates) return a.passedAllGates ? -1 : 1;
     return (b.composite ?? -1) - (a.composite ?? -1);
   });
 
@@ -62,7 +67,9 @@ export function buildReport(input: ReportInput): Report {
     rubricVersion: RUBRIC_VERSION,
     judgePromptVersion: JUDGE_PROMPT_VERSION,
     judgeModels: JUDGE_MODELS,
+    /** Kept for readers written against results@1; `gates` is the full list. */
     gate: TIMESTAMP_FABRICATION_GATE,
+    gates: GATES,
     rubric: RUBRIC_CATEGORIES.map((category) => ({
       key: category.key,
       label: category.label,
@@ -98,6 +105,8 @@ export function buildReport(input: ReportInput): Report {
         composite: score.composite,
         categories: score.categories,
         gateFailedTurns: score.gate.failedTurns,
+        wrongDayFailedTurns: score.wrongDayGate.failedTurns,
+        wrongDayFindings: score.wrongDayGate.findings,
         judgeDisagreement: score.judgeDisagreement,
         judgesOk: score.judgesOk,
         turns: run.turns.length,
@@ -136,7 +145,9 @@ function renderMarkdown(
   p();
 
   // ---- headline -----------------------------------------------------------
-  p('## 1. The gate: manufactured timestamps');
+  p('## 1. The gates');
+  p();
+  p('### 1.1 Manufactured timestamps');
   p();
   p(`> ${TIMESTAMP_FABRICATION_GATE.rule}`);
   p();
@@ -166,6 +177,42 @@ function renderMarkdown(
   }
   p();
 
+  // ---- the second gate ----------------------------------------------------
+  p('### 1.2 Bookings resolved onto the wrong calendar day');
+  p();
+  p(`> ${WRONG_DAY_RESOLUTION_GATE.rule}`);
+  p();
+  p(`> **Consequence:** ${WRONG_DAY_RESOLUTION_GATE.consequence}`);
+  p();
+  p('| Model | Turns where a day was asserted and an instant resolved | Wrong day | Rate | Verdict |');
+  p('| --- | ---: | ---: | ---: | --- |');
+  for (const score of ranked) {
+    const g = score.wrongDayResolution;
+    p(
+      `| \`${score.modelId}\` | ${g.applicableTurns} | ${g.failedTurns} | ` +
+        `${g.rate === null ? 'n/a' : `${(g.rate * 100).toFixed(1)}%`} | ` +
+        `${g.applicableTurns === 0 ? 'not exercised' : g.passedGate ? '**PASS**' : '**FAIL**'} |`,
+    );
+  }
+  p();
+  const wrongDayOffenders = ranked.filter((s) => !s.wrongDayResolution.passedGate);
+  if (wrongDayOffenders.length === 0) {
+    p(
+      'No run ended in a booking on a day the contact did not name. Note the denominator: a model that was ' +
+        'refused by the resolver, or that never reached a time-bearing tool, contributes nothing here - it ' +
+        'is not credited with a pass it did not earn.',
+    );
+  } else {
+    p('Findings, verbatim. **Read these as defects in `src/scheduling/`, not as defects in the model:**');
+    p();
+    for (const score of wrongDayOffenders) {
+      for (const finding of score.wrongDayResolution.findings.slice(0, 20)) {
+        p(`- \`${score.modelId}\` - ${finding}`);
+      }
+    }
+  }
+  p();
+
   // ---- ranking ------------------------------------------------------------
   p('## 2. Composite ranking');
   p();
@@ -173,18 +220,21 @@ function renderMarkdown(
     'Weights: ' +
       RUBRIC_CATEGORIES.map((c) => `${c.label} ${(c.weight * 100).toFixed(0)}%`).join(', ') +
       '. Conversation quality dominates by design - a technically correct model that sounds robotic must ' +
-      'not win. **A model failing the gate is ranked below every model that passes it, whatever its score.**',
+      'not win. **A model failing either gate is ranked below every model that passes both, whatever its ' +
+      'score.**',
   );
   p();
-  p('| # | Model | Composite | Conversation | Tool/structural | Language | Gate |');
-  p('| ---: | --- | ---: | ---: | ---: | ---: | --- |');
+  p('| # | Model | Composite | Conversation | Tool/structural | Language | Fabrication gate | Wrong-day gate |');
+  p('| ---: | --- | ---: | ---: | ---: | ---: | --- | --- |');
   ranked.forEach((score, index) => {
+    const wrongDay = score.wrongDayResolution;
     p(
       `| ${index + 1} | \`${score.modelId}\` | ${pct(score.composite)} | ` +
         `${pct(score.categories['conversationQuality']?.score ?? null)} | ` +
         `${pct(score.categories['toolAndStructural']?.score ?? null)} | ` +
         `${pct(score.categories['languageQuality']?.score ?? null)} | ` +
-        `${score.timestampFabrication.passedGate ? 'pass' : '**FAIL**'} |`,
+        `${score.timestampFabrication.passedGate ? 'pass' : '**FAIL**'} | ` +
+        `${wrongDay.applicableTurns === 0 ? 'n/a' : wrongDay.passedGate ? 'pass' : '**FAIL**'} |`,
     );
   });
   p();

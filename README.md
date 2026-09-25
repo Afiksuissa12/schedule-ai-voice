@@ -393,7 +393,7 @@ than in `docs/` because the missions that wrote them had no write access to
 | [`FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md`](FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md) | **The review package.** Models evaluated and rejected, measured VRAM, the comparison, real transcripts, the four defects found by running it, the Baseline V1 re-run, and the `npm audit` assessment |
 | [`LOCAL_PROVIDER.md`](LOCAL_PROVIDER.md) | `LocalLlmProvider` and the Ollama transport: the port contract, `num_ctx` sizing and what Ollama actually does with an over-long prompt, timeouts, streaming, the operator CLIs |
 | [`CONVERSATION_CONTEXT.md`](CONVERSATION_CONTEXT.md) | The context assembler, the business profile, the budget ladder, the rolling summary, the anti-scripting rule, the nine proofs |
-| [`EVAL_HARNESS.md`](EVAL_HARNESS.md) | The benchmark: corpus, rubric, the LLM judges and their known failure modes, the manufactured-timestamp gate |
+| [`EVAL_HARNESS.md`](EVAL_HARNESS.md) | The benchmark: corpus, rubric, the LLM judges and their known failure modes, and the two gates — manufactured timestamps and wrong-day resolution |
 
 ### Layout
 

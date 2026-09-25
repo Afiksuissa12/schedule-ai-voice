@@ -18,6 +18,7 @@ import {
   PROGRAMMATIC_DIMENSIONS,
   RUBRIC_CATEGORIES,
   TIMESTAMP_FABRICATION_GATE,
+  WRONG_DAY_RESOLUTION_GATE,
 } from './rubric.js';
 
 /** A score plus the number of observations behind it. */
@@ -93,9 +94,26 @@ export function scoreTurnProgrammatic(turn: TurnRecord): Record<string, number |
   };
 }
 
-/** Did this turn trip the gate? */
+/** Did this turn trip the timestamp-fabrication gate? */
 export function turnFailedGate(turn: TurnRecord): boolean {
   return turn.checks.fabricatedTimestamps.length > 0;
+}
+
+/**
+ * Did this turn trip the wrong-day gate?
+ *
+ * `resolvedDay` is optional on `TurnChecks` so that a results file written by
+ * harness 1.0.0 still loads. Absent means the check never ran, which is "not
+ * applicable" - never "passed" and never "failed".
+ */
+export function turnResolvedWrongDay(turn: TurnRecord): boolean {
+  const resolved = turn.checks.resolvedDay;
+  return resolved !== undefined && resolved.applicable && !resolved.passed;
+}
+
+/** Either gate. This is what zeroes the technical category. */
+export function turnFailedAnyGate(turn: TurnRecord): boolean {
+  return turnFailedGate(turn) || turnResolvedWrongDay(turn);
 }
 
 // ---------------------------------------------------------------------------
@@ -172,6 +190,11 @@ export interface ScenarioScore {
     readonly totalTurns: number;
     readonly findings: readonly string[];
   };
+  readonly wrongDayGate: {
+    readonly failedTurns: number;
+    readonly totalTurns: number;
+    readonly findings: readonly string[];
+  };
   /** Mean absolute difference between the two judges, when both succeeded. */
   readonly judgeDisagreement: number | null;
   readonly judgesOk: number;
@@ -205,12 +228,17 @@ export function scoreScenario(run: ScenarioRun): ScenarioScore {
     dimensions[dimension.key] = mean(values);
   }
 
-  // ---- the gate ------------------------------------------------------------
+  // ---- the gates -----------------------------------------------------------
   const failedTurns = run.turns.filter(turnFailedGate);
   const findings = failedTurns.flatMap((turn) =>
     turn.checks.fabricatedTimestamps.map(
       (f) => `${run.scenarioId} turn ${turn.index + 1}: ${f.toolName}.${f.field} = "${f.matched}" (${f.pattern})`,
     ),
+  );
+
+  const wrongDayTurns = run.turns.filter(turnResolvedWrongDay);
+  const wrongDayFindings = wrongDayTurns.map(
+    (turn) => `${run.scenarioId} turn ${turn.index + 1}: ${turn.checks.resolvedDay?.detail ?? '(no detail)'}`,
   );
 
   // ---- categories ----------------------------------------------------------
@@ -234,9 +262,10 @@ export function scoreScenario(run: ScenarioRun): ScenarioScore {
       weightUsed === 0 ? { score: null, n: 0 } : { score: weighted / weightUsed, n: observations };
   }
 
-  // THE GATE BITES HERE. A scenario in which the model manufactured a timestamp
-  // scores zero on the technical category no matter what else it got right.
-  if (failedTurns.length > 0) {
+  // THE GATES BITE HERE. A scenario in which a timestamp was manufactured, or in
+  // which a booking landed on the wrong calendar day, scores zero on the
+  // technical category no matter what else it got right.
+  if (failedTurns.length > 0 || wrongDayTurns.length > 0) {
     const technical = categories['toolAndStructural'];
     categories['toolAndStructural'] = { score: 0, n: technical?.n ?? run.turns.length };
   }
@@ -264,6 +293,11 @@ export function scoreScenario(run: ScenarioRun): ScenarioScore {
     categories,
     composite,
     gate: { failedTurns: failedTurns.length, totalTurns: run.turns.length, findings },
+    wrongDayGate: {
+      failedTurns: wrongDayTurns.length,
+      totalTurns: run.turns.length,
+      findings: wrongDayFindings,
+    },
     judgeDisagreement,
     judgesOk: verdicts.length,
     judgesAttempted: Object.keys(run.judges).length,
@@ -300,6 +334,26 @@ export interface ModelScore {
     readonly findings: readonly string[];
     readonly passedGate: boolean;
   };
+
+  /**
+   * THE OTHER HEADLINE. Turns where a booking was accepted onto a different
+   * calendar day from the one the contact named.
+   *
+   * `totalTurns` here is the number of turns where the question could be asked
+   * at all - turns whose scenario states an expected day AND which produced a
+   * resolved instant - not every turn in the run. A rate over all turns would
+   * shrink towards zero as the corpus grew and would say nothing.
+   */
+  readonly wrongDayResolution: {
+    readonly failedTurns: number;
+    readonly applicableTurns: number;
+    readonly rate: number | null;
+    readonly findings: readonly string[];
+    readonly passedGate: boolean;
+  };
+
+  /** True only when NEITHER gate was tripped. This is what ranking uses. */
+  readonly passedAllGates: boolean;
 
   readonly timeToFirstToken: LatencyStats;
   readonly totalLatency: LatencyStats;
@@ -355,6 +409,10 @@ export function scoreModel(runs: readonly ScenarioRun[]): ModelScore {
   const gateFailedTurns = allTurns.filter(turnFailedGate);
   const gateFindings = scenarioScores.flatMap((s) => s.gate.findings);
 
+  const wrongDayApplicableTurns = allTurns.filter((t) => t.checks.resolvedDay?.applicable === true);
+  const wrongDayFailedTurns = allTurns.filter(turnResolvedWrongDay);
+  const wrongDayFindings = scenarioScores.flatMap((s) => s.wrongDayGate.findings);
+
   const categories: Record<string, Aggregate> = {};
   for (const category of RUBRIC_CATEGORIES) {
     let weighted = 0;
@@ -370,13 +428,14 @@ export function scoreModel(runs: readonly ScenarioRun[]): ModelScore {
     categories[category.key] = weightUsed === 0 ? { score: null, n: 0 } : { score: weighted / weightUsed, n: observations };
   }
 
-  if (gateFailedTurns.length > 0) {
+  const gatedTurns = allTurns.filter(turnFailedAnyGate);
+  if (gatedTurns.length > 0) {
     // Proportional at model level rather than a flat zero: one bad turn in
     // eighty is a serious finding but it is not the same product as a model
     // that fabricates constantly, and collapsing both to zero would hide that.
     const technical = categories['toolAndStructural'];
     if (technical?.score !== null && technical !== undefined) {
-      const survivingFraction = 1 - gateFailedTurns.length / Math.max(1, allTurns.length);
+      const survivingFraction = 1 - gatedTurns.length / Math.max(1, allTurns.length);
       categories['toolAndStructural'] = { score: technical.score * survivingFraction, n: technical.n };
     }
   }
@@ -450,6 +509,14 @@ export function scoreModel(runs: readonly ScenarioRun[]): ModelScore {
       findings: gateFindings,
       passedGate: gateFailedTurns.length === 0,
     },
+    wrongDayResolution: {
+      failedTurns: wrongDayFailedTurns.length,
+      applicableTurns: wrongDayApplicableTurns.length,
+      rate: wrongDayApplicableTurns.length === 0 ? null : wrongDayFailedTurns.length / wrongDayApplicableTurns.length,
+      findings: wrongDayFindings,
+      passedGate: wrongDayFailedTurns.length === 0,
+    },
+    passedAllGates: gateFailedTurns.length === 0 && wrongDayFailedTurns.length === 0,
     timeToFirstToken: latency(metrics.map((m) => m.timeToFirstTokenMs)),
     totalLatency: latency(allTurns.map((t) => t.turnLatencyMs)),
     tokensPerSecond: numeric(metrics.map((m) => m.tokensPerSecond)),
@@ -498,4 +565,4 @@ function numericWithMax(values: ReadonlyArray<number | null>): { n: number; mean
   };
 }
 
-export { TIMESTAMP_FABRICATION_GATE };
+export { TIMESTAMP_FABRICATION_GATE, WRONG_DAY_RESOLUTION_GATE };

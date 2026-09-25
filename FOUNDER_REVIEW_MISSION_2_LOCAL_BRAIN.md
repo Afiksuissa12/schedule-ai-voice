@@ -1,21 +1,32 @@
 # Schedule AI Voice — Founder Review: Mission 2, Local AI Brain
 
 **Mission:** MISSION-2-LOCAL-BRAIN · **Branch under review:**
-`task/MISSION-2-LOCAL-BRAIN-INTEGRATOR-FIX-1` (the integrated branch plus the
-four QA defect fixes) · as of 2026-09-23 · prepared by the integration/review
-task and completed by the post-QA fix task of the Autonomous Development Team
+`task/MISSION-2-LOCAL-BRAIN-INTEGRATOR-FIX-3` (the integrated branch, the four QA
+defect fixes, and the two findings of an independent second QA pass) · as of
+2026-09-25 · prepared by the integration/review task and completed by the post-QA
+fix tasks of the Autonomous Development Team
 
 This package is for Founder review before promotion to `master`. **Nothing here
 has been merged.** Baseline V1 on `master` is untouched.
 
-> **Provenance of this document, stated up front because it was assembled in two
-> passes.** §§ 3–6 and § 11 were written by the review task against
+> **Provenance of this document, stated up front because it was assembled in
+> several passes.** §§ 3–6 and § 11 were written by the review task against
 > `task/MISSION-2-LOCAL-BRAIN-AUTO-REVIEW`. That branch was never merged, so the
 > integrated result shipped without this document, without the evaluation layer,
 > and without the fixes for three of the four defects below — which is what an
 > independent QA pass found and what this branch corrects. Where a number or a
 > claim has been re-measured on *this* branch, it says so. Where it has not, it
 > is the review task's original measurement and is attributed as such.
+>
+> **A second independent QA pass then found two more things, and both are
+> corrections to this document rather than to the code.** § 8.3 described the
+> Hebrew scheduling gap as a clean refusal; **it is not a refusal, it is a silent
+> wrong-day booking**, and § 8.3 now says so with the measurements. And every
+> artefact §§ 4, 5.2, 6.2 and 9 call "committed next to this file" — 57 files
+> under `eval-output/` — **had been dropped by the merge that carried this
+> document**, so none of its judged scores could be checked against a transcript.
+> Restored. Both are the same class of failure: **a claim in this review that
+> nobody had re-run.**
 
 > **Where this file lives, and where it should live.** It is at the repository
 > root rather than in `docs/` because the mission that produced it had no write
@@ -48,7 +59,7 @@ every string literal in the source tree.
 601 scenarios / 2,791 applicable checks / 0 violations / 0 network attempts,
 determinism byte-identical. Numbers and raw output in § 7.
 
-**Five things you should read before the good news, because they are the
+**Six things you should read before the good news, because they are the
 substance of this review:**
 
 1. **The five-model benchmark did not complete, and one candidate finished.**
@@ -63,9 +74,21 @@ substance of this review:**
    conversational turn had **no time limit at all** — on a phone call, that is a
    dead call. **All four are fixed on this branch, and each fix has a repro that
    fails against the code as it was.**
-3. **Hebrew scheduling does not work, and it is not the model's fault** (§ 8.3).
-   `src/scheduling/naturalLanguage.ts` is English-only. A perfect model cannot
-   book a Hebrew time request today.
+3. **A Hebrew time request is not refused — it is booked on the WRONG DAY, and
+   it is not the model's fault** (§ 8.3). **This is the most serious open item in
+   the review and the only one that can still put a wrong entry in a customer's
+   diary.** `src/scheduling/naturalLanguage.ts` is English-only, but "not
+   understood" turns out not to mean "refused": a `when` like `מחר ב-15:00`
+   ("tomorrow at 15:00") has its digits recognised, its Hebrew day word **silently
+   dropped**, and is then resolved to **today** — a validated, persisted,
+   audit-trailed callback a full day early with **no error and no warning
+   anywhere**. Measured end to end, not inferred. An earlier draft of this review
+   described the same finding as a clean refusal at the application layer; that
+   was wrong, and the benign reading is what made it survive three passes. The fix
+   belongs in `src/scheduling/` and was out of scope here — what this branch adds
+   is two benchmark scenarios, a rubric gate and two vitest files that **pin the
+   wrong instant to the assertion**, so the defect cannot go quiet again and the
+   next branch to touch the resolver will be told the moment it changes.
 4. **The flagship demo could exit 1, and this review said it passed** (§ 8.6.1).
    `npm run demo:local` scored the model's own conversational judgement as a
    failed check: when it asked to confirm the contact's bare "at 3" — which the
@@ -82,6 +105,16 @@ substance of this review:**
    destroyed**, which lands the defect on this mission's own central claim rather
    than beside it. Demonstrated with a canary, independently reproduced here, and
    corrected everywhere it appeared.
+6. **The evidence this review cites was not in the repository** (§ 5.2). Every
+   artefact §§ 4, 5.2, 6.2 and 9 describe as "committed next to this file" — the
+   machine-readable `results.json`, the full `COMPARISON.md`, the measured-VRAM
+   inventory behind § 4 and **every transcript behind every judged score**, 57
+   files — was dropped by the merge that brought this document onto the
+   integration branch. For three branches **not one number in § 5.2 could be
+   checked against the conversation that produced it**, which fails this review's
+   own stated standard that *"a judged score nobody can check against its
+   transcript is not evidence."* Restored from the branch they were committed on,
+   and spot-checked against the prose that quotes them.
 
 ---
 
@@ -402,11 +435,33 @@ behaviour — offering a time is not asserting a resolved one.
 numbers below are real and already decide one thing — they disqualify a candidate.
 They do not yet earn a recommendation, and § 9 says so.
 
-The authoritative, always-current artefacts are committed next to this file:
-`eval-output/results.json` (machine-readable, every figure with its `n` and
-method) and **`eval-output/COMPARISON.md`** (the
-full side-by-side, 8 sections, 15 judged columns). The tables here are the
-headlines, not a replacement.
+The authoritative artefacts are committed next to this file — **57 files, and
+they were missing until an independent QA pass noticed**: `eval-output/results.json`
+(machine-readable, every figure with its `n` and method),
+**`eval-output/COMPARISON.md`** (the full side-by-side), `eval-output/models.json`
+(the measured-VRAM inventory behind § 4) and `eval-output/transcripts/**` (every
+conversation every judged score was derived from, for `qwen2.5`, `llama3.1` and
+`mistral`). The tables here are the headlines, not a replacement.
+
+> **They were dropped when this document was merged.** The artefacts were
+> committed on `task/MISSION-2-LOCAL-BRAIN-AUTO-REVIEW`; the integration merge took
+> the review document and not the evidence it cites, so for three branches
+> `eval-output/` did not exist at all and **not one judged score in this section
+> could be checked against its transcript** — failing this review's own stated
+> standard. They are not gitignored: `.gitignore` excludes only
+> `eval-output/runs/`. Restored verbatim from that branch and spot-checked against
+> the prose above (the composite table below is the same one `COMPARISON.md`
+> prints).
+
+> **Which harness version produced them.** `results.json` records harness, corpus,
+> rubric and judge-prompt all at `1.0.0`. This branch has since moved the corpus to
+> `1.1.0` (two new scenarios, § 8.3), the rubric to `1.1.0` (a second gate,
+> § 8.3) and the harness to `1.1.0`. **The committed numbers therefore do not
+> include the two new Hebrew/mixed scenarios and were not scored against the
+> wrong-day gate.** Nothing in them is invalidated — the 19 scenarios they cover are
+> unchanged, byte for byte — but a re-run will report on 21 scenarios and may report
+> a gate failure these files could not have recorded. § 5.4 lists the other respects
+> in which these numbers predate the branch.
 
 #### The gate — manufactured timestamps
 
@@ -1066,8 +1121,9 @@ client outside `src/llm/openAiLlmProvider.ts` and no `fetch(` under `src/agent`,
 
 ### 7.1 The self-check CLIs, re-run
 
-No new vitest tests exist — see § 10.1 for why that is a constraint rather than a
-choice. These CLIs stand in, and all of them were re-run by this review:
+The mission tasks could not write to `tests/`, so these CLIs stood in for vitest
+coverage — see § 10.1, which is now partly superseded: **this branch adds two real
+vitest files for § 8.3.** All the CLIs below were re-run:
 
 | CLI | Live Ollama? | Result |
 |---|---|---|
@@ -1076,7 +1132,7 @@ choice. These CLIs stand in, and all of them were re-run by this review:
 | `npm run llm:smoke` | yes | **24 checks, 0 failures**, against a real `qwen2.5:7b-instruct` |
 | `npm run check:anti-scripting` | no | **PASS** — no canned dialogue; non-vacuity self-test fired all five rules; one allowance, printed with its justification |
 | `npm run context:prove` | no | **PASS — 9/9 proofs**, including determinism, boundedness over 100 turns, cross-session continuity, the disclosure record, the budget ladder, and five ways a summariser can fail without costing a turn |
-| `npm run eval:corpus` | no | **Corpus 1.0.0 VALID** — 19 scenarios, 59 turns, en=15 / he=3 / mixed=1, all 26 required shapes claimed |
+| `npm run eval:corpus` | no | **Corpus 1.1.0 VALID** — 21 scenarios, 65 turns, en=15 / he=4 / mixed=2, all 26 required shapes claimed. Was 19 / 59 at corpus 1.0.0; the two added scenarios are the § 8.3 wrong-day probes |
 | `npm run demo:local` | yes | **PASS** — every check held (§ 6.1, § 6.4). **Read § 8.6 before quoting this row:** until the fix recorded there, this command's overall result was not deterministic, and an earlier version of this row said "PASS" without saying so |
 
 `npm run demo:local` was re-run on this branch after the fixes and passed again:
@@ -1095,15 +1151,16 @@ row.
 
 Re-run on this branch after the fixes, the offline ones are unchanged:
 `llm:mapcheck` **62 checks / 0 failures**, `check:anti-scripting` **PASS**,
-`context:prove` **9/9**, `eval:corpus` **VALID, 19 scenarios / 59 turns**.
+`context:prove` **9/9**, `eval:corpus` **VALID, 21 scenarios / 65 turns** (the
+only one whose numbers moved, because § 8.3 added two scenarios).
 `llm:mapcheck` matters most of the four here — it is the regression net over the
 transport this branch rewrote, and it passes unchanged including its own proof
 that the mapping layer performs no I/O.
 
 **Four probes were added for the four defects**, each of which fails against the
 code as it was and passes against the code as it is. They are not vitest tests
-for the reason in § 10.1 — `vitest.config.ts` collects `tests/**` only and this
-task could write to neither — and **converting them is the first thing the
+for the reason in § 10.1 — the tasks that wrote them could write to neither
+`vitest.config.ts` nor `tests/` — and **converting them is the first thing the
 follow-up milestone in § 10.1 should do**, because a defect this severe deserves
 a gate rather than a document:
 
@@ -1114,12 +1171,39 @@ a gate rather than a document:
 | business-profile probe | § 8.10 | Drives `buildAgentRuntime` → `handleTurn` → `get_contact_context` and asserts the `business` key is present with a profile, absent without one, and **absent on the Baseline V1 path** |
 | context-budget probe | § 8.1 | Six cases: derivation from the provider, an explicit smaller budget left alone, an explicit larger one raising `ConfigurationError`, and the two documented cases where nothing can be derived |
 
+**And two of them are now real vitest files**, added by the post-QA fix task for
+§ 8.3, which did have write access to `tests/`:
+
+| File | Tests | What it proves |
+|---|---:|---|
+| `tests/e2e/hebrewDigitClockTime.test.ts` | 4 | Drives the real `AgentTurnService` → `ToolDispatcher` → validator with a Hebrew `when` carrying a digit clock time, and records that it is **accepted onto 2026-03-04 when the contact said 2026-03-05**. Includes an English control that resolves correctly and a Hebrew words-not-digits control that is genuinely refused |
+| `tests/eval/wrongDayGate.test.ts` | 11 | That a wrong-day turn **zeroes the tool-and-structural category**, moves the composite, ranks below a clean run, measures its rate over applicable turns rather than all turns, and reads a pre-1.1.0 results file as "not applicable" rather than as a pass |
+
+`npm run test` on this branch: **38 files passed / 1 skipped, 515 passed /
+2 skipped** — the 500 Baseline V1 tests unchanged, plus these 15.
+
 ---
 
 ## 8. Findings, regressions and unresolved items
 
 **No regressions.** Every Baseline V1 guarantee holds unchanged (§ 7). What
 follows is what integration found, stated plainly.
+
+**Read § 8.3 first.** It is the only finding here that can still put a wrong entry
+in a real customer's diary: a Hebrew or mixed time written with digits is not
+refused, it is **accepted onto the wrong calendar day**, silently. Everything else
+in this list is either fixed (§§ 8.1, 8.2, 8.4, 8.6.1, 8.10), a finding about a
+model rather than about the product (§§ 8.5, 8.6), a gap in the measurement
+(§§ 8.7, 8.8), or an accepted trade (§ 8.9). Ordered by what can still hurt a
+caller:
+
+| Rank | Finding | Status | Worst outcome today |
+|---:|---|---|---|
+| **1** | **§ 8.3** Hebrew/mixed digit time resolves to the wrong day | **UNRESOLVED** | **a real callback or meeting booked one day early, fully validated, no warning** |
+| 2 | § 8.4 a turn had no time limit | FIXED | a dead phone call |
+| 3 | § 8.1 context-window disagreement | FIXED | conversation history silently destroyed |
+| 4 | § 8.10 / § 8.2 business profile lost before the tools | FIXED | the agent cannot answer "what does it cost" |
+| 5 | § 8.8 judge methodology | one fixed, one live | a judged number that overstates a model |
 
 ### 8.1 FIXED — the two slices disagreed about the context window, and the failure would have been silent
 
@@ -1225,22 +1309,111 @@ composition root reconciles them.
 will rely on it. Reported to that task with the reproduction. Not changed here —
 it is their file and a comment fix is not needed to make the integration work.
 
-### 8.3 UNRESOLVED, and the most consequential product finding — Hebrew scheduling cannot work today, and it is not the model's fault
+### 8.3 UNRESOLVED, and the most serious open finding in this review — a Hebrew time with digits is NOT refused, it books the WRONG DAY
+
+> **This section said the opposite until an independent QA pass measured it.** The
+> earlier text claimed *"a Hebrew `when` argument is refused as unparseable by the
+> real validator no matter how perfectly the model passed the contact's words
+> through"* and that *"every Hebrew scheduling turn that carries the contact's
+> actual words therefore fails at the application layer."* **Both sentences are
+> false for the commonest real case**, and the difference between them and the
+> truth is the difference between a benign limitation and a live product hazard.
+> A refusal can wait for a later milestone. A silent wrong-day booking cannot.
 
 `src/scheduling/naturalLanguage.ts` is **English-only**: its weekday table, its
 relative-offset patterns and its time-of-day markers are all English literals.
-So a Hebrew `when` argument is refused as unparseable by the real validator **no
-matter how perfectly the model passed the contact's words through.**
+That part was, and remains, correct. What was wrong is the assumption that "not
+understood" means "refused".
 
-**Every Hebrew scheduling turn that carries the contact's actual words therefore
-fails at the application layer, not at the model layer.** The evaluation harness
-designed its Hebrew scenarios around this — marking them `expectsToolFailure` and
-scoring the passthrough and the recovery rather than the booking — which is the
-right call. **If you take away "Hebrew scheduling does not work" without "because
-the resolver is English-only", the wrong thing will get fixed.** No model change
-will help. This is a scoped piece of work in `src/scheduling/`, and it is out of
-scope for this mission, which was not permitted to change scheduling behaviour at
-all.
+**What actually happens.** A Hebrew or mixed `when` whose time of day is written
+**in digits** — `מחר ב-15:00`, "tomorrow at 15:00", which is exactly how an
+Israeli contact says it — is **accepted**. The grammar recognises the clock time,
+**silently drops the Hebrew day word it does not know**, and falls through to its
+`implicit_today` branch (*"a time with no named day means TODAY"*). The two
+leftover safety nets do not catch it: `/\d/.test(remaining)` is false once the
+digits have been consumed, and `LEFTOVER_BLOCKLIST_RE` is English-only, so
+leftover Hebrew tokens pass. The result is `ok: true` with
+`dayAnchor: implicit_today` — **a validated booking one calendar day early.**
+
+**Repro 1 — the parser, directly.** `now` = Wednesday 2026-03-04 09:00
+Asia/Jerusalem, so "tomorrow" must be 2026-03-05:
+
+| | `when` | Resolved | `dayAnchor` | |
+|---|---|---|---|---|
+| EN | `tomorrow at 15:00` | 2026-03-05 15:00 | `tomorrow` | correct |
+| EN | `thursday at 15:00` | 2026-03-05 15:00 | `weekday:thursday` | correct |
+| HE | `מחר ב-15:00` *(tomorrow at 15:00)* | **2026-03-04** 15:00 | `implicit_today` | **WRONG DAY** |
+| HE | `יום חמישי ב-15:00` *(Thursday at 15:00)* | **2026-03-04** 15:00 | `implicit_today` | **WRONG DAY** |
+| MIX | `call me מחר at 15:00` | **2026-03-04** 15:00 | `implicit_today` | **WRONG DAY** |
+| MIX | `מחר at 3pm` | **2026-03-04** 15:00 | `implicit_today` | **WRONG DAY** |
+
+**Repro 2 — end to end, through the real chokepoint.** QA drove
+`buildAgentRuntime` with a seeded Asia/Jerusalem world and a model that passed the
+contact's words through **verbatim** — the behaviour the architecture asks for:
+
+```
+contact said:        תתקשר אליי מחר ב-15:00     ("call me tomorrow at 15:00")
+model passed through: מחר ב-15:00               (verbatim - passthrough honoured)
+stopReason:           MODEL_FINISHED
+FutureActions:        1                          <- NOT refused
+scheduledForUtc:      2026-03-04T13:00:00.000Z   (= TODAY 15:00 Asia/Jerusalem)
+expected:             2026-03-05T13:00:00.000Z   (= tomorrow 15:00 Asia/Jerusalem)
+provenance notes:     {"interpretation":{"matched":["clock_time:15:00","implicit_today",
+                       "hour_resolution:unambiguous_24h"],"normalized":"מחר ב-15:00",
+                       "dayAnchor":"implicit_today","timeAnchor":"15:00"}}
+```
+
+A persisted, audit-trailed callback a full day early, **every validator check
+passing and no warning anywhere.** `DueActionRunner` will then dial it on the
+wrong day. Reproduced independently on this branch, and now pinned by
+`tests/e2e/hebrewDigitClockTime.test.ts`, which drives the real dispatcher and
+asserts the wrong-day instant that comes back.
+
+**Which Hebrew inputs do each thing.** The distinction is the *form of the time*,
+not the language:
+
+| Hebrew `when` | Behaviour |
+|---|---|
+| time spelled out in WORDS — `בוא נגיד מחר אחרי הצהריים, בשתיים`, `שבוע הבא` | **genuinely refused** — *"does not name a day or a time this scheduler can resolve"*. Safe: the contact gets asked again |
+| time in DIGITS — `מחר ב-15:00`, `יום חמישי ב-15:00` | **accepted, resolved to today** — silent wrong-day booking |
+
+**Why the harness never caught it, and what now does.** Every Hebrew scenario in
+`src/eval/corpus/scenarios.he.ts` offered its time in words, so the one input
+class that produces a wrong instant was untested — and those scenarios are marked
+`expectsToolFailure`, which could only ever have scored a wrong-day booking as
+*"expected failure DID NOT OCCUR"*: a mild unmet expectation, reading like a model
+that did **better** than predicted. Three things changed on this branch, none of
+them in `src/scheduling/`:
+
+1. **Two new scenarios** — `hebrew-digit-clock-time` and `mixed-digit-clock-time`
+   — put `מחר ב-15:00` and `call me back מחר ב-16:00` through the real chain.
+2. **A new corpus expectation, `resolvedDay`**, and **a second rubric gate,
+   `wrongDayResolution`.** A turn whose resolved instant lands on a different
+   calendar day from the one the contact named **fails**, zeroes the whole
+   tool-and-structural category, and ranks the run below every clean one. A
+   **refusal is explicitly not a failure** there — refusing books nothing, which
+   is the safe outcome, and punishing it would push the fix the wrong way. The
+   gate's own text says it grades **application code, not the model**.
+3. **Two test files**, `tests/e2e/hebrewDigitClockTime.test.ts` and
+   `tests/eval/wrongDayGate.test.ts` (15 tests), which record the defect
+   against the real dispatcher and prove the gate fires on it. When the resolver
+   is fixed, the first one fails on purpose and its message says what to change.
+
+**Nothing about scheduling behaviour was altered.** `src/scheduling/` is byte-for-byte
+unchanged, as Baseline V1 requires. What changed is that the product now **measures**
+this instead of describing it wrongly.
+
+**If you take away "Hebrew scheduling does not work" without "because the resolver
+is English-only", the wrong thing will get fixed** — and that warning applies with
+more force to this section's own former framing. **No model change will help.** The
+fix is a scoped piece of work in `src/scheduling/`, and it needs to make the
+digit-bearing case *refuse* at minimum, before it makes it resolve.
+
+**Recommended interim mitigation, for your decision** (also out of scope here, and
+a scheduling change): make the leftover safety net language-agnostic, so any
+unconsumed non-whitespace token in `remaining` refuses rather than being dropped.
+That converts the silent wrong-day booking into the honest refusal this section
+used to claim already happened, without teaching the grammar any Hebrew.
 
 **And there is a second-order finding the harness did not anticipate.** In the
 real run, `qwen2.5:7b-instruct` did *not* hit the resolver gap — because it
@@ -1256,7 +1429,16 @@ gap is partly masked by models breaking the passthrough rule to work around it**
 which means fixing the resolver is *also* what makes the passthrough guarantee
 enforceable in Hebrew. The two are one piece of work, not two.
 
-### 8.4 FIXED, and the most serious of the four — a turn had no time limit at all
+**And the wrong-day defect makes that far sharper than it looked.** A model that
+translates `מחר ב-15:00` into `tomorrow at 15:00` books the **right** day — by
+breaking the rule. A model that obeys the rule and passes `מחר ב-15:00` through
+books the **wrong** day. As the product stands today, **the compliant model is the
+one that gets the customer's appointment wrong**, and the measurement rewards the
+rule-breaker. That incentive is inverted and it is the clearest single argument for
+doing the `src/scheduling/` work rather than deferring it: no prompt, no model
+choice and no benchmark weighting can fix an incentive that lives in the resolver.
+
+### 8.4 FIXED, and the most serious of the four defects that were fixed — a turn had no time limit at all
 
 `LOCAL_LLM_TIMEOUT_MS` is documented as a **"hard per-request deadline"** in both
 `.env.example` and `LOCAL_PROVIDER.md` § 7. **It was not one.** On the streaming
@@ -1758,13 +1940,25 @@ not do it.
 **The exact run that settles it**, if it has to be re-run from scratch:
 
 ```bash
-npm run eval:run          # all 5 candidates, 19 scenarios, judging on, num_ctx 16384
+npm run eval:run          # all 5 candidates, 21 scenarios, judging on, num_ctx 16384
 npm run eval:report
 ```
 
 Roughly 1.5–2 hours on the measured hardware, resumable, and it must be run
-**detached** (§ 8.7). Nothing else is needed — the corpus, the rubric, the judge prompt and the
-model inventory are all committed.
+**detached** (§ 8.7). Nothing else is needed — the corpus, the rubric, the judge
+prompt and the model inventory (`eval-output/models.json`) are all committed, and
+so are `eval-output/results.json`, `eval-output/COMPARISON.md` and every
+transcript behind them (§ 5.2).
+
+**One thing has changed since the committed results were produced.** The corpus is
+now 1.1.0 (21 scenarios, not 19) and the rubric is 1.1.0 (a second gate). A re-run
+will therefore cover the two § 8.3 wrong-day scenarios that the committed numbers
+could not. **Expect wrong-day gate failures, and do not read them as a model
+regressing** — the defect is in the resolver. Note the perverse shape of what the
+gate will show: a candidate that obeys the passthrough rule and sends `מחר ב-15:00`
+through verbatim **fails** the gate, while a candidate that silently translates it
+into English **passes** it (§ 8.3's second-order finding). Read both columns
+together, and read § 8.3 before drawing any conclusion about a model from either.
 <!-- RECOMMENDATION:END -->
 
 ### 9.1 What is wired today, and what it means
@@ -1784,26 +1978,58 @@ path on the evidence in § 8.2, and is wired as such, **pending your approval.**
 
 ## 10. What this mission did NOT do
 
-### 10.1 No new automated tests exist, and nobody could have written any
+### 10.1 Almost no new automated tests exist — fifteen, out of what should be a hundred
 
-`vitest.config.ts` has `include: ['tests/**/*.test.ts']`, and this mission could
-write to **neither** `vitest.config.ts` **nor** `tests/`. **No vitest test could
-therefore be added by anyone in this mission**, for any of the three slices or the
-integration. That is a real coverage gap and it is stated here rather than
-softened.
+**Corrected on this branch.** The three slice tasks and the integration task could
+write to **neither** `vitest.config.ts` **nor** `tests/`, so none of them could add
+a vitest test for any of their work. The post-QA fix task **did** have write access
+to `tests/`, and added two files — 15 assertions — but **only for § 8.3**, because
+that is what it was asked to fix:
 
-What stands in: the CLIs in § 7.1. They are held to the same standard — named
-assertions, printed evidence, non-zero exit on failure, and non-vacuity guards
-that prove the checks can still fire. `context:prove` runs nine proofs,
+- `tests/e2e/hebrewDigitClockTime.test.ts` (4) — the wrong-day defect, against the
+  real dispatcher, with an English control and a refusal control.
+- `tests/eval/wrongDayGate.test.ts` (11) — the scoring consequence, the gate's
+  denominator, and forward-compatibility with pre-1.1.0 results files.
+
+**Everything else in this mission is still uncovered by `npm test`.** The provider
+transport, the context assembler, the eval runner, the judge, the report — all of
+it. That is the real coverage gap and stating that fifteen tests exist does not
+narrow it much.
+
+What stands in for the rest: the CLIs in § 7.1. They are held to the same standard
+— named assertions, printed evidence, non-zero exit on failure, and non-vacuity
+guards that prove the checks can still fire. `context:prove` runs nine proofs,
 `llm:mapcheck` 62 assertions, `llm:smoke` 24, `llm:probe` 5,
 `check:anti-scripting` a twelve-sample self-test, and `demo:local` its own set.
 
-**Recommendation: a follow-up milestone with write access to `tests/` should
-convert all of them into real vitest coverage**, so they run under `npm test`
-and gate a merge rather than needing to be remembered. The offline ones
-(`llm:mapcheck`, `context:prove`, `check:anti-scripting`, `eval:corpus`) convert
-directly and should be done first; the live-Ollama ones want the same
-skip-when-absent treatment `tests/agent/openAiLive.test.ts` already has.
+**Recommendation: a follow-up milestone should convert all of them into real
+vitest coverage**, so they run under `npm test` and gate a merge rather than
+needing to be remembered. The offline ones (`llm:mapcheck`, `context:prove`,
+`check:anti-scripting`, `eval:corpus`) convert directly and should be done first;
+the live-Ollama ones want the same skip-when-absent treatment
+`tests/agent/openAiLive.test.ts` already has.
+
+#### 10.1.1 Named coverage gaps in the benchmark corpus and rubric
+
+Stated here rather than left silent, because a benchmark's blind spots are not
+visible in its own output.
+
+**Closed on this branch.** *Hebrew or mixed `when` with a digit-bearing clock
+time.* Every Hebrew scenario offered its time in words, which the resolver really
+does refuse, so the one Hebrew input class that silently produces a **wrong
+instant** was never exercised — and `expectsToolFailure`, the only field that
+could have carried an expectation there, could only have scored the wrong-day
+booking as an unmet expectation. Closed by the `resolvedDay` expectation, the
+`wrongDayResolution` gate and two new scenarios (§ 8.3).
+
+**Still open, and each is a decision for a later milestone, not pending work:**
+
+| Gap | Why it is not closed here |
+|---|---|
+| **Wrong-day resolution is only probed in Hebrew and mixed.** No English scenario asserts a `resolvedDay`, so an English-only regression in the resolver would not trip the gate | The two new scenarios exist to catch a measured defect. Blanket-asserting `resolvedDay` on the fifteen English scenarios is a corpus-wide change that would re-baseline every committed number, and it should be done deliberately rather than as a side effect of a fix |
+| **The gate checks the DAY, not the instant.** A booking at the right date and the wrong hour passes it | Deliberate. The day is where the measured defect lands and where a comparison against "what the contact said" is unambiguous. An hour-level assertion needs the corpus to state an expected wall-clock time per turn, which is a larger schema change |
+| **Nothing scores what the agent TOLD the contact about the booking.** A wrong-day booking that the reply also misreports is scored once, not twice | `mustNotAssertConcreteDate` covers the case where no date was given; it has no way to check a date against the one the tool actually returned |
+| **The corpus has one Hebrew and one mixed digit-time scenario, not a matrix.** Hebrew weekday names (`יום חמישי`), `אחרי הצהריים` with digits, and 12-hour Hebrew forms are unexercised in the harness | They are covered at the parser level in § 8.3's table and end to end for `מחר`. A full matrix belongs with the `src/scheduling/` fix, where it can assert the *correct* answer rather than record the wrong one |
 
 ### 10.2 Schema changes recommended but deliberately not made
 
@@ -2016,8 +2242,12 @@ Each line was checked directly by this review, not copied from a self-report.
   benchmark arrived with a dependency footprint of **zero** (§ 11).
 - **The "unchanged" claims above are a diff, not an assertion.**
   `git diff --name-only master HEAD` over this whole branch does not contain
-  `tests/`, `prisma/`, `docs/` or `vitest.config.ts` — **nothing, not one file** —
-  and does not contain `src/llm/scriptedLlmProvider.ts`,
+  `prisma/`, `docs/` or `vitest.config.ts` — **nothing, not one file**. It
+  contains exactly **two** files under `tests/`, both added by the post-QA fix
+  task for § 8.3 and neither of them a modification of an existing test:
+  `tests/e2e/hebrewDigitClockTime.test.ts` and `tests/eval/wrongDayGate.test.ts`.
+  Every pre-existing test file is byte-identical to `master`. The diff also does
+  not contain `src/llm/scriptedLlmProvider.ts`,
   `src/agent/tools/definitions.ts` (the nine tools),
   `src/agent/tools/dispatcher.ts`, `src/scheduling/dateTimeResolver.ts`,
   `src/scheduling/schedulingValidator.ts`, `src/scheduling/naturalLanguage.ts`,
@@ -2039,7 +2269,10 @@ Each line was checked directly by this review, not copied from a self-report.
 ```
 READY_TO_MERGE:
 - integrated branch clean:            YES
-- Baseline V1 tests green:            YES   (500 passed, 2 skipped, 36/37 — unchanged)
+- Baseline V1 tests green:            YES   (500 passed, 2 skipped — unchanged.
+                                             Whole suite now 515 passed / 2 skipped,
+                                             38 files / 1 skipped, the extra 15
+                                             being the two new § 8.3 files)
 - invariant sweep green:              YES   (601 scenarios, 2,791 applicable,
                                              0 violations, 0 network attempts)
 - determinism identical:              YES   (byte-identical second run)
@@ -2052,14 +2285,31 @@ READY_TO_MERGE:
 - secrets committed:                  NO
 - real external communications:       NO    (local Ollama only; no vendor API)
 - schema modified:                    NO
-- new vitest tests:                   NONE POSSIBLE — see § 10.1
+- src/scheduling modified:            NO    (byte-identical to master, including
+                                             naturalLanguage.ts — § 8.3 is
+                                             MEASURED here, not fixed here)
+- new vitest tests:                   TWO FILES, 15 tests — § 8.3 only.
+                                      Everything else in the mission is still
+                                      uncovered by npm test (§ 10.1)
+- evidence artefacts committed:       YES   (57 files under eval-output/ — they
+                                             were MISSING until QA-2 found it;
+                                             § 5.2)
 - model recommendation earned:        SEE § 9 — not asserted beyond the evidence
-- unresolved product finding:         YES   — § 8.3, Hebrew scheduling resolver
+- unresolved product finding:         YES   — § 8.3, and it is more serious than
+                                             this document previously said:
+                                             a Hebrew/mixed digit time is not
+                                             refused, it books the WRONG DAY
 ```
 
-The one item that is not a clean YES is deliberate. **§ 9 will not name a
-recommended model unless § 5.2's evidence earns it**, and § 8.3 is a real product
-gap that this mission was not permitted to fix and will not quietly omit.
+Three items are not a clean YES, and all three are deliberate. **§ 9 will not name
+a recommended model unless § 5.2's evidence earns it.** **§ 10.1 states the test
+coverage that is still missing rather than letting fifteen tests stand in for a
+suite.** And **§ 8.3 is a real product defect that this mission was not permitted
+to fix** — what it could do, and did, is stop describing it wrongly and put a
+failing scenario, a rubric gate and two tests around it so it cannot go quiet
+again. **If you promote this branch, § 8.3 goes with it.** It is not a reason to
+hold the merge — Baseline V1 is intact and the defect predates this mission — but
+it is the first thing the next milestone should take.
 
 ---
 

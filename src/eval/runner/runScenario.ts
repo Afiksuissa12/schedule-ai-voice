@@ -33,6 +33,7 @@ import {
   checkLanguage,
   checkPassthrough,
   checkRepetition,
+  checkResolvedDay,
   checkSchedulingIntent,
   checkText,
   checkToolCall,
@@ -44,7 +45,7 @@ import { foldTurnMetrics, MetricsCapturingProvider } from './metricsCapturingPro
 import { prepareWorld } from './world.js';
 
 /** Bump when the harness's own behaviour changes in a way that affects results. */
-export const HARNESS_VERSION = '1.0.0';
+export const HARNESS_VERSION = '1.1.0';
 
 export interface RunScenarioOptions {
   readonly runtime: AgentRuntime;
@@ -102,15 +103,25 @@ export async function runScenario(options: RunScenarioOptions): Promise<Scenario
       iterations = result.iterations;
       stopReason = result.stopReason;
 
-      recordedOutcomes = result.toolOutcomes.map((outcome) => ({
-        toolCallId: outcome.toolCallId,
-        toolName: outcome.toolName,
-        ok: outcome.ok,
-        summary: outcome.ok ? outcome.summary : null,
-        code: outcome.ok ? null : outcome.code,
-        reason: outcome.ok ? null : outcome.reason,
-        persisted: outcome.ok && outcome.persisted ? outcome.persisted : null,
-      }));
+      recordedOutcomes = result.toolOutcomes.map((outcome) => {
+        // Every time-bearing tool reports the instant it committed to in the
+        // same two fields, so one reader covers check_availability,
+        // schedule_meeting, reschedule_meeting and schedule_followup.
+        const data = outcome.ok ? (outcome.data as Record<string, unknown> | undefined) : undefined;
+        const startLocal = data?.['start_local'];
+        const timezone = data?.['timezone'];
+        return {
+          toolCallId: outcome.toolCallId,
+          toolName: outcome.toolName,
+          ok: outcome.ok,
+          summary: outcome.ok ? outcome.summary : null,
+          code: outcome.ok ? null : outcome.code,
+          reason: outcome.ok ? null : outcome.reason,
+          persisted: outcome.ok && outcome.persisted ? outcome.persisted : null,
+          resolvedStartLocal: typeof startLocal === 'string' ? startLocal : null,
+          resolvedTimezone: typeof timezone === 'string' ? timezone : null,
+        };
+      });
 
       // Any meeting id the system has now SHOWN the model is legitimate for it
       // to use on a later turn. Collected from real tool results, so the
@@ -290,6 +301,7 @@ function buildChecks(input: BuildChecksInput): TurnChecks {
       ),
     ),
     passthrough: checkPassthrough(input.turn, calls),
+    resolvedDay: checkResolvedDay(input.turn, input.recordedOutcomes),
     text: checkText(input.turn, input.assistantText, input.contactUtterancesSoFar),
     repetition: checkRepetition(input.assistantText, input.earlierAssistantTexts),
     language: checkLanguage(input.assistantText, input.turn.replyLanguage ?? input.scenario.language),

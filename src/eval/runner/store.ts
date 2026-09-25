@@ -13,9 +13,11 @@
  *   <outDir>/transcripts/<model-slug>/<scenario>.md   human-readable
  *   <outDir>/COMPARISON.md                            the side-by-side report
  *
- * `<outDir>/runs` and `<outDir>/transcripts` are gitignored because they are
- * large and regenerable; `results.json`, `models.json` and the markdown are
- * COMMITTED, because the Founder Review depends on them.
+ * ONLY `<outDir>/runs` is gitignored - it is large and fully regenerable from
+ * the models. `results.json`, `models.json`, `COMPARISON.md` AND the transcripts
+ * are COMMITTED, because the Founder Review depends on them and a judged score
+ * nobody can check against its transcript is not evidence. `.gitignore` says the
+ * same thing at the one line that enforces it.
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
