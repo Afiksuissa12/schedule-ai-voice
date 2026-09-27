@@ -1073,7 +1073,11 @@ export const FAMILY_PURPOSE: Readonly<Record<FamilyKey, string>> = {
     'the same Thursday. Since r17 it also carries the FIRST-PERSON SIMPLE PAST (`I booked you in for ' +
     'Friday`, `I cancelled your meeting`, `I sent you a confirmation email`, `סידרתי`) and a fabricated ' +
     'digits-only confirmation number, which were released end to end until the English lexicon gained a ' +
-    'preterite. Policed by INV-18.',
+    'preterite. Since r23 it carries the CROSS-CLAUSE shape as well (`Don\'t worry, your meeting is booked ' +
+    'for Friday at 2pm.`, `אין דאגה, הפגישה נקבעה ליום שישי`, and the same sentence with no punctuation so ' +
+    'only `but` divides it), which was released and persisted until negation was scoped to the clause - ' +
+    'plus r27, the precision half, which must still be released byte-identical when it is TRUE. Policed by ' +
+    'INV-18.',
 };
 
 /**

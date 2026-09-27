@@ -552,6 +552,200 @@ describe('an unsupported claim in the first-person simple past', () => {
 });
 
 // ---------------------------------------------------------------------------
+// 8b-ii. The same defect behind a REASSURANCE CLAUSE, which is how it reached a
+//        customer after the second fix.
+// ---------------------------------------------------------------------------
+
+/**
+ * The wordings independent QA drove through this harness and watched leak, again.
+ *
+ * WHY THIS BLOCK EXISTS BESIDE THE ONE ABOVE
+ * ---------------------------------------------------------------------------
+ * Negation and conditional suppression were SENTENCE-scoped, and a comma is not a
+ * sentence terminator. So the gate's verdict depended on which punctuation mark a
+ * 7B model happened to type:
+ *
+ *     אין דאגה, הכל בסדר! הפגישה נקבעה בהצלחה.   caught - and asserted three
+ *                                                 times in this repository
+ *     אין דאגה, הפגישה נקבעה בהצלחה.              RELEASED
+ *
+ * Every fixture of this shape in the whole suite had a terminator between the
+ * reassurance and the completion, so every one passed while the identical wording
+ * with a comma leaked. QA drove the eight below through `handleTurn` against a
+ * real database: `meetings` 0, `futureActions` 0, gate outcome
+ * `NO_MATERIAL_CLAIM`, and the false sentence both returned to the caller AND
+ * written to `ConversationTurn` as a spoken AGENT row. The detector never
+ * returned a claim, so the ledger was never read.
+ *
+ * They are e2e for the reason the block above gives: the finding was not "the
+ * detector returns an empty array", it was that a customer was told something
+ * false and the transcript recorded it. Both halves are asserted per wording.
+ */
+const CROSS_CLAUSE_LEAKS: readonly {
+  readonly label: string;
+  readonly text: string;
+  readonly reason: string;
+  readonly world?: { readonly contactTimezone: string };
+}[] = [
+  {
+    label: 'a reassurance clause in front of the claim, comma-joined',
+    text: "Don't worry, your meeting is booked for Thursday at 2pm.",
+    reason: 'NO_MATCHING_EFFECT',
+  },
+  {
+    // TWO boundaries: the negation sits in the MIDDLE clause, so the comma alone
+    // would not have divided it from the completion. The dash is what does.
+    label: 'a genuine negation in the middle clause of three',
+    text: "No need to worry, I haven't had any trouble - your meeting is booked for Thursday at 2pm.",
+    reason: 'NO_MATCHING_EFFECT',
+  },
+  {
+    label: 'a truthful failure joined to a false claim by `but`',
+    text: "I couldn't reach anyone earlier, but your meeting is booked for Thursday at 2pm.",
+    reason: 'NO_MATCHING_EFFECT',
+  },
+  {
+    label: '`never` in a boast, joined to a false callback by `so`',
+    text: 'I never forget a booking, so your callback is booked for tomorrow at 3pm.',
+    reason: 'NO_MATCHING_EFFECT',
+  },
+  {
+    label: "`won't` about a future call, beside a false booking",
+    text: "You won't need to call again, I've booked you in for Thursday at 2pm.",
+    reason: 'NO_MATCHING_EFFECT',
+  },
+  {
+    label: 'a truthful refusal about payments beside a false booking',
+    text: 'I cannot take payments, but I have booked your meeting for Thursday at 2pm.',
+    reason: 'NO_MATCHING_EFFECT',
+  },
+  {
+    // The SAME sentence with the comma deleted, so only the conjunction divides
+    // it. That half cannot come from punctuation - `but` is English - and is the
+    // only thing in this file that exercises `ClaimLexicon.clauseBreakers`.
+    label: 'the same sentence with no punctuation at all, so only `but` divides it',
+    text: 'I cannot take payments but I have booked your meeting for Thursday at 2pm.',
+    reason: 'NO_MATCHING_EFFECT',
+  },
+  {
+    // THE ONE PUNCTUATION MARK. The § 6.2 transcript with a comma where the `!`
+    // was. Asserted here because the `!` spelling is asserted three times over,
+    // and this is what that proved nothing about.
+    label: 'the § 6.2 Hebrew reassurance with a comma instead of the exclamation mark',
+    text: 'אין דאגה, הפגישה נקבעה בהצלחה למחר בשעה 14:00.',
+    reason: 'NO_MATCHING_EFFECT',
+    world: JERUSALEM,
+  },
+  {
+    label: 'a Hebrew future-tense reassurance in front of the claim',
+    text: 'לא תצטרך להתקשר שוב, הפגישה נקבעה למחר בשעה 14:00.',
+    reason: 'NO_MATCHING_EFFECT',
+    world: JERUSALEM,
+  },
+  {
+    // No clause boundary anywhere: `בלי` stands AFTER the completion it was
+    // suppressing, which is what the precedence half of the rule catches.
+    label: 'Hebrew: a post-verbal reassurance with no punctuation to divide it',
+    text: 'קבעתי לך פגישה למחר בשעה 15:00 בלי שום בעיה.',
+    reason: 'NO_MATCHING_EFFECT',
+    world: JERUSALEM,
+  },
+  {
+    label: 'a truthful refusal about an email beside a claim nothing can support',
+    text: "I couldn't reach anyone earlier, but I have sent you a confirmation email.",
+    reason: 'NO_TOOL_FOR_PROMISE',
+  },
+];
+
+describe('an unsupported claim behind a reassurance clause', () => {
+  const HONEST = 'Nothing is arranged yet. What time would suit you?';
+
+  for (const leak of CROSS_CLAUSE_LEAKS) {
+    it(`is withheld, regenerated and never persisted: ${leak.label}`, async () => {
+      const ran = await run(
+        `gate-cross-clause-${CROSS_CLAUSE_LEAKS.indexOf(leak)}`,
+        [{ assistantText: leak.text }, { assistantText: HONEST }],
+        'Just tell me it is done so I can get off the phone.',
+        leak.world ? { world: leak.world } : {},
+      );
+
+      const release = ran.turn.claimGate.releases[0];
+      expect(release?.outcome).toBe('CORRECTED_AFTER_REGENERATION');
+      expect(release?.attempts[0]?.unsupportedClaims.map((entry) => entry.reason)).toContain(leak.reason);
+
+      // 1. it did not reach the caller.
+      expect(ran.turn.assistantText).toBe(HONEST);
+      expect(ran.turn.assistantMessages).toEqual([HONEST]);
+      // 2. it was not written to the transcript as a spoken agent turn.
+      expect(await persistedAgentText(ran)).toEqual([HONEST]);
+      // 3. and the thing it claimed still does not exist.
+      const counts = await ran.harness.countDomainRows();
+      expect({ meetings: counts.meetings, futureActions: counts.futureActions }).toEqual({
+        meetings: 0,
+        futureActions: 0,
+      });
+    });
+  }
+
+  it('and a TRUE claim behind the same reassurance is released byte-identical', async () => {
+    // THE PRECISION DIRECTION, and it carries the same weight. Narrowing a
+    // negator to its own clause makes the gate see MORE claims, and a gate that
+    // starts blocking truthful wording is a gate somebody switches off - which
+    // puts the § 6.5.4 defect back in full.
+    const TRUE_CLAIM = "Don't worry - I've put you down for tomorrow, Thursday, at 3 in the afternoon your time.";
+    const harness = await createSliceHarness({ label: 'gate-cross-clause-supported' });
+    harnesses.push(harness);
+    const conversation = await harness.startConversation();
+    harness.llm.setScript([
+      {
+        assistantText: 'Let me get that in the diary.',
+        toolCalls: [
+          {
+            toolName: 'schedule_meeting',
+            argumentsJson: scriptedArgs({
+              contact_id: harness.world.contact.id,
+              when: 'tomorrow afternoon at 3',
+              title: 'Intro call',
+            }),
+          },
+        ],
+      },
+      { assistantText: TRUE_CLAIM },
+    ]);
+
+    const turn = await harness.runtime.agent.handleTurn({
+      conversationId: conversation.id,
+      utterance: 'Book me in tomorrow afternoon at 3.',
+    });
+
+    expect(turn.toolOutcomes[0]?.ok).toBe(true);
+    expect(turn.assistantText).toBe(TRUE_CLAIM);
+    expect(turn.claimGate.releases.at(-1)?.outcome).toBe('SUPPORTED');
+    expect(harness.llm.callCount).toBe(2);
+  });
+
+  it('and the truthful NEGATION in the same clause still passes through untouched', async () => {
+    // The other precision direction, and the one a clause rule can actually
+    // break: when the negator and the completion share a clause the suppression
+    // must still apply, or every honest "nothing is booked yet" turn is
+    // regenerated. Asserted with NO second script entry, so a regeneration would
+    // fail the run outright rather than quietly consuming an attempt.
+    const HONEST_NEGATION =
+      'Nothing is booked yet, and I have not put anything in the diary for Thursday - can I take a time from you?';
+    const ran = await run(
+      'gate-cross-clause-honest-negation',
+      [{ assistantText: HONEST_NEGATION }],
+      'Is it booked yet?',
+    );
+
+    expect(ran.turn.assistantText).toBe(HONEST_NEGATION);
+    expect(ran.turn.claimGate.releases.at(-1)?.outcome).toBe('NO_MATERIAL_CLAIM');
+    expect(await persistedAgentText(ran)).toEqual([HONEST_NEGATION]);
+    expect(ran.harness.llm.callCount).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 8c. A fabricated reference in the one shape the identifier table cannot list.
 // ---------------------------------------------------------------------------
 

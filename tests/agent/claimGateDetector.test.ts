@@ -258,6 +258,7 @@ describe('the detector holds no language-specific literal', () => {
     identifierMarkers: ['snerk kod'],
     negators: ['nix'],
     conditionalMarkers: ['iffen'],
+    clauseBreakers: ['ond'],
     months: [{ forms: ['zzmarch'], month: 3 }],
     ordinalSuffixes: ['xx'],
   };
@@ -272,5 +273,13 @@ describe('the detector holds no language-specific literal', () => {
   it('and honours that language own negator and its own conditional', () => {
     expect(detectMaterialClaims('Vorp nix grobbled.', { lexicons: [SYNTHETIC] })).toEqual([]);
     expect(detectMaterialClaims('Iffen vorp grobbled.', { lexicons: [SYNTHETIC] })).toEqual([]);
+  });
+
+  it('and its own clause breaker, which bounds that negator to its own clause', () => {
+    // The engine knows no conjunction in any language: `ond` is this synthetic
+    // locale's `but`, and nothing in detector.ts has heard of either.
+    expect(familiesIn('Vorp nix zzmarch ond vorp grobbled.')).toEqual([]);
+    const claims = detectMaterialClaims('Vorp nix zzmarch ond vorp grobbled.', { lexicons: [SYNTHETIC] });
+    expect(claims.map((claim) => claim.family)).toEqual(['MEETING']);
   });
 });

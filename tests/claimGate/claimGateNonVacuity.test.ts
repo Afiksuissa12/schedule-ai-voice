@@ -26,7 +26,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  CROSS_CLAUSE_MATRIX,
   DOCUMENTED_MISSES,
+  DOCUMENTED_OVERREACH,
   KNOWN_FALSE_POSITIVES,
   LEDGER_CASES,
   MUST_FLAG,
@@ -115,11 +117,60 @@ describe('the claim gate is not vacuous', () => {
     ).toBeGreaterThanOrEqual(1);
   });
 
+  it('keeps the cross-clause matrix wide enough to be the thing it replaced', () => {
+    // WHY THIS FLOOR EXISTS. The defect this matrix pins was invisible to every
+    // delivered check for one reason: all three fixtures of its shape used `!` as
+    // the joiner, so the coverage was one punctuation mark wide. A matrix that
+    // shrank back to a handful of rows would reproduce that exactly, and it would
+    // do it while still passing, which is the failure mode this whole file is
+    // about. The floors are on the AXES rather than only on the product, because
+    // 400 rows built from two joiners would satisfy a product floor and prove
+    // nothing.
+    const joiners = new Set(
+      CROSS_CLAUSE_MATRIX.map((sample) => sample.name.split(' + ')[1]).filter((part) => part !== undefined),
+    );
+    const bases = new Set(
+      CROSS_CLAUSE_MATRIX.map((sample) => sample.name.split(' + ')[2]).filter((part) => part !== undefined),
+    );
+    expect(joiners.size, 'too few clause joiners to show the rule is not punctuation-specific').toBeGreaterThanOrEqual(6);
+    expect(bases.size, 'too few base claims').toBeGreaterThanOrEqual(4);
+    expect(CROSS_CLAUSE_MATRIX.length).toBeGreaterThanOrEqual(200);
+
+    // A conjunction-only joiner is mandatory. It is the half `text.ts` cannot
+    // see: `I cannot take payments but I have booked your meeting` carries no
+    // punctuation at all, and only `ClaimLexicon.clauseBreakers` divides it.
+    expect(
+      [...joiners].filter((joiner) => /^" [a-z]+ "$/u.test(joiner)).length,
+      'at least one joiner must be a bare conjunction, or the locale clauseBreakers data is never exercised',
+    ).toBeGreaterThanOrEqual(1);
+
+    // And a sentence terminator, as the CONTROL: that is the one spelling the
+    // sentence-scoped rule already handled, and it must keep working.
+    expect(
+      [...joiners].some((joiner) => joiner.includes('!')),
+      'the matrix must keep a sentence-terminator joiner as its control',
+    ).toBe(true);
+
+    const hebrewLetters = /[֐-׿]/;
+    expect(
+      CROSS_CLAUSE_MATRIX.filter((sample) => hebrewLetters.test(sample.text)).length,
+      'the leak was reachable in Hebrew as well as English, and Hebrew is the path with no recommended model',
+    ).toBeGreaterThanOrEqual(50);
+  });
+
   it('keeps every documented miss documented, with a cause and a status', () => {
     // The misses are the load-bearing half of the corpus. An entry with an empty
     // `cause` is an entry nobody can act on, and one that silently loses its
     // status stops distinguishing "the gate says so" from "we found this".
-    expect(DOCUMENTED_MISSES.length, 'the misses table must not be emptied silently').toBeGreaterThanOrEqual(10);
+    //
+    // THE FLOOR WAS 10 AND IS NOW 4, AND THAT IS NOT A WEAKENING. Ten entries
+    // were the "clause scope: one finding, ten reachable spellings" block, and
+    // every one of them is now DETECTED and has moved to MUST_FLAG - which is the
+    // outcome this table exists to force. The floor tracks what is left: the two
+    // limits the gate module states in its own source, and the two findings still
+    // open. If it is ever raised again it should be because a new miss was found,
+    // not because somebody wanted the number back.
+    expect(DOCUMENTED_MISSES.length, 'the misses table must not be emptied silently').toBeGreaterThanOrEqual(4);
     for (const miss of DOCUMENTED_MISSES) {
       expect(miss.cause.length, `documented miss "${miss.name}" has no recorded cause`).toBeGreaterThan(40);
       expect(['STATED_LIMIT_OF_THE_GATE', 'FINDING_RAISED_TO_THE_GATE_TASK']).toContain(miss.status);
@@ -155,6 +206,28 @@ describe('the claim gate is not vacuous', () => {
         `false positive "${entry.name}" has an EMPTY ledger, so the claim really is unsupported and this is ` +
           'not a false positive at all',
       ).toBeGreaterThan(0);
+    }
+  });
+
+  it('keeps every documented overreach recorded with its cause and its consequence', () => {
+    // The third shape, and the one the two tables above cannot hold: a sentence
+    // that asserts NOTHING and that the detector fires on anyway. There is no
+    // ledger to build for it, because the honest ledger is the empty one - which
+    // is exactly why the structural assertion in the test above would reject it.
+    //
+    // Asserted in the same direction as DOCUMENTED_MISSES: each entry must still
+    // be flagged, so a later precision fix is reported rather than absorbed.
+    expect(
+      DOCUMENTED_OVERREACH.length,
+      'the overreach table must not be emptied silently - an unpriced precision cost is how a gate gets ' +
+        'switched off',
+    ).toBeGreaterThanOrEqual(1);
+    for (const entry of DOCUMENTED_OVERREACH) {
+      expect(entry.cause.length, `overreach "${entry.name}" has no recorded cause`).toBeGreaterThan(60);
+      expect(
+        entry.consequence.length,
+        `overreach "${entry.name}" has no recorded consequence - "it is wrong" is not actionable`,
+      ).toBeGreaterThan(5);
     }
   });
 });

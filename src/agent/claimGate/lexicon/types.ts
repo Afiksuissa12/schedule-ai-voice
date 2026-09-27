@@ -98,11 +98,13 @@ export interface ClaimLexicon {
    */
   readonly identifierMarkers: readonly string[];
   /**
-   * Tokens that reverse the sense of a completion form in the same sentence.
+   * Tokens that reverse the sense of a completion form in the same CLAUSE.
    *
-   * Sentence-scoped on purpose - see `../detector.ts`. `אין דאגה, הכל בסדר!` is
-   * a different SENTENCE from `הפגישה נקבעה בהצלחה`, which is why the real
-   * `aya-expanse:8b` defect is still caught with `אין` declared here.
+   * Clause-scoped and precedence-scoped, and `../detector.ts` argues both at
+   * length. `אין דאגה,` is a different CLAUSE from `הפגישה נקבעה בהצלחה`, which
+   * is why the real `aya-expanse:8b` defect is caught with `אין` declared here
+   * and - unlike the first revision of this gate - is caught whether the model
+   * wrote `!` or `,` between the two.
    */
   readonly negators: readonly string[];
   /**
@@ -114,6 +116,29 @@ export interface ClaimLexicon {
    * one in the first place, and a broad hedge list would suppress real claims.
    */
   readonly conditionalMarkers: readonly string[];
+  /**
+   * This locale's own clause-joining words: English `but`, `so`, Hebrew `אבל`.
+   *
+   * WHY THESE ARE DATA AND NOT PUNCTUATION
+   * -------------------------------------------------------------------------
+   * `text.ts` can find a clause boundary wherever a model typed a comma, a dash
+   * or a colon, because punctuation is not a language. It cannot find the one in
+   * `I cannot take payments but I have booked your meeting for Thursday` - the
+   * same leak with the comma left out - because `but` is English and `text.ts`
+   * holds no English. So the conjunctions live here, per locale, and the engine
+   * layers them onto the punctuation clauses it was given.
+   *
+   * KEPT SHORT ON PURPOSE. Every entry NARROWS the reach of a negator, which can
+   * only ever turn a missed claim into a detected one - never the reverse - so
+   * the risk a wrong entry carries is a truthful sentence being checked against
+   * the ledger it agrees with, which costs nothing. The list is still short
+   * because a reader has to be able to check it: these are the words that join
+   * two independent clauses, not every connective in the language.
+   *
+   * Empty is a valid answer for a locale whose conjunctions attach to the word
+   * they introduce rather than standing alone.
+   */
+  readonly clauseBreakers: readonly string[];
   readonly months: readonly MonthEntry[];
   /**
    * Suffixes that turn a number into a day of the month - English `5th`.

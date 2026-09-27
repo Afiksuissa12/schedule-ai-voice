@@ -25,6 +25,7 @@ import {
   NOW_INSTANTS,
   POLICIES,
   REJECTED_EXPRESSIONS,
+  RELEASE_SPECS,
   seededRandom,
   TIMEZONE_OVERRIDE_CASES,
   TIMEZONES,
@@ -416,6 +417,67 @@ describe('the seeded PRNG', () => {
     for (const value of streamA) {
       expect(value).toBeGreaterThanOrEqual(0);
       expect(value).toBeLessThan(1);
+    }
+  });
+});
+
+/**
+ * The release specs have to DECLARE what they forbid, not leave it to be inferred.
+ *
+ * `invariants.ts` used to work out which of a spec's texts was the false one by
+ * running `detectMaterialClaims` over them - so a wording the DETECTOR missed was
+ * dropped from the forbidden list and could not be reported as having escaped. The
+ * effect was that INV-18 certified a live fail-open detector gap as zero leaks while
+ * eight unsupported claims reached real callers
+ * (`docs/MISSION_2D_CLAIM_GATE.md` § 15). `ReleaseSpec.forbidden` names the strings
+ * instead, and these assertions are what stop the naming from going stale.
+ */
+describe('the claim-release specs', () => {
+  const notReleased = RELEASE_SPECS.filter((spec) => spec.expect === 'NOT_RELEASED');
+
+  it('has NOT_RELEASED specs at all, so the escape check is exercised', () => {
+    expect(notReleased.length).toBeGreaterThanOrEqual(15);
+  });
+
+  it.each(notReleased)('$key names the exact wording it forbids', (spec) => {
+    expect(
+      spec.forbidden ?? [],
+      `${spec.key} is NOT_RELEASED but forbids nothing, so INV-18 has nothing to keep away from the caller`,
+    ).not.toEqual([]);
+  });
+
+  it.each(notReleased)('$key forbids only strings it actually scripts', (spec) => {
+    // Otherwise a spec could forbid a sentence no model in it ever says and pass
+    // for ever. Checked as SET MEMBERSHIP against the spec's own texts, so an edit
+    // to the wording that forgets to update `forbidden` fails here by name.
+    const scripted = [spec.withToolCall, ...spec.afterToolResult].filter(
+      (text): text is string => text !== null,
+    );
+    for (const text of spec.forbidden ?? []) {
+      expect(scripted, `${spec.key} forbids ${JSON.stringify(text)}, which it never scripts`).toContain(text);
+    }
+  });
+
+  it.each(notReleased)('$key leaves at least one honest text releasable', (spec) => {
+    // The other half, and the reason `forbidden` is a subset rather than the whole
+    // array: a spec that forbade everything it says would be indistinguishable from
+    // `WITHHELD`, and `r08` is the spec that means that.
+    const scripted = [spec.withToolCall, ...spec.afterToolResult].filter(
+      (text): text is string => text !== null,
+    );
+    expect(
+      scripted.filter((text) => !(spec.forbidden ?? []).includes(text)).length,
+      `${spec.key} forbids every text it scripts, which is WITHHELD rather than NOT_RELEASED`,
+    ).toBeGreaterThan(0);
+  });
+
+  it('declares `forbidden` for NOT_RELEASED specs and for nothing else', () => {
+    for (const spec of RELEASE_SPECS) {
+      if (spec.expect === 'NOT_RELEASED') continue;
+      expect(
+        spec.forbidden,
+        `${spec.key} is ${spec.expect} but names forbidden wording, which nothing reads`,
+      ).toBeUndefined();
     }
   });
 });

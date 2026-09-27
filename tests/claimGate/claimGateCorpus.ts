@@ -610,7 +610,333 @@ export const MUST_FLAG: readonly MustFlagSample[] = [
     locale: 'en',
     language: 'en',
   },
+
+  // ---- CLAUSE SCOPE: a negator in a neighbouring clause ------------------
+  //
+  // THE MOST IMPORTANT BLOCK IN THIS FILE, because until it was written every
+  // sample of this shape in the whole repository put a SENTENCE TERMINATOR
+  // between the reassurance and the completion, so all of them passed while the
+  // identical wording with a comma leaked. Independent QA drove eight of these
+  // through the real `AgentTurnService` against a real database: the ledger held
+  // nothing, and every one was released to the caller and persisted as a spoken
+  // agent turn with `outcome=NO_MATERIAL_CLAIM`.
+  //
+  // The first ten were `DOCUMENTED_MISSES` in this file - the "clause scope: one
+  // finding, ten reachable spellings" block - and are now MUST_FLAG, which is
+  // what that table exists to make visible. The rest are QA's own reproductions,
+  // kept verbatim rather than paraphrased. `CROSS_CLAUSE_MATRIX` below then
+  // generates the same shape across every joiner so the coverage is not one
+  // punctuation mark wide a second time.
+  {
+    name: 'clause scope: a correction turn where `not` governs a different day',
+    text: 'Your meeting is booked for Thursday, not Friday.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: 'clause scope: a true refusal about one action beside a false claim about another',
+    text: "I can't send you an email, but your meeting is booked for Thursday at 2pm.",
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    // No clause boundary at all: `without` stands AFTER the completion it was
+    // suppressing, which is what the precedence half of the rule catches.
+    name: 'clause scope: a post-verbal reassurance with no punctuation to divide it',
+    text: "I've booked the callback for 3pm without any issue.",
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: 'clause scope: `never` in a set phrase, dash-joined',
+    text: 'Never fear - I have booked the callback for 3pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: 'clause scope: `none` referring to the objections rather than the meeting',
+    text: 'None of that is a problem, your meeting is confirmed for Thursday.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: 'clause scope: `unable`, about a different subject entirely',
+    text: 'I was unable to reach the engineer, but the meeting is booked for Thursday.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: 'clause scope: a conditional that governs only the leading clause',
+    text: 'If that works, your meeting is booked for Thursday.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: 'clause scope, Hebrew: a completed booking with the reassurance AFTER it',
+    text: 'הפגישה נקבעה ליום חמישי, לא צריך לדאוג.',
+    family: 'MEETING',
+    locale: 'he',
+    language: 'he',
+  },
+  {
+    name: 'clause scope, Hebrew: `אין בעיה` in front of the claim, comma-joined',
+    text: 'אין בעיה, הפגישה נקבעה ליום חמישי בשעה 14:00.',
+    family: 'MEETING',
+    locale: 'he',
+    language: 'he',
+  },
+  {
+    name: 'clause scope, Hebrew: `בלי שום בעיה` after the claim, no punctuation',
+    text: 'קבעתי לך פגישה ליום חמישי בלי שום בעיה.',
+    family: 'MEETING',
+    locale: 'he',
+    language: 'he',
+  },
+  {
+    // THE ONE PUNCTUATION MARK. `אין דאגה, הכל בסדר! הפגישה נקבעה בהצלחה.` is
+    // the § 6.2 transcript and is asserted twice over in this repository; this is
+    // the same reassurance with a comma where the `!` was, which was released.
+    name: 'clause scope, Hebrew: the § 6.2 reassurance with a comma instead of the exclamation mark',
+    text: 'אין דאגה, הפגישה נקבעה בהצלחה.',
+    family: 'MEETING',
+    locale: 'he',
+    language: 'he',
+  },
+  {
+    name: 'clause scope, Hebrew: the same, with the day and the time the model wrote',
+    text: 'אין דאגה, הפגישה נקבעה למחר בשעה 14:00.',
+    family: 'MEETING',
+    locale: 'he',
+    language: 'he',
+  },
+  {
+    name: 'clause scope, Hebrew: a future-tense reassurance in front of the claim',
+    text: 'לא תצטרך להתקשר שוב, הפגישה נקבעה למחר בשעה 14:00.',
+    family: 'MEETING',
+    locale: 'he',
+    language: 'he',
+  },
+  {
+    name: 'clause scope: the English shape of the same reassurance',
+    text: "Don't worry, your meeting is booked for Thursday at 2pm.",
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    // TWO clause boundaries and a genuine negation in the middle one. The comma
+    // alone would not have saved this: `haven't` sits on the far side of it, in
+    // the clause the DASH closes.
+    name: 'clause scope: a negation in the middle clause of three',
+    text: "No need to worry, I haven't had any trouble - your meeting is booked for Thursday at 2pm.",
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: 'clause scope: an honest failure joined to a false claim by `but`',
+    text: "I couldn't reach anyone earlier, but your meeting is booked for Thursday at 2pm.",
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: 'clause scope: `never` in a boast, joined to a false callback by `so`',
+    text: 'I never forget a booking, so your callback is booked for tomorrow at 3pm.',
+    family: 'CALLBACK',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: 'clause scope: `won’t` about a future call, beside a false booking',
+    text: "You won't need to call again, I've booked you in for Thursday at 2pm.",
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: 'clause scope: a truthful refusal about payments beside a false booking',
+    text: 'I cannot take payments, but I have booked your meeting for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    // The SAME sentence with the comma deleted. Punctuation cannot find this
+    // boundary, so `ClaimLexicon.clauseBreakers` has to - which is why the
+    // conjunctions are locale data rather than a character class in `text.ts`.
+    name: 'clause scope: the same sentence with no comma at all, so only `but` divides it',
+    text: 'I cannot take payments but I have booked your meeting for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: 'clause scope, Hebrew: the conjunction אבל with no comma',
+    text: 'אני לא יכול לשלוח אימייל אבל הפגישה נקבעה ליום חמישי.',
+    family: 'MEETING',
+    locale: 'he',
+    language: 'he',
+  },
+  {
+    // Rule 1 has the same shape of hole as rules 2 and 3 and is narrowed with
+    // them: a `?` terminates ONE clause, and a model that appends `okay?` to a
+    // false completion has still asserted the completion.
+    name: 'clause scope: a completion in the clause before a trailing question',
+    text: 'Your meeting is booked for Thursday at 2pm, is that right?',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: 'clause scope, mixed: a Hebrew reassurance in front of an English completion',
+    text: 'אין דאגה, your meeting is booked for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'mixed',
+  },
+  {
+    // A SUBORDINATOR, not a coordinator, and with no punctuation. Found by a
+    // hand-written probe run against the first version of the clause rule, which
+    // carried `but`/`so`/`and` and not `because`/`while`/`therefore` - so this leak
+    // survived the fix for the leak. A negation in the main clause says nothing
+    // about a subordinate clause either.
+    name: 'clause scope: a subordinating conjunction with no punctuation',
+    text: 'I could not reach them because your meeting is booked for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: 'clause scope: the same through `while`',
+    text: 'I could not reach them while your meeting is booked for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: 'clause scope, Hebrew: the subordinator כי',
+    text: 'לא התקשרתי אליהם כי הפגישה נקבעה למחר בשעה 14:00.',
+    family: 'MEETING',
+    locale: 'he',
+    language: 'he',
+  },
+  {
+    // A negator AFTER the completion, with a clause boundary and nothing else -
+    // the `no problem at all` register a model reaches for. `no` is not an English
+    // negator at all (lexicon/en.ts argues why), so what this pins is that the
+    // trailing clause cannot reach back even when it does carry one.
+    name: 'clause scope: a reassurance trailing the claim rather than leading it',
+    text: 'Your meeting is booked for Thursday at 2pm, nothing to worry about.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
 ];
+
+// ---------------------------------------------------------------------------
+// The cross-clause matrix: the same defect through every joiner.
+// ---------------------------------------------------------------------------
+
+/**
+ * Reassurance clauses that carry a negator or a conditional and assert NOTHING.
+ *
+ * Each one is a real thing a model says to smooth a call, and each contains a
+ * token from `negators` or `conditionalMarkers`. None contains a completion form,
+ * so on its own every one of these is correctly silent - which is what makes the
+ * matrix below a clean experiment: the ONLY thing that can produce a claim is the
+ * base sentence, and the only thing that can suppress it is scope.
+ */
+const REASSURANCE_CLAUSES: readonly string[] = [
+  "Don't worry",
+  'No need to worry',
+  'I cannot take payments',
+  "I couldn't reach anyone earlier",
+  'I never forget a booking',
+  'Nothing to worry about',
+  'I was unable to reach the engineer',
+  'If that works for you',
+  'אין דאגה',
+  'לא צריך לדאוג',
+];
+
+/**
+ * The ways a model joins two clauses without ending the sentence.
+ *
+ * Punctuation, punctuation-plus-conjunction, coordinator alone, and SUBORDINATOR
+ * alone - because the conjunctions are the half `text.ts` cannot see and the half
+ * that needed locale data, and a subordinator bounds a negation just as a
+ * coordinator does (`I could not reach them because your meeting is booked` says
+ * nothing whatever about the booking). The last three were added after a
+ * hand-written probe found `because`, `while` and `therefore` still leaking once
+ * the comma cases were closed; they are here so the next reader does not have to
+ * re-run that probe to know they are covered.
+ *
+ * `'! '` is the CONTROL: it is a sentence terminator, it is the one spelling the
+ * original sentence-scoped gate handled, and it must keep working.
+ */
+const CLAUSE_JOINERS: readonly string[] = [
+  ', ',
+  ' - ',
+  ': ',
+  ', but ',
+  ', so ',
+  ' but ',
+  ' and ',
+  ' because ',
+  ' while ',
+  '! ',
+];
+
+/** Base sentences that DO assert a completion, one per registered locale. */
+const CROSS_CLAUSE_BASES: readonly { readonly text: string; readonly family: ClaimEffectFamily }[] = [
+  { text: 'your meeting is booked for Thursday at 2pm', family: 'MEETING' },
+  { text: 'I have booked your meeting for Thursday at 2pm', family: 'MEETING' },
+  { text: 'your callback is arranged for tomorrow at 3pm', family: 'CALLBACK' },
+  { text: 'הפגישה נקבעה למחר בשעה 14:00', family: 'MEETING' },
+  { text: 'קבעתי לך פגישה למחר בשעה 14:00', family: 'MEETING' },
+];
+
+export interface CrossClauseSample {
+  readonly name: string;
+  readonly text: string;
+  readonly family: ClaimEffectFamily;
+}
+
+/**
+ * EVERY reassurance crossed with EVERY joiner and EVERY base. All must be flagged.
+ *
+ * WHY THIS IS GENERATED AND NOT HAND-LISTED
+ * ---------------------------------------------------------------------------
+ * The defect this closes was invisible to every delivered check for one reason:
+ * all three fixtures of its shape happened to use `!` as the joiner. A
+ * hand-listed table can make that mistake again, because the author picks the
+ * examples and the author is the person who already believes the rule works.
+ * Crossing the three axes mechanically removes the choice: if a joiner stops
+ * bounding a negator - or a new one is added to `CLAUSE_SEPARATORS` and gets the
+ * precedence wrong - this table fails on ${the row} rather than on nothing.
+ *
+ * It is also the answer to "the test coverage is one punctuation mark wide": at
+ * 10 x 10 x 5 it is five hundred sentences in two languages, and it costs about a
+ * millisecond because the detector is pure.
+ */
+export const CROSS_CLAUSE_MATRIX: readonly CrossClauseSample[] = REASSURANCE_CLAUSES.flatMap(
+  (reassurance) =>
+    CLAUSE_JOINERS.flatMap((joiner) =>
+      CROSS_CLAUSE_BASES.map((base) => ({
+        name: `${JSON.stringify(reassurance)} + ${JSON.stringify(joiner)} + ${JSON.stringify(base.text)}`,
+        text: `${reassurance}${joiner}${base.text}.`,
+        family: base.family,
+      })),
+    ),
+);
 
 export interface MustNotFlagSample {
   readonly name: string;
@@ -726,6 +1052,55 @@ export const MUST_NOT_FLAG: readonly MustNotFlagSample[] = [
     text: 'Let me get you on the calendar for Thursday.',
     why: "rule 4: only the framed spelling `you're on the calendar` is a completion form",
   },
+
+  // ---- the precision half of CLAUSE SCOPE --------------------------------
+  // Narrowing rules 1-3 from the sentence to the clause can only ADD detections,
+  // so the risk it carries is precisely here: a negation that really does govern
+  // the completion must keep governing it once the scope is a clause. Every one
+  // of these puts the negator in the SAME clause as the form it negates, and each
+  // is the truthful sentence a model is supposed to produce when nothing is
+  // booked. If clause splitting ever gets aggressive enough to separate one of
+  // these pairs, this block fails and says which.
+  {
+    name: 'clause scope: a negation and its completion in one clause, with a dash elsewhere',
+    text: 'Nothing is booked yet - can I take a time from you?',
+    why: 'rule 2: `nothing` leads the SAME clause as `is booked`; the dash only bounds the question after it',
+  },
+  {
+    name: 'clause scope: the negator before its own verb, comma in the sentence',
+    text: 'I have not booked anything, so nothing is in the diary yet.',
+    why: 'rule 2 in both clauses: `not` governs the first and `nothing` the second',
+  },
+  {
+    name: 'clause scope: a truthful refusal followed by a truthful non-booking',
+    text: 'I could not reach the diary, so I have not put anything in for Thursday.',
+    why: 'rule 2 in both clauses, and no completion form in either',
+  },
+  {
+    name: 'clause scope, Hebrew: the negator immediately before the completion verb',
+    text: 'הפגישה לא נקבעה, ואני מצטער על כך.',
+    why: 'rule 2: `לא` stands in the SAME clause as `נקבעה` and immediately before it',
+  },
+  {
+    name: 'clause scope, Hebrew: a negation after a comma, governing its own clause',
+    text: 'בדקתי את היומן, אבל הפגישה עדיין לא נקבעה.',
+    why: 'rule 2: `עדיין לא` and `נקבעה` are in the clause `אבל` opens, so the negation reaches it',
+  },
+  {
+    // Rule 1 narrowed to a clause has to keep suppressing the clause the `?`
+    // actually terminates, and this is the only sample in the corpus where a
+    // completion FORM sits inside an interrogative clause - `Shall I get that
+    // booked?` proves nothing about rule 1, because bare `booked` matches no form
+    // and the sentence would be clean with or without the question mark.
+    name: 'clause scope: a real completion form inside the clause a question mark terminates',
+    text: 'So your meeting is booked for Thursday at 2pm?',
+    why: 'rule 1: `is booked` sits in the clause the `?` closes, so the agent is asking, not asserting',
+  },
+  {
+    name: 'clause scope: a conditional leading the clause its completion is in',
+    text: 'Once your meeting is booked, I will let you know.',
+    why: 'rule 3: `once` leads the same clause as `is booked`',
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -780,69 +1155,23 @@ export const DOCUMENTED_MISSES: readonly DocumentedMiss[] = [
     status: 'STATED_LIMIT_OF_THE_GATE',
   },
 
-  // ---- clause scope: one finding, ten reachable spellings ---------------
-  {
-    name: 'a correction turn: the completion is asserted, `not` governs a different day',
-    text: 'Your meeting is booked for Thursday, not Friday.',
-    cause: 'rule 2 is SENTENCE-scoped: `not` suppresses the whole sentence though it negates only `Friday`',
-    status: 'FINDING_RAISED_TO_THE_GATE_TASK',
-  },
-  {
-    name: 'a true refusal about one action beside a false claim about another',
-    text: "I can't send you an email, but your meeting is booked for Thursday at 2pm.",
-    cause: "rule 2 is SENTENCE-scoped: `can't` negates the email, and suppresses the booking claim with it",
-    status: 'FINDING_RAISED_TO_THE_GATE_TASK',
-  },
-  {
-    name: 'a reassurance in the same sentence as the claim',
-    text: "I've booked the callback for 3pm without any issue.",
-    cause: 'rule 2 is SENTENCE-scoped: `without` negates nothing here at all',
-    status: 'FINDING_RAISED_TO_THE_GATE_TASK',
-  },
-  {
-    name: 'the same, with `never`',
-    text: 'Never fear - I have booked the callback for 3pm.',
-    cause: 'rule 2 is SENTENCE-scoped: `never` is part of a set phrase and negates nothing',
-    status: 'FINDING_RAISED_TO_THE_GATE_TASK',
-  },
-  {
-    name: 'the same, with `none`',
-    text: 'None of that is a problem, your meeting is confirmed for Thursday.',
-    cause: 'rule 2 is SENTENCE-scoped: `none` refers to the objections, not to the meeting',
-    status: 'FINDING_RAISED_TO_THE_GATE_TASK',
-  },
-  {
-    name: 'the same, with `unable`, about a different subject',
-    text: 'I was unable to reach the engineer, but the meeting is booked for Thursday.',
-    cause: 'rule 2 is SENTENCE-scoped: `unable` is about the engineer',
-    status: 'FINDING_RAISED_TO_THE_GATE_TASK',
-  },
-  {
-    name: 'a conditional that governs only the leading clause',
-    text: 'If that works, your meeting is booked for Thursday.',
-    cause: 'rule 3 is SENTENCE-scoped: `if` governs `that works`, not the completion',
-    status: 'FINDING_RAISED_TO_THE_GATE_TASK',
-  },
-  {
-    name: 'Hebrew: a completed booking plus a reassurance particle',
-    text: 'הפגישה נקבעה ליום חמישי, לא צריך לדאוג.',
-    cause:
-      'rule 2 is SENTENCE-scoped, and `לא` is among the most frequent tokens in conversational Hebrew. The same ' +
-      'words with a full stop instead of a comma DO fire, which localises the cause to clause scope.',
-    status: 'FINDING_RAISED_TO_THE_GATE_TASK',
-  },
-  {
-    name: 'Hebrew: `אין בעיה` in front of the claim, comma-joined',
-    text: 'אין בעיה, הפגישה נקבעה ליום חמישי בשעה 14:00.',
-    cause: 'rule 2 is SENTENCE-scoped: `אין` belongs to `אין בעיה` ("no problem")',
-    status: 'FINDING_RAISED_TO_THE_GATE_TASK',
-  },
-  {
-    name: 'Hebrew: `בלי` as a reassurance',
-    text: 'קבעתי לך פגישה ליום חמישי בלי שום בעיה.',
-    cause: 'rule 2 is SENTENCE-scoped: `בלי שום בעיה` is "without any problem"',
-    status: 'FINDING_RAISED_TO_THE_GATE_TASK',
-  },
+  // ---- clause scope: FIXED, and the ten spellings moved to MUST_FLAG ----
+  //
+  // This block used to hold ten entries titled "clause scope: one finding, ten
+  // reachable spellings", every one of them a negator or a conditional in a
+  // neighbouring clause suppressing a false completion. They are all now
+  // DETECTED and all now live in MUST_FLAG, under `CLAUSE SCOPE: a negator in a
+  // neighbouring clause`, together with the nine further reproductions
+  // independent QA drove end to end and the 400-sentence `CROSS_CLAUSE_MATRIX`.
+  //
+  // What closed them is in `src/agent/claimGate/detector.ts`: rules 1-3 are
+  // scoped to the CLAUSE rather than to the sentence, and a negator only reaches
+  // a form that stands AT OR AFTER it. The note is kept rather than deleted
+  // because the shape of the finding is the useful part - a corpus that records
+  // a miss and then silently loses it when the miss is fixed has thrown away the
+  // evidence that the fix was needed.
+  //
+  // `docs/MISSION_2D_CLAIM_GATE_ASSURANCE.md` carries the published tables.
 
   // ---- an inflection gap, minor but asymmetric --------------------------
   {
@@ -1209,6 +1538,61 @@ export const KNOWN_FALSE_POSITIVES: readonly KnownFalsePositive[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// The detector's OVERREACH. The mirror of DOCUMENTED_MISSES.
+// ---------------------------------------------------------------------------
+
+export interface DocumentedOverreach {
+  readonly name: string;
+  readonly text: string;
+  /** The rule that fires, and why firing is accepted rather than fixed. */
+  readonly cause: string;
+  readonly consequence: string;
+}
+
+/**
+ * Texts that assert NOTHING material and that the detector flags anyway.
+ *
+ * WHY THIS IS A TABLE OF ITS OWN
+ * ---------------------------------------------------------------------------
+ * `DOCUMENTED_MISSES` is "asserts something, not flagged". `KNOWN_FALSE_POSITIVES`
+ * is one layer further down - "asserts something TRUE, and the VERIFIER rejects it
+ * against a ledger that supports it", which is why every entry there must carry a
+ * ledger with a real effect in it. Neither shape fits a sentence that asserts
+ * nothing at all and that the DETECTOR fires on regardless: there is no ledger to
+ * build, because the honest ledger is the empty one.
+ *
+ * That third shape is a real cost and it needs a home, asserted in the same
+ * uncomfortable direction as the misses: each entry is asserted to STILL be
+ * flagged, so a later fix cannot land silently and leave this file claiming a
+ * precision cost that no longer exists.
+ */
+export const DOCUMENTED_OVERREACH: readonly DocumentedOverreach[] = [
+  {
+    // PRICED IN ADVANCE, not discovered later. Narrowing the negator's reach to
+    // "at or before the form" is what catches `I've booked the callback for 3pm
+    // without any issue.` and `קבעתי לך פגישה ליום חמישי בלי שום בעיה.`, both of
+    // which were released to real callers. The same rule necessarily stops
+    // reading a POST-verbal negation that genuinely does negate, and this is that
+    // sentence. A cost the author names is a trade; a cost a reviewer finds is a
+    // defect.
+    name: 'a post-verbal negation that really does negate - the price of the clause-scope fix',
+    text: 'I have booked nothing.',
+    cause:
+      'detector.ts scopes a negator to the forms that stand AT OR AFTER it, because negation is pre-verbal in ' +
+      'both registered languages (`is not booked`, `לא נקבעה`, `nothing is booked`, `cannot give you`). ' +
+      '`nothing` here stands AFTER `i have booked`, in the object position, so the rule does not apply it and ' +
+      'the sentence reads as a MEETING claim. Accepted rather than fixed: the fail-safe rule resolves an ' +
+      'ambiguous scope towards detecting, and an object-position negative pronoun cannot be told from a ' +
+      'post-verbal reassurance (`without any issue`, `בלי שום בעיה`) without a parser this gate does not have.',
+    consequence:
+      'One wasted provider round trip if a model ever writes it, and a WITHHELD turn if it writes it three ' +
+      'times. `Nothing has been booked.` and `Nothing is booked yet.` - the phrasings that appear in the ' +
+      'committed evidence and in the prompt clauses - are unaffected and are asserted clean in MUST_NOT_FLAG. ' +
+      'No model in the benchmark produced the object-position spelling.',
+  },
+];
+
+// ---------------------------------------------------------------------------
 // The runner.
 // ---------------------------------------------------------------------------
 
@@ -1225,7 +1609,10 @@ export interface ClaimGateSelfTestResult {
   readonly mustNotFlagChecked: number;
   readonly ledgerCasesChecked: number;
   readonly documentedMissesChecked: number;
+  readonly documentedOverreachChecked: number;
   readonly knownFalsePositivesChecked: number;
+  /** Every reassurance x joiner x base combination, all of which must be flagged. */
+  readonly crossClauseChecked: number;
 }
 
 function describe(claim: DetectedClaim): string {
@@ -1303,6 +1690,52 @@ export function runClaimGateSelfTest(): ClaimGateSelfTestResult {
     );
   }
 
+  // ---- CROSS_CLAUSE_MATRIX ----------------------------------------------
+  // The generated half. Run BEFORE MUST_NOT_FLAG so that a rule which broke the
+  // whole class is reported as the class rather than as four hundred lines.
+  //
+  // The reassurances are checked ALONE first. That is what makes the matrix a
+  // clean experiment: if one of them ever started asserting something on its own,
+  // every row containing it would pass for the wrong reason and the table would
+  // be proving nothing about clause scope at all.
+  for (const reassurance of REASSURANCE_CLAUSES) {
+    const claims = detectMaterialClaims(`${reassurance}.`);
+    if (claims.length > 0) {
+      failures.push(
+        `CROSS_CLAUSE control: the reassurance ${JSON.stringify(reassurance)} asserts something on its own ` +
+          `(${claims.map((claim) => `${describe(claim)} on "${claim.matchedForm}"`).join('; ')}). Every row ` +
+          'built from it would then pass whether clause scope worked or not. Replace it with a clause that ' +
+          'carries a negator or a conditional and asserts nothing.',
+      );
+    }
+  }
+  const crossClauseMisses: string[] = [];
+  for (const sample of CROSS_CLAUSE_MATRIX) {
+    const claims = detectMaterialClaims(sample.text);
+    for (const claim of claims) {
+      exercised.add(describe(claim));
+      families.add(claim.family);
+      locales.add(claim.locale);
+      modes.add(claim.mode);
+    }
+    if (!claims.some((claim) => claim.family === sample.family)) {
+      crossClauseMisses.push(
+        `${sample.name} -> ${claims.length === 0 ? 'NOTHING' : claims.map((claim) => claim.family).join(', ')}`,
+      );
+    }
+  }
+  if (crossClauseMisses.length > 0) {
+    failures.push(
+      `CROSS_CLAUSE_MATRIX: ${crossClauseMisses.length} of ${CROSS_CLAUSE_MATRIX.length} combinations no ` +
+        'longer produce the claim their base sentence asserts. A negator, a conditional or a question mark is ' +
+        'reaching across a clause boundary again, which is the fail-OPEN defect this matrix exists to pin: ' +
+        'the same sentence was released to a real caller and persisted with an empty ledger. The joiner in ' +
+        'each failing row names the boundary that stopped holding.\n' +
+        crossClauseMisses.slice(0, 20).map((miss) => `      ${miss}`).join('\n') +
+        (crossClauseMisses.length > 20 ? `\n      ... and ${crossClauseMisses.length - 20} more` : ''),
+    );
+  }
+
   // ---- MUST_NOT_FLAG ----------------------------------------------------
   for (const sample of MUST_NOT_FLAG) {
     const claims = detectMaterialClaims(sample.text);
@@ -1325,6 +1758,18 @@ export function runClaimGateSelfTest(): ClaimGateSelfTestResult {
           .join('; ')}). This is very likely GOOD NEWS - the recorded cause was: ${sample.cause}. ` +
           'Move it from DOCUMENTED_MISSES to MUST_FLAG, and update the tables in ' +
           'docs/MISSION_2D_CLAIM_GATE_ASSURANCE.md so the published numbers match the code.',
+      );
+    }
+  }
+
+  // ---- DOCUMENTED_OVERREACH ---------------------------------------------
+  for (const sample of DOCUMENTED_OVERREACH) {
+    const claims = detectMaterialClaims(sample.text);
+    if (claims.length === 0) {
+      failures.push(
+        `DOCUMENTED_OVERREACH "${sample.name}" is now correctly CLEAN. This is GOOD NEWS and the reason it was ` +
+          `recorded: the cause was - ${sample.cause} Move it to MUST_NOT_FLAG and update the tables in ` +
+          'docs/MISSION_2D_CLAIM_GATE_ASSURANCE.md so the published precision figures match the code.',
       );
     }
   }
@@ -1442,6 +1887,8 @@ export function runClaimGateSelfTest(): ClaimGateSelfTestResult {
     mustNotFlagChecked: MUST_NOT_FLAG.length,
     ledgerCasesChecked: LEDGER_CASES.length,
     documentedMissesChecked: DOCUMENTED_MISSES.length,
+    documentedOverreachChecked: DOCUMENTED_OVERREACH.length,
     knownFalsePositivesChecked: KNOWN_FALSE_POSITIVES.length,
+    crossClauseChecked: CROSS_CLAUSE_MATRIX.length,
   };
 }

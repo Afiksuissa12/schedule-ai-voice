@@ -1976,28 +1976,66 @@ function declaredReleaseExpectationHolds(
     // The specific wording the spec calls false must not appear in anything the
     // caller received. Checked against the TEXTS rather than against the gate's
     // outcome, because the outcome is the gate's own account of itself.
-    const forbidden = [spec.withToolCall, ...spec.afterToolResult].filter(
-      (text): text is string => text !== null && detectMaterialClaims(text).length > 0,
-    );
-    const escaped = forbidden.filter((text) => released.includes(text) || observation.assistantMessages.includes(text));
-    if (escaped.length > 0) {
-      return [
-        fail(
-          id,
-          observation.scenarioId,
-          `spec ${spec.key} declares its claim unsupportable, but the exact wording reached the caller: ` +
-            `${escaped.map((text) => JSON.stringify(text.slice(0, 200))).join(' | ')}. ${spec.rationale}`,
-        ),
-      ];
-    }
+    //
+    // WHICH WORDING IS FORBIDDEN COMES FROM THE SPEC, NOT FROM THE DETECTOR, AND
+    // THAT WAS A REAL HOLE. A NOT_RELEASED spec carries a mixture - the false
+    // wording under test, and honest filler that MUST be released - so something
+    // has to say which is which. This used to do it by running the detector:
+    //
+    //     .filter(text => text !== null && detectMaterialClaims(text).length > 0)
+    //
+    // which made the check blind in exactly the direction it exists to guard. A
+    // wording the detector MISSED was dropped from the forbidden list, so it could
+    // not be reported as escaped, so a live fail-open detector gap was certified by
+    // this invariant as zero leaks. Independent QA demonstrated that end to end -
+    // eight unsupported claims released and persisted against an empty ledger while
+    // the sweep printed `CLAIMS THAT LEAKED PAST THE GATE: 0`. A gap the assurance
+    // layer reports as zero is worse than a declared gap.
+    //
+    // `ReleaseSpec.forbidden` now names the strings, so the escape check owes the
+    // detector nothing. The detector's own view is still computed, for the vacuity
+    // alarm below and to say whether an escape was a GATE failure or a DETECTOR one.
+    const forbidden = spec.forbidden ?? [];
     if (forbidden.length === 0) {
       return [
         fail(
           id,
           observation.scenarioId,
+          `spec ${spec.key} is declared NOT_RELEASED but names no forbidden wording, so this scenario checks ` +
+            'nothing at all. Every NOT_RELEASED spec must list the exact text that must not reach the caller ' +
+            'in `forbidden` - inferring it from the detector is what made this invariant blind to a detector ' +
+            'gap in the first place (tests/invariants/dimensions.ts documents why).',
+        ),
+      ];
+    }
+    const escaped = forbidden.filter((text) => released.includes(text) || observation.assistantMessages.includes(text));
+    if (escaped.length > 0) {
+      const invisible = escaped.filter((text) => detectMaterialClaims(text).length === 0);
+      return [
+        fail(
+          id,
+          observation.scenarioId,
+          `spec ${spec.key} declares its claim unsupportable, but the exact wording reached the caller: ` +
+            `${escaped.map((text) => JSON.stringify(text.slice(0, 200))).join(' | ')}. ${spec.rationale}` +
+            (invisible.length > 0
+              ? ` AND ${invisible.length} of those is INVISIBLE to detectMaterialClaims, so the gate did not ` +
+                'fail to stop a claim it saw - it never saw one. That is a DETECTOR gap, not a gate gap: add ' +
+                'the wording to tests/claimGate/claimGateCorpus.ts MUST_FLAG and fix the rule that misses it.'
+              : ''),
+        ),
+      ];
+    }
+    const visible = forbidden.filter((text) => detectMaterialClaims(text).length > 0);
+    if (visible.length === 0) {
+      return [
+        fail(
+          id,
+          observation.scenarioId,
           `spec ${spec.key} is declared NOT_RELEASED, but the detector finds NO material claim in any of its ` +
-            'texts, so this scenario cannot prove anything. Either the wording no longer asserts what it ' +
-            'used to, or a detector rule stopped firing - see tests/claimGate/claimGateCorpus.ts.',
+            'forbidden wordings, so the gate had nothing to act on and this scenario is passing for the wrong ' +
+            'reason. Either the wording no longer asserts what it used to, or a detector rule stopped firing - ' +
+            'see tests/claimGate/claimGateCorpus.ts. The ESCAPE check above no longer depends on this: the ' +
+            'spec names the forbidden strings, so a detector miss fails as an escape rather than disappearing.',
         ),
       ];
     }
@@ -2005,7 +2043,8 @@ function declaredReleaseExpectationHolds(
       pass(
         id,
         observation.scenarioId,
-        `spec ${spec.key}: ${forbidden.length} unsupportable wording(s) kept away from the caller`,
+        `spec ${spec.key}: ${forbidden.length} declared-unsupportable wording(s) kept away from the caller ` +
+          `(${visible.length} of them visible to the detector)`,
       ),
     ];
   }

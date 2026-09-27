@@ -25,16 +25,73 @@
  *
  * THE FOUR RULES, IN ORDER
  * ---------------------------------------------------------------------------
- * Per SENTENCE, because that is the scope a negation really has:
+ * Per CLAUSE, because that is the scope a negation really has - see the section
+ * after this one for why the sentence was too wide and what it cost:
  *
- *  1. An INTERROGATIVE sentence asserts nothing. `Shall I get that booked?` is a
- *     question; excluding it is a property of punctuation, not of a language.
- *  2. A sentence carrying a NEGATOR asserts no completion. `Nothing is booked
- *     yet` must pass through as the truthful sentence it is.
- *  3. A sentence carrying a CONDITIONAL marker asserts no completion. `Once that
- *     is booked I will let you know` is a plan.
+ *  1. A completion form in the clause a QUESTION MARK terminates asserts
+ *     nothing. `Shall I get that booked?` is a question; excluding it is a
+ *     property of punctuation, not of a language.
+ *  2. A completion form asserts nothing when a NEGATOR stands in the same clause
+ *     AT OR BEFORE it. `Nothing is booked yet` must pass through as the truthful
+ *     sentence it is.
+ *  3. The same for a CONDITIONAL marker. `Once that is booked I will let you
+ *     know` is a plan.
  *  4. Otherwise every completion form that matches produces one claim, carrying
- *     the family, the mode, and any day and time the sentence asserts.
+ *     the family, the mode, and any day and time the SENTENCE asserts. Day, time
+ *     and identifier reading stay sentence-wide: `הפגישה נקבעה for Thursday, and
+ *     the confirmation number is CONF998877.` has to keep reading Thursday onto
+ *     the claim in the clause before the comma.
+ *
+ * WHY THE CLAUSE AND NOT THE SENTENCE, AND WHY "AT OR BEFORE"
+ * ---------------------------------------------------------------------------
+ * The first revision of this module scoped rules 1-3 to the SENTENCE, and a comma
+ * is not a sentence terminator. That made the gate's verdict depend on which
+ * punctuation mark a 7B model happened to type:
+ *
+ *     אין דאגה, הכל בסדר! הפגישה נקבעה בהצלחה.   DETECTED
+ *     אין דאגה, הפגישה נקבעה בהצלחה.              RELEASED   <- same claim
+ *     Your meeting is booked for Thursday at 2pm.             DETECTED
+ *     Don't worry, your meeting is booked for Thursday at 2pm. RELEASED
+ *
+ * Independent QA drove eight wordings of that shape through the real
+ * `AgentTurnService` against a real database. In every one the ledger held
+ * nothing - `meetings=0`, `futureActions=0` - and in every one the gate reported
+ * `NO_MATERIAL_CLAIM` and the false sentence was returned to the caller AND
+ * persisted as a spoken agent turn. English, Hebrew and mixed were all reachable.
+ * That is fail-OPEN, and it inverts the rule the brief sets for this detector:
+ * uncertainty is treated as UNSUPPORTED. A negator governing a different clause
+ * is exactly scope uncertainty, and the sentence rule resolved it to RELEASE.
+ *
+ * Two independent narrowings close it, and BOTH are needed:
+ *
+ *  - CLAUSE. A negator reaches only to the end of its own clause. `text.ts`
+ *    bounds a clause with punctuation (comma, dash, colon, bracket) and
+ *    `ClaimLexicon.clauseBreakers` adds the locale's own conjunctions (`but`,
+ *    `so`, `אבל`), so `I cannot take payments, but I have booked your meeting`
+ *    and the same sentence without the comma both land the negator and the
+ *    completion in different clauses.
+ *  - AT OR BEFORE. Negation is pre-verbal in both registered languages - `is not
+ *    booked`, `לא נקבעה`, `nothing is booked`, `cannot give you` - so a negator
+ *    standing AFTER a completion form is not negating it. That is what catches
+ *    `I've booked the callback for 3pm without any issue.` and `קבעתי לך פגישה
+ *    ליום חמישי בלי שום בעיה.`, which carry no clause boundary at all and were
+ *    both released.
+ *
+ * Both narrowings are STRICT subsets of the old suppression: every claim the
+ * sentence rule detected is still detected, and the only behaviour that can
+ * change is a miss becoming a detection. `tests/claimGate/claimGateCorpus.ts`
+ * asserts that in both directions, and `DOCUMENTED_MISSES` there recorded ten
+ * spellings of this defect before it was fixed.
+ *
+ * WHAT IT COSTS, NAMED
+ * ---------------------------------------------------------------------------
+ * `I have booked nothing.` - a post-verbal negation that really does negate -
+ * is now DETECTED, and if the ledger is empty the turn is regenerated. It is
+ * listed in the corpus as a priced false positive rather than left to be
+ * discovered: the fail-safe rule resolves an ambiguous scope towards detecting,
+ * the cost is one provider round trip on a wording no model in the committed
+ * evidence produced, and `Nothing has been booked.` - the phrasing a model
+ * actually writes - is unaffected.
  *
  * IDENTIFIERS ARE NOT SUBJECT TO 2 OR 3
  * ---------------------------------------------------------------------------
@@ -159,38 +216,53 @@ export function detectMaterialClaims(text: string, options: DetectClaimsOptions 
     const day = detectDay(sentence.tokens, schedulingLexicons, claimLexicons);
     const time = detectTime(sentence.tokens, schedulingLexicons);
 
-    for (const lexicon of claimLexicons) {
-      const negated = anyFormPresent(sentence.tokens, lexicon.negators);
-      const conditional = anyFormPresent(sentence.tokens, lexicon.conditionalMarkers);
-      const asserting = !sentence.interrogative && negated === null && conditional === null;
+    // WHERE THE CLAUSES ARE is a property of the TEXT, so it is read ONCE from
+    // every registered locale at the same time, outside the per-lexicon loop.
+    // WHAT SUPPRESSES is a property of a language, so that stays inside it. A
+    // corpus sample like `לא צריך לדאוג and קבעתי לך פגישה למחר` is why: the
+    // Hebrew negator and the Hebrew completion are divided by an ENGLISH
+    // conjunction, and a Hebrew-only view of the clauses cannot see it.
+    const clauses = clauseIndices(sentence, claimLexicons);
 
-      if (asserting) {
-        for (const claim of matchCompletionMarkers(sentence, lexicon)) {
-          out.push({ ...claim, assertedDay: day, assertedTime: time, identifiers });
-        }
+    for (const lexicon of claimLexicons) {
+      const suppression = readSuppression(sentence, clauses, lexicon);
+
+      // The dedup by family:mode happens AFTER suppression, not before it, so
+      // that a suppressed first match cannot swallow an asserted second one:
+      // `הפגישה לא נקבעה, אבל הפגישה נקבעה למחר.` asserts the second.
+      const seen = new Set<string>();
+      for (const match of matchCompletionMarkers(sentence, lexicon)) {
+        if (suppression.suppresses(match.position)) continue;
+        const key = `${match.claim.family}:${match.claim.mode}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({ ...match.claim, assertedDay: day, assertedTime: time, identifiers });
       }
 
       // An identifier MARKER is an assertion that the system has an identifier
-      // to give. Suppressed by negation, like a completion form.
-      if (asserting) {
-        const marker = anyFormPresent(sentence.tokens, lexicon.identifierMarkers);
-        if (marker !== null) {
-          out.push({
-            kind: 'IDENTIFIER_ASSERTED',
-            family: 'ANY',
-            mode: 'COMPLETED',
-            locale: lexicon.locale,
-            matchedForm: marker,
-            sentenceIndex: sentence.index,
-            excerpt: sentence.raw,
-            assertedDay: day,
-            assertedTime: time,
-            // The marker's OWN claim carries the looser shapes as well - see
-            // `markerAdjacentIdentifiers`. Only this claim does; the effect
-            // claims above and the bare-shape claim below keep the strict list.
-            identifiers: markerAdjacentIdentifiers(sentence, identifiers, day, time),
-          });
-        }
+      // to give. Suppressed by negation, like a completion form, and by the same
+      // clause rule - so `I cannot take payments, but your confirmation number
+      // is 483921.` is a claim and `I cannot give you a confirmation number` is
+      // not. The FIRST unsuppressed marker in the sentence is the one recorded.
+      const marker = formMatches(sentence.tokens, lexicon.identifierMarkers).find(
+        (hit) => !suppression.suppresses(hit.position),
+      );
+      if (marker !== undefined) {
+        out.push({
+          kind: 'IDENTIFIER_ASSERTED',
+          family: 'ANY',
+          mode: 'COMPLETED',
+          locale: lexicon.locale,
+          matchedForm: marker.form,
+          sentenceIndex: sentence.index,
+          excerpt: sentence.raw,
+          assertedDay: day,
+          assertedTime: time,
+          // The marker's OWN claim carries the looser shapes as well - see
+          // `markerAdjacentIdentifiers`. Only this claim does; the effect
+          // claims above and the bare-shape claim below keep the strict list.
+          identifiers: markerAdjacentIdentifiers(sentence, identifiers, day, time),
+        });
       }
     }
 
@@ -222,12 +294,17 @@ export const IDENTIFIER_SHAPE_FORM = '(identifier-shaped token)';
 // Completion forms
 // ---------------------------------------------------------------------------
 
+/** One completion form that matched, and the token position it matched at. */
+interface CompletionMatch {
+  readonly position: number;
+  readonly claim: Omit<DetectedClaim, 'assertedDay' | 'assertedTime' | 'identifiers'>;
+}
+
 function matchCompletionMarkers(
   sentence: ClaimSentence,
   lexicon: ClaimLexicon,
-): readonly Omit<DetectedClaim, 'assertedDay' | 'assertedTime' | 'identifiers'>[] {
-  const out: Omit<DetectedClaim, 'assertedDay' | 'assertedTime' | 'identifiers'>[] = [];
-  const seen = new Set<string>();
+): readonly CompletionMatch[] {
+  const out: CompletionMatch[] = [];
 
   for (let position = 0; position < sentence.tokens.length; position += 1) {
     // THE LONGEST FORM AT THIS POSITION WINS, ACROSS FAMILIES, AND CONSUMES ITS
@@ -245,10 +322,9 @@ function matchCompletionMarkers(
     }
     if (best === null) continue;
 
-    const key = `${best.entry.family}:${best.entry.mode}`;
-    if (!seen.has(key)) {
-      seen.add(key);
-      out.push({
+    out.push({
+      position,
+      claim: {
         kind: 'EFFECT_ASSERTED',
         family: best.entry.family,
         mode: best.entry.mode,
@@ -256,21 +332,106 @@ function matchCompletionMarkers(
         matchedForm: best.form,
         sentenceIndex: sentence.index,
         excerpt: sentence.raw,
-      });
-    }
+      },
+    });
     position += best.length - 1;
   }
 
   return out;
 }
 
-function anyFormPresent(tokens: readonly ClaimToken[], forms: readonly string[]): string | null {
-  if (forms.length === 0) return null;
+// ---------------------------------------------------------------------------
+// Suppression: rules 1, 2 and 3, scoped to the clause
+// ---------------------------------------------------------------------------
+
+/** One form of `forms` that matched, with where it matched. */
+interface FormMatch {
+  readonly position: number;
+  readonly length: number;
+  readonly form: string;
+}
+
+/** Every position in `tokens` at which one of `forms` matches, left to right. */
+function formMatches(tokens: readonly ClaimToken[], forms: readonly string[]): readonly FormMatch[] {
+  if (forms.length === 0) return [];
+  const out: FormMatch[] = [];
   for (let position = 0; position < tokens.length; position += 1) {
     const hit = matchLongestForm(tokens, position, forms);
-    if (hit) return hit.form;
+    if (hit) out.push({ position, length: hit.length, form: hit.form });
   }
-  return null;
+  return out;
+}
+
+/** Whether a completion form starting at a token position asserts anything. */
+interface Suppression {
+  /** True when rule 1, 2 or 3 silences a form that starts at `position`. */
+  suppresses(position: number): boolean;
+}
+
+/**
+ * Read one sentence's suppression map for one locale.
+ *
+ * Computed once per sentence per lexicon rather than once per candidate form,
+ * because the negator positions are the same for every form in the sentence and
+ * finding them costs a pass over the tokens.
+ */
+function readSuppression(
+  sentence: ClaimSentence,
+  clauses: readonly number[],
+  lexicon: ClaimLexicon,
+): Suppression {
+  const blockers = [
+    ...formMatches(sentence.tokens, lexicon.negators),
+    ...formMatches(sentence.tokens, lexicon.conditionalMarkers),
+  ];
+  // The clause a trailing `?` terminates is the LAST one, because `?` is a
+  // sentence terminator and can therefore only stand at the end.
+  const interrogativeClause = sentence.interrogative ? (clauses.at(-1) ?? null) : null;
+
+  return {
+    suppresses(position: number): boolean {
+      const clause = clauses[position];
+      if (clause === undefined) return false;
+      if (clause === interrogativeClause) return true;
+      return blockers.some((blocker) => blocker.position <= position && clauses[blocker.position] === clause);
+    },
+  };
+}
+
+/**
+ * The clause each token belongs to: punctuation clauses plus every registered
+ * locale's conjunctions.
+ *
+ * `text.ts` has already marked the boundaries punctuation makes, which is every
+ * boundary that is not a language. A `clauseBreakers` form starts a new clause at
+ * its own first token - `..., but I have booked ...` - except at position 0,
+ * where there is no earlier clause for it to be separating from.
+ *
+ * Every registered locale contributes, because a clause boundary is a fact about
+ * the text rather than about the language a claim happens to be written in, and
+ * this system's real traffic mixes the two in one sentence.
+ */
+function clauseIndices(sentence: ClaimSentence, lexicons: readonly ClaimLexicon[]): readonly number[] {
+  const tokens = sentence.tokens;
+  const breaks = new Set<number>();
+  for (let position = 1; position < tokens.length; position += 1) {
+    if ((tokens[position] as ClaimToken).clause !== (tokens[position - 1] as ClaimToken).clause) {
+      breaks.add(position);
+    }
+  }
+  for (const lexicon of lexicons) {
+    for (const hit of formMatches(tokens, lexicon.clauseBreakers)) {
+      if (hit.position > 0) breaks.add(hit.position);
+    }
+  }
+
+  const out: number[] = [];
+  let clause = 0;
+  for (let position = 0; position < tokens.length; position += 1) {
+    if (breaks.has(position)) clause += 1;
+    out.push(clause);
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------

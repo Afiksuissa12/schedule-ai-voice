@@ -1,10 +1,13 @@
 /**
  * The claim gate's text engine: sentences and tokens.
  *
- * These are the two properties everything else in the gate rests on. If
- * sentence scope is wrong, a negation in one sentence silences a false claim in
- * the next - which is EXACTLY the shape of the real `aya-expanse:8b` defect. If
- * tokenisation is wrong for one script, that language has no gate at all.
+ * These are the three properties everything else in the gate rests on. If SENTENCE
+ * scope is wrong, a negation in one sentence silences a false claim in the next -
+ * which is EXACTLY the shape of the real `aya-expanse:8b` defect. If CLAUSE scope is
+ * wrong, a negation in a leading reassurance silences a false claim after the comma -
+ * which is the same defect one punctuation mark narrower, and it was reachable,
+ * released and persisted (`docs/MISSION_2D_CLAIM_GATE.md` § 15). If tokenisation is
+ * wrong for one script, that language has no gate at all.
  *
  * The CRLF case is here rather than implied. A regex that could not consume a
  * `\r` once made `npm run check:anti-scripting` pass or fail depending on how
@@ -79,5 +82,61 @@ describe('the claim gate text engine', () => {
   it('matches whole tokens only, never substrings', () => {
     const tokens = readTokens('overbooked capacity');
     expect(matchLongestForm(tokens, 0, ['booked'])).toBeNull();
+  });
+});
+
+/**
+ * The CLAUSE rules.
+ *
+ * These are the boundaries a negator may not cross, and getting them wrong in
+ * either direction is a live defect: too wide and `אין דאגה, הפגישה נקבעה` is
+ * released with nothing booked, too narrow and `הפגישה לא נקבעה` is regenerated
+ * though it is true. `.clause` is asserted directly here rather than only through
+ * the detector, because the detector's verdict cannot tell a wrong boundary from a
+ * wrong lexicon.
+ */
+describe('the clause boundaries inside a sentence', () => {
+  const clausesOf = (sentence: string): number[] => readTokens(sentence).map((token) => token.clause);
+
+  it('breaks on a comma, which is not a sentence terminator', () => {
+    // The whole defect in one assertion: `אין` must not be in the same clause as
+    // `נקבעה`, and only the comma stands between them.
+    expect(clausesOf('אין דאגה, הפגישה נקבעה')).toEqual([0, 0, 1, 1]);
+    expect(clausesOf("Don't worry, your meeting is booked")).toEqual([0, 0, 1, 1, 1, 1]);
+  });
+
+  it('breaks on a standalone dash and on a colon, and on neither inside a token', () => {
+    expect(clausesOf('Never fear - I have booked it')).toEqual([0, 0, 1, 1, 1, 1]);
+    expect(clausesOf('Details: it is booked')).toEqual([0, 1, 1, 1]);
+
+    // The same two characters INSIDE a token separate nothing - they have to
+    // stay, or `ב-15:00` and `15:00` come apart and the gate loses the time.
+    expect(clausesOf('מחר ב-15:00')).toEqual([0, 0]);
+    expect(clausesOf('booked at 15:00 tomorrow')).toEqual([0, 0, 0, 0]);
+  });
+
+  it('is contiguous from zero even when the sentence opens with punctuation', () => {
+    // The bullet shape a model answers in. A leading `-` must not create an empty
+    // clause 0 with everything in clause 1: the interrogative rule reads the LAST
+    // clause index, and an off-by-one there silences the wrong clause.
+    expect(clausesOf('- nothing is booked yet')).toEqual([0, 0, 0, 0]);
+    expect(readTokens('- nothing is booked yet')[0]?.clause).toBe(0);
+  });
+
+  it('does not break on a quotation mark, so a quoted identifier stays one clause', () => {
+    expect(clausesOf('your reference is "CONF123456" for that')).toEqual([0, 0, 0, 0, 0, 0]);
+  });
+
+  it('reports the clause count on the sentence, per sentence', () => {
+    const sentences = readSentences('Nothing yet. No need to worry, it is booked - honestly.');
+    expect(sentences.map((sentence) => sentence.clauseCount)).toEqual([1, 3]);
+  });
+
+  it('holds no conjunction of any language, because those are lexicon data', () => {
+    // `but` divides two clauses in English and this module must not know that:
+    // `text.ts` is the half that is not a language. `ClaimLexicon.clauseBreakers`
+    // is where the conjunctions live, and `claimGateDetector.test.ts` proves a
+    // synthetic locale's own conjunction is honoured by the engine.
+    expect(clausesOf('I cannot take payments but I have booked it')).toEqual([0, 0, 0, 0, 0, 0, 0, 0, 0]);
   });
 });

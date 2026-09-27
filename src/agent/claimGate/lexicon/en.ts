@@ -416,6 +416,34 @@ export const EN_CLAIM_LEXICON: ClaimLexicon = {
 
   conditionalMarkers: ['if', 'once', 'as soon as', 'shall i', 'should i', 'would you like', 'do you want', 'unless'],
 
+  // The words that join one clause to the next when the model did not bother with
+  // a comma. `I cannot take payments but I have booked your meeting for Thursday
+  // at 2pm.` is the leak these close; with a comma, `text.ts` already finds the
+  // boundary.
+  //
+  // Coordinators (`but`, `so`, `and`) and subordinators (`because`, `while`,
+  // `since`) are both here, because both bound a negation: in `I could not reach
+  // them because your meeting is booked for Thursday`, `not` governs the reaching
+  // and says nothing whatever about the booking.
+  //
+  // `yet`, `if`, `once` and `unless` are deliberately ABSENT even though they join
+  // clauses in some readings. Each is already a `negator` or a
+  // `conditionalMarker` above, and a token that both bounds a suppression and IS
+  // one would be arguing with itself.
+  clauseBreakers: [
+    'but',
+    'so',
+    'and',
+    'however',
+    'although',
+    'though',
+    'whereas',
+    'because',
+    'therefore',
+    'while',
+    'since',
+  ],
+
   months: [
     { forms: ['january', 'jan'], month: 1 },
     { forms: ['february', 'feb'], month: 2 },
