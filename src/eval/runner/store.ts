@@ -8,16 +8,24 @@
  * would lose the lot on an interrupt.
  *
  *   <outDir>/runs/<model-slug>/<scenario-id>.json     one ScenarioRun
+ *   <outDir>/environment/<model-slug>.json            host conditions per run
  *   <outDir>/models.json                              the model inventory
  *   <outDir>/results.json                             the distilled comparison
  *   <outDir>/transcripts/<model-slug>/<scenario>.md   human-readable
  *   <outDir>/COMPARISON.md                            the side-by-side report
  *
  * ONLY `<outDir>/runs` is gitignored - it is large and fully regenerable from
- * the models. `results.json`, `models.json`, `COMPARISON.md` AND the transcripts
- * are COMMITTED, because the Founder Review depends on them and a judged score
- * nobody can check against its transcript is not evidence. `.gitignore` says the
- * same thing at the one line that enforces it.
+ * the models. `results.json`, `models.json`, `COMPARISON.md`, the transcripts AND
+ * `environment/` are COMMITTED, because the Founder Review depends on them and a
+ * judged score nobody can check against its transcript is not evidence.
+ * `.gitignore` says the same thing at the one line that enforces it.
+ *
+ * `environment/` is committed for a sharper reason than the rest: it is the only
+ * artefact here that CANNOT be regenerated. You can always re-run a model, but
+ * you cannot go back and re-measure what the machine was doing last Tuesday. It
+ * is also tiny. It is written by an EXTERNAL host sampler rather than by this
+ * harness - see `src/eval/environment/schema.ts` - and read back by
+ * `src/eval/environment/store.ts`, which owns its paths.
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';

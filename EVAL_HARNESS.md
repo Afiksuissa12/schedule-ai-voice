@@ -62,6 +62,12 @@ Useful flags on `eval:run`:
 Environment: `LOCAL_LLM_BASE_URL` (default `http://host.docker.internal:11434` - inside a container
 `localhost` is the container), `EVAL_OUT_DIR`, `EVAL_NUM_CTX`.
 
+**For a comparison across candidates, the steps above are not sufficient on their own.** Latency and
+throughput are properties of the machine as much as of the model, so a like-for-like ranking needs
+sequential runs, a cold GPU between them, one shared `num_ctx`, a forced re-run, judging as a separate
+phase, and the host conditions recorded per run. That protocol is **§ 9**, and it is written to be
+followed without asking anyone a question.
+
 **The run is resumable.** Each `(model, scenario)` pair writes its own JSON file the instant it
 finishes, and a re-run skips whatever is already on disk. An interrupted run loses the scenario in
 flight and nothing else.
@@ -472,28 +478,273 @@ eval-output/                           (override the root with EVAL_OUT_DIR)
   results.json                         machine-readable, for the Founder Review
   COMPARISON.md                        the human-readable side-by-side
   transcripts/<model>/<scenario>.md    real transcripts + judge verdicts
+  environment/<model>.json             host conditions per run, written EXTERNALLY (§ 9)
   runs/<model>/<scenario>.json         gitignored raw per-run records (large, regenerable)
 ```
 
-The first four are meant to be **committed** next to the Founder Review — a judged score nobody can
-check against its transcript is not evidence. `runs/` is gitignored: it is large, it is regenerable,
-and it is the resume checkpoint rather than a result.
+Everything except `runs/` is meant to be **committed** next to the Founder Review — a judged score
+nobody can check against its transcript is not evidence. `runs/` is gitignored: it is large, it is
+regenerable, and it is the resume checkpoint rather than a result.
+
+**`environment/` is COMMITTED**, and for a sharper reason than the rest. It is the only artefact here
+that **cannot be regenerated**: you can always re-run a model, but you cannot go back and re-measure
+what the machine was doing during a run that has already finished. It is also tiny — a few dozen
+readings per model. `.gitignore` names it explicitly as not-ignored so the intent is visible rather
+than merely implied by the absence of a rule.
 
 > **This is not a formality.** All 57 of those files were dropped during the branch merge that carried
 > the Founder Review, so for three branches the review cited evidence that was not in the repository.
 > `.gitignore` has one line for this (`eval-output/runs/`) and it means what it says: everything else
 > under `eval-output/` is committed. Restored — see `FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 5.2.
 
+**Every path above is derived from the output root**, and the root comes from `EVAL_OUT_DIR`. Nothing
+is hardcoded to `eval-output/`, so a fresh run can be written and reported **beside** the preliminary
+results instead of overwriting them. That is what makes a re-benchmark comparable against what is
+already committed rather than destructive of it, and it is covered by
+`tests/eval/customOutputDirectory.test.ts`, which drives the real report generator against a
+temporary directory and asserts the committed tree is byte-for-byte untouched.
+
 `results.json` carries the harness, corpus, rubric and judge-prompt versions, the full rubric with
 weights and rationales, the candidate set and the rejected list, the coverage map, the per-model
-aggregates and the per-scenario breakdown. Nothing in it is fabricated: a metric with no observations
-is `null`, never `0`, and every aggregate carries its own `n`.
+aggregates, the per-scenario breakdown and the per-model host conditions. Nothing in it is fabricated:
+a metric with no observations is `null`, never `0`, and every aggregate carries its own `n`.
+
+### `results.json` schema identifier
+
+| Identifier | What changed |
+| --- | --- |
+| `schedule-ai-voice/eval-results@1` | The original shape. |
+| `schedule-ai-voice/eval-results@2` | **Current.** Adds one top-level key, `environment` (§ 9.3). A strict **superset**: every `@1` key is still present, unmoved and unrenamed, so a reader written against `@1` keeps working. The identifier moves because the shape grew, not because it was restructured. |
 
 No new database tables were added. `prisma/schema.prisma` is untouched.
 
 ---
 
-## 9. Results
+## 9. The fairness protocol — re-benchmarking all five under identical conditions
+
+The preliminary results committed under `eval-output/` cover **three** of the five candidates and were
+not all produced under recorded conditions. This section is the protocol for producing a comparison
+that is actually like-for-like. It is written to be followed **without asking anyone a question**.
+
+Read § 9.6 first if you only read one part: it is the list of things that make the comparison
+**invalid**, and it is shorter than the list of things to do.
+
+### 9.1 What is actually being measured, and why conditions decide it
+
+§ 5 scores conversation quality, tool correctness and language. Those are properties of the model.
+§ 6 of `COMPARISON.md` reports latency, tokens per second and context utilisation, and **those are
+properties of the machine as much as of the model.** A candidate benchmarked while a browser held two
+gigabytes of VRAM, or one whose weights spilled into system RAM because the previous model was still
+resident, produces slower numbers that say nothing about the candidate.
+
+The failure mode is not that the numbers are wrong. It is that **nothing in the output says they are
+not comparable**, so a reader ranks five models on a table where two of them were racing uphill. The
+conditions cannot be reconstructed after the fact, which is why they have to be recorded *during* the
+run, by the host.
+
+### 9.2 The protocol, step by step
+
+**Preconditions.**
+
+1. Close every other GPU application. If one cannot be closed, that is fine — record it in the
+   `note` field (§ 9.3) rather than pretending the machine was quiet.
+2. Confirm all five candidates are on the host: `npm run eval:models`. **Do not** pull anything
+   mid-sweep; a pull saturates the disk and the link and will distort whatever is running.
+3. Pick one `num_ctx` and use it for all five. The harness default for the production context path is
+   **16384**. The KV cache is a real part of the VRAM footprint (§ 3), so a model run at 8k is not
+   comparable with one run at 16k on any axis.
+4. Pick a fresh output directory so the preliminary results survive:
+
+   ```bash
+   export EVAL_OUT_DIR="$PWD/eval-output-fair-$(date +%Y%m%d)"
+   ```
+
+5. Note the corpus and rubric versions once, from `npm run eval:corpus`. All five models must be run
+   against the **same** versions; if either changes mid-sweep, the sweep is void.
+
+**One model at a time, sequentially.**
+
+For each of the five candidates, in any fixed order, do all of the following before starting the next:
+
+6. **Unload every model** from the runtime first, so the candidate starts from a cold, empty GPU and
+   cannot be pushed into system RAM by a predecessor that is still resident. Verify the runtime reports
+   nothing resident before continuing.
+7. **Start the host sampler** for this model (§ 9.3). It writes
+   `$EVAL_OUT_DIR/environment/<model-slug>.json`.
+8. **Run generation only, forcing a re-run:**
+
+   ```bash
+   npm run eval:run -- --model <tag> --num-ctx 16384 --force --skip-judge
+   ```
+
+   - `--force` is **required.** Without it the run is a *resume*: it skips every `(model, scenario)`
+     already on disk and silently reuses records made under the old conditions. A comparison that
+     mixes fresh and stale records is not a comparison.
+   - `--skip-judge` keeps judging out of the generation phase — see § 9.4.
+9. **Stop the sampler** and confirm the record exists and validates. `npm run eval:report` will refuse
+   to run at all if it is malformed, which is the check.
+10. **Unload the model again**, then go to step 6 for the next candidate.
+
+**After all five have generated.**
+
+11. Run the judging phase (§ 9.4).
+12. `npm run eval:report` — with `EVAL_OUT_DIR` still exported — to write `results.json`,
+    `COMPARISON.md` and the transcripts into the fresh directory.
+13. Read § 7 and § 8 of the generated `COMPARISON.md` **before** reading § 6. If either of them says a
+    model's conditions differ, § 6 is not a ranking for that model.
+
+### 9.3 The environment record
+
+**An external host sampler writes these files. This harness never does, and must not.** `src/eval`
+runs inside a container: it would measure the container, not the host whose GPU is doing the work. And
+`npm run eval:report` is required to be a pure function of what is already on disk, so it cannot go
+looking at the machine. `src/eval/environment/` therefore only ever **reads and validates**.
+
+| | |
+| --- | --- |
+| **Location** | `<EVAL_OUT_DIR>/environment/<model-slug>.json` — one file per model per run, a sibling of `runs/` and `transcripts/`, so it moves with `EVAL_OUT_DIR` |
+| **Slug** | The model tag with every character outside `[A-Za-z0-9._-]` replaced by `_` — the same slugging `runs/` and `transcripts/` use, so the three directories line up by eye |
+| **Schema** | `src/eval/environment/schema.ts`, Zod, versioned `1.0.0` via a `z.literal` on `schemaVersion` |
+| **Committed?** | **Yes** — see § 8. It is the one artefact here that cannot be regenerated |
+
+**The shape.** A complete, valid example:
+
+```json
+{
+  "schemaVersion": "1.0.0",
+  "modelId": "qwen2.5:7b-instruct",
+  "runId": "fairness-sweep-2026-09-27",
+  "numCtx": 16384,
+  "sampledBy": "host-env-sampler 1.0.0 (external, runs on the Windows host)",
+  "startedAtIso": "2026-09-27T09:00:00.000Z",
+  "endedAtIso": "2026-09-27T09:40:00.000Z",
+  "modelResidentBytes": 5368709120,
+  "offload": {
+    "reportedBy": "ollama 0.34.3 /api/ps",
+    "gpuBytes": 5368709120,
+    "cpuBytes": 0,
+    "runtimeReportedText": "100% GPU"
+  },
+  "note": null,
+  "samples": [
+    {
+      "atIso": "2026-09-27T09:00:00.000Z",
+      "freeSystemRamBytes": 19327352832,
+      "vramUsedBytes": 5368709120,
+      "vramTotalBytes": 8585740288,
+      "gpuUtilizationPercent": 0,
+      "cpuLoadPercent": 8
+    }
+  ]
+}
+```
+
+**Every field.**
+
+| Field | Meaning |
+| --- | --- |
+| `schemaVersion` | Must be exactly `"1.0.0"`. Another version is **rejected**, not partially understood |
+| `modelId` | The Ollama tag, spelled as in § 3. Checked against the filename's slug — a mismatch is refused, because crediting one model's conditions to another is the exact unfairness this file exists to expose |
+| `runId` | Which sweep this belongs to. **Identical across all five files** of one sweep; that is what makes them a comparison rather than five unrelated measurements |
+| `numCtx` | The context length this run used, or `null`. Recorded so a reader can *verify* the "identical `num_ctx`" rule instead of taking it on trust |
+| `sampledBy` | The external sampler's name and version |
+| `startedAtIso`, `endedAtIso` | ISO 8601 UTC. `endedAtIso` may not precede `startedAtIso` |
+| `samples` | **The series — at least one.** A record claiming to be a measurement and containing none is malformed, not empty |
+| `samples[].atIso` | When this reading was taken |
+| `samples[].freeSystemRamBytes` | Free host system RAM, **in bytes** |
+| `samples[].vramUsedBytes` | VRAM in use across the whole device by every process, **in bytes** |
+| `samples[].vramTotalBytes` | Total VRAM the device reports, **in bytes**. May not be less than `vramUsedBytes` |
+| `samples[].gpuUtilizationPercent` | GPU busy percentage, **0–100** |
+| `samples[].cpuLoadPercent` | Host CPU busy percentage across all logical cores, **0–100** |
+| `modelResidentBytes` | The model's own resident size, **in bytes** — weights plus KV cache |
+| `offload` | The GPU/CPU split, or `null` if the runtime did not report one. **`null` does not mean 100% GPU** |
+| `offload.reportedBy` | Which runtime said so, e.g. `ollama 0.34.3 /api/ps` |
+| `offload.gpuBytes` | Bytes of this model on the GPU |
+| `offload.cpuBytes` | Bytes of this model in host RAM instead. **`0` is a real, measured value** |
+| `offload.runtimeReportedText` | The runtime's own words, verbatim, e.g. `100% GPU` — kept so a reader can check the derived percentage against what the tool actually printed |
+| `note` | **Free text**, for conditions no schema anticipates: another GPU application open, a laptop on battery, a thermal throttle. Explicitly `null` when there is nothing to say |
+
+**Units are in the field names.** Every numeric field ends in `Bytes` or `Percent`. A number whose
+unit a reader has to guess is a fabrication risk: `vramUsed: 5491` is bytes, MiB or GB depending on
+who wrote it, and nothing in the file says which.
+
+**Validation is strict, and a missing file is not an error.** The two halves of that sentence are both
+load-bearing:
+
+- **A file that exists must be complete and well-formed, or the report refuses to run.** Every
+  measurement field is *required and nullable*: a sampler that could not read a quantity must write
+  `null`, and a sampler that **omits** the key has a bug. Unknown keys are rejected (the schema is
+  closed, like the corpus and the tool schemas). `vramUsedBytes` above `vramTotalBytes` is rejected as
+  a MiB-for-bytes mix-up. This is deliberately *harsher* than `readRun`, which swallows a corrupt run
+  file: a dropped run shows up as a missing scenario in the completeness counts where a reader will see
+  it, but a dropped environment record would look exactly like "nobody sampled it".
+- **A missing file is a normal, expected state.** Not every run is sampled. The report prints
+  `not measured` and says how many models lack a record.
+
+**Where `not measured` appears in the output.**
+
+| Output | How an unsampled quantity appears |
+| --- | --- |
+| `COMPARISON.md` § 7, § 8 | The literal string `not measured` in the cell. Never `0`, never `0.00`, never a blank |
+| `results.json` → `environment.models[].quantities.<key>` | `{"n": 0, "min": null, "median": null, "max": null}` — `null`, matching the file's existing "a metric with no observations is `null`, never `0`" rule |
+| `results.json` → `environment.models[].notMeasured` | An explicit **list of the quantity keys** that were not sampled. This is the machine-readable form of the `not measured` cell: a bare `null` cannot distinguish "not sampled" from "this key is newer than your reader", so the list is stated outright |
+| `results.json` → `environment.models[].recordPresent` | `false` when no record exists at all. Distinguishes *the sampler never ran* from *the sampler ran and saw nothing* — both print `not measured`, but only the second can carry a `note` explaining why |
+
+### 9.4 Judging is a separate phase, after all generation
+
+Run the five generation passes with `--skip-judge`, then judge afterwards, in a second pass over the
+already-recorded runs.
+
+Two reasons, and the second is the one that actually forces it:
+
+1. **The judges are themselves 7–8B models** (§ 7). Judging inline means loading a judge between
+   candidate scenarios, evicting the candidate from VRAM, and reloading it — so the candidate's
+   measured load time and latency include being repeatedly thrown out of memory by the scoring
+   machinery. That is an artefact of the harness, not of the model.
+2. **`qwen2.5:7b-instruct` and `llama3.1:8b-instruct-q4_K_M` are judges *and* candidates.** Inline
+   judging means those two are resident as judges during their own runs and not during the other
+   three, so the VRAM pressure differs by candidate in a way that correlates with which candidate it
+   is. No amount of care in reading the table fixes that; only separating the phases does.
+
+Judging re-reads the recorded runs and writes verdicts back into them, so it changes no generated
+text and no latency number.
+
+### 9.5 The output is committed side by side, not on top
+
+The fresh directory is committed **next to** `eval-output/`, not merged into it. The preliminary
+results are the baseline the fresh run is compared against; overwriting them destroys the comparison
+in order to report it. Both directories keep the same internal layout (§ 8), so the same reader and the
+same tooling work on either.
+
+### 9.6 The comparison is INVALID if any of this happened
+
+State it in the report rather than quietly shipping the table. Every item below is a reason to discard
+the cross-model ranking — the per-model results may still be useful on their own.
+
+- **Conditions changed mid-run.** Another application opened or closed, the machine was unplugged, a
+  driver was updated, a pull ran, the host was rebooted between candidates. This is the general case
+  and it subsumes most of what follows.
+- **The candidates did not all run at the same `num_ctx`.** `COMPARISON.md` § 7 detects this from the
+  records and says so.
+- **The corpus or rubric version changed mid-sweep.** Different scenarios or different weights mean
+  the scores are not on one scale. Both are recorded on every run for exactly this check.
+- **Any model was resumed rather than re-run.** Without `--force`, records made under the old
+  conditions are silently reused.
+- **Models were run concurrently**, or a model was not unloaded before the next one started. The
+  second model's weights may have been pushed into system RAM by the first.
+- **Judging ran inline** with generation (§ 9.4).
+- **A model spilled into system RAM.** `COMPARISON.md` § 8 reports this per model. Either free VRAM
+  and re-run it, or state the spill next to every speed claim about it.
+- **Conditions were not recorded at all.** `not measured` for a model means its § 6 row is
+  uncomparable — a gap in the evidence, not a clean result. The report says this explicitly rather
+  than letting the absence read as an absence of problems.
+
+A partially-invalid sweep is still worth keeping: record *which* models are affected and *why*, and
+report the rest. What must not happen is a five-row table that looks like a ranking and is not one.
+
+---
+
+## 10. Results
 
 <!-- RESULTS:BEGIN -->
 _Populated by the completed benchmark run - see below._

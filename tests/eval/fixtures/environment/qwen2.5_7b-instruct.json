@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "1.0.0",
+  "modelId": "qwen2.5:7b-instruct",
+  "runId": "fairness-sweep-2026-09-27",
+  "numCtx": 16384,
+  "sampledBy": "host-env-sampler 1.0.0 (external, runs on the Windows host)",
+  "startedAtIso": "2026-09-27T09:00:00.000Z",
+  "endedAtIso": "2026-09-27T09:40:00.000Z",
+  "modelResidentBytes": 5368709120,
+  "offload": {
+    "reportedBy": "ollama 0.34.3 /api/ps",
+    "gpuBytes": 5368709120,
+    "cpuBytes": 0,
+    "runtimeReportedText": "100% GPU"
+  },
+  "note": null,
+  "samples": [
+    {
+      "atIso": "2026-09-27T09:00:00.000Z",
+      "freeSystemRamBytes": 19327352832,
+      "vramUsedBytes": 5368709120,
+      "vramTotalBytes": 8585740288,
+      "gpuUtilizationPercent": 0,
+      "cpuLoadPercent": 8
+    },
+    {
+      "atIso": "2026-09-27T09:10:00.000Z",
+      "freeSystemRamBytes": 18253611008,
+      "vramUsedBytes": 5905580032,
+      "vramTotalBytes": 8585740288,
+      "gpuUtilizationPercent": 35,
+      "cpuLoadPercent": 12
+    },
+    {
+      "atIso": "2026-09-27T09:20:00.000Z",
+      "freeSystemRamBytes": 17179869184,
+      "vramUsedBytes": 6442450944,
+      "vramTotalBytes": 8585740288,
+      "gpuUtilizationPercent": 60,
+      "cpuLoadPercent": 15
+    },
+    {
+      "atIso": "2026-09-27T09:30:00.000Z",
+      "freeSystemRamBytes": 16106127360,
+      "vramUsedBytes": 6979321856,
+      "vramTotalBytes": 8585740288,
+      "gpuUtilizationPercent": 72,
+      "cpuLoadPercent": 22
+    },
+    {
+      "atIso": "2026-09-27T09:40:00.000Z",
+      "freeSystemRamBytes": 15032385536,
+      "vramUsedBytes": 7516192768,
+      "vramTotalBytes": 8585740288,
+      "gpuUtilizationPercent": 95,
+      "cpuLoadPercent": 40
+    }
+  ]
+}
