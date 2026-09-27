@@ -30,10 +30,12 @@ npm run qa:sweep  601 scenarios, 0 violations, 0 network attempts
 
 Those two lines are a record of *that* comparison and are **not** the current totals. Layer A has grown
 since, for reasons that have nothing to do with this harness — the Mission 2B scheduling work added
-locale regression files and three invariants. On this branch:
+locale regression files and three invariants, and Mission 2C added the Founder review's
+location-and-citation guard (`tests/invariants/founderReviewReferences.test.ts`, three tests). On this
+branch:
 
 ```
-npm test          1017 passed | 2 skipped  (49 files passed, 1 skipped)
+npm test          1020 passed | 2 skipped  (50 files passed, 1 skipped)
 npm run qa:sweep  823 scenarios, 0 violations, 0 network attempts
 ```
 
@@ -514,7 +516,8 @@ than merely implied by the absence of a rule.
 > the Founder Review, so for three branches the review cited evidence that was not in the repository.
 > `.gitignore` has one line for this (`eval-output/runs/`) and it means what it says: everything else
 > under `eval-output/` is committed. Restored — see
-> [`docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md`](docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md).
+> [`docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md`](docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md) § 5.4,
+> which is where that run is now read as history rather than as a current result.
 
 **Every path above is derived from the output root**, and the root comes from `EVAL_OUT_DIR`. Nothing
 is hardcoded to `eval-output/`, so a fresh run can be written and reported **beside** the preliminary

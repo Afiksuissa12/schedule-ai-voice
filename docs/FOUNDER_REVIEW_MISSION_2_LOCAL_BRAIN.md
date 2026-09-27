@@ -20,7 +20,7 @@ has been merged.** Baseline V1 on `master` is untouched.
 
 ## Revision history
 
-**2026-09-27 — final revision. Five changes, and what each supersedes.**
+**2026-09-27 — final revision. Six changes, and what each supersedes.**
 
 1. **This file moved from the repository root to `docs/`**, with `git mv`, so its
    history follows it. It now sits beside `docs/FOUNDER_REVIEW.md`, which is
@@ -50,6 +50,17 @@ has been merged.** Baseline V1 on `master` is untouched.
    `llama3.1:8b-instruct-q4_K_M` (§ 6.3.1). It is disclosed here rather than in
    a footnote because a reader is entitled to know how the judged numbers were
    produced.
+6. **The move in (1) is now guarded, and the validation numbers were re-measured
+   after integration.** `tests/invariants/founderReviewReferences.test.ts`
+   asserts that this file exists at `docs/`, that no copy reappears at the root,
+   that nothing in the repository cites the old root-level path, and that all 27
+   `Source:` lines in § 6.2 and § 6.5 name a transcript that is actually on disk,
+   inside the committed `eval-output-fair-20260927/transcripts/`. Adding it
+   is why the recorded suite total is **1,020 / 50 files** rather than the
+   1,017 / 49 an earlier revision carried; every figure in § 7, § 8.3.6 and § 13
+   comes from a re-run on the integrated tree. Deliberately, that guard does
+   **not** pin this document's prose or section numbers — those change on every
+   revision, and pinning them would tax editing rather than protect integrity.
 
 ---
 
@@ -72,7 +83,7 @@ real audit trail. Every word the agent says is generated; § 6.4 proves it again
 every string literal in the source tree.
 
 **Baseline V1 is unchanged, verified by re-running it on this tree.**
-1,017 passed / 2 skipped, 823 scenarios / 4,624 applicable checks / 0 violations
+1,020 passed / 2 skipped, 823 scenarios / 4,624 applicable checks / 0 violations
 / 0 network attempts, determinism byte-identical. Commands, exact numbers and
 raw output in § 7. (The sweep was 601 / 2,791 at Baseline V1; the increase is
 the Mission 2B invariants, not a regression — § 7.)
@@ -1641,19 +1652,23 @@ per turn, and it is why its turn p95 is **120,122 ms**.
 ## 7. Baseline V1 after integration — re-run for real
 
 **Every number in this section was produced by this revision's own runs, on this
-tree, on 2026-09-27.** Nothing is copied forward from an earlier pass. The five
+tree, on 2026-09-27.** Nothing is copied forward from an earlier pass. The six
 commands were run **sequentially, one at a time**, because the host is memory
 constrained and two concurrent sweeps produce a failure about the host rather
-than about the code.
+than about the code. Rows 2–6 were **re-run after the Mission 2C branches were
+integrated**, which is why the test totals are three higher than the figure an
+earlier revision of this section carried: integration added
+`tests/invariants/founderReviewReferences.test.ts`, the guard on this document's
+own location and citations.
 
 | # | Command | Exact result | Exit |
 |---:|---|---|---:|
 | 1 | `npm install` | completed; `npm audit` reports the advisory set assessed in § 11 | **0** |
 | 2 | `npm run typecheck` | `tsc --noEmit -p tsconfig.json` — no errors | **0** |
 | 3 | `npm run build` | no errors | **0** |
-| 4 | `npm run test` | **`Test Files  49 passed \| 1 skipped (50)`** · **`Tests  1017 passed \| 2 skipped (1019)`** · `Duration 169.81s` | **0** |
-| 5 | `npm run qa:sweep` | **823 scenarios · 4,624 applicable (12,472 evaluated) · 0 violations · 0 network attempts · 132.5 s · `RESULT: PASS`** | **0** |
-| 6 | `npm run qa:sweep -- --determinism` | **823 scenarios · 4,624 applicable (12,472 evaluated) · 0 violations · 0 network attempts · 99.3 s · `RESULT: PASS`** · INV-09 **PASS — byte-identical second run** | **0** |
+| 4 | `npm run test` | **`Test Files  50 passed \| 1 skipped (51)`** · **`Tests  1020 passed \| 2 skipped (1022)`** · `Duration 166.54s` | **0** |
+| 5 | `npm run qa:sweep` | **823 scenarios · 4,624 applicable (12,472 evaluated) · 0 violations · 0 network attempts · 132.6 s · `RESULT: PASS`** | **0** |
+| 6 | `npm run qa:sweep -- --determinism` | **823 scenarios · 4,624 applicable (12,472 evaluated) · 0 violations · 0 network attempts · 94.9 s · `RESULT: PASS`** · INV-09 **PASS — byte-identical second run** | **0** |
 
 **The two skipped tests are by design** — the live-OpenAI test, which skips when
 no key is configured, and nothing was configured. **No test failed.**
@@ -1764,7 +1779,7 @@ a gate rather than a document:
 
 **And they are now real vitest files.** § 8.3 lists what Mission 2B added, which
 is a great deal more than the two files that stood here: the suite this revision
-ran is **49 files passed / 1 skipped, 1,017 passed / 2 skipped** (§ 7), against
+ran is **50 files passed / 1 skipped, 1,020 passed / 2 skipped** (§ 7), against
 Baseline V1's 500. **That is the coverage gap § 10.1 used to describe being
 closed** — § 10.1 is updated accordingly rather than left contradicting it.
 
@@ -2073,7 +2088,7 @@ running them:
 | `tests/e2e/hebrewDigitClockTime.test.ts` | **5** | the end-to-end behaviour, flipped (§ 8.3.4) |
 
 **441 tests across those ten files**, run by this revision. The whole suite is
-1,017 passed / 2 skipped (§ 7).
+1,020 passed / 2 skipped (§ 7).
 
 **Three new invariants, and the sweep family that exercises them:**
 
@@ -2102,7 +2117,7 @@ than a database.
 
 | Check | Result |
 |---|---|
-| `npm run test` | **`Test Files  49 passed \| 1 skipped (50)`** · **`Tests  1017 passed \| 2 skipped (1019)`** |
+| `npm run test` | **`Test Files  50 passed \| 1 skipped (51)`** · **`Tests  1020 passed \| 2 skipped (1022)`** |
 | `npm run qa:sweep` | **823 scenarios · 4,624 applicable (12,472 evaluated) · 0 violations · 0 network attempts · `RESULT: PASS`** |
 | `npm run qa:sweep -- --determinism` | **823 / 4,624 (12,472) · 0 violations · 0 network attempts · `RESULT: PASS`** · INV-09 **byte-identical second run** |
 | INV-15 | 467 checked, **467 passed, 0 failed**, 483 n/a |
@@ -2151,7 +2166,7 @@ here is the list:**
    not, and § 12 now says so: `naturalLanguage.ts` was rewritten and
    `src/scheduling/lexicon/` is new.
 5. **The old § 10.1 said fifteen tests existed where a hundred should.** The
-   suite is 1,017 tests. § 10.1 is updated rather than left standing.
+   suite is 1,020 tests. § 10.1 is updated rather than left standing.
 
 ### 8.4 FIXED, and the most serious of the four defects that were fixed — a turn had no time limit at all
 
@@ -2923,7 +2938,7 @@ and still **pending your approval** as it has been since it was first recorded.
 > on. **It is no longer true**, and the numbers below are this revision's own
 > runs rather than a restatement.
 
-The suite is **1,017 passed / 2 skipped across 49 files** (§ 7), against Baseline
+The suite is **1,020 passed / 2 skipped across 50 files** (§ 7), against Baseline
 V1's 500. The invariant sweep is **823 scenarios / 4,624 applicable checks
 (12,472 evaluated)**, against Baseline V1's 601 / 2,791.
 
@@ -3115,7 +3130,7 @@ This is the concrete finding of § 11, and it is the reason the command was not 
   argument does not.) The first *fixed* version is **4.1.11**; there is **no 3.x
   fix**, so any remediation is a major-version jump from 3.2.7. That would very
   likely require changes to **`vitest.config.ts`**, and it would now put a
-  **1,017-test** suite at risk to close a path this repository does not use.
+  **1,020-test** suite at risk to close a path this repository does not use.
 
 Running `npm audit fix --force` would therefore have downgraded the database
 tooling and majorly upgraded the test runner, in one unreviewed step, to address
@@ -3255,9 +3270,9 @@ validation commands were run sequentially by this revision on 2026-09-27 (§ 7).
 ```
 MERGE-READINESS — facts, each with the command that produced it
 
-- test suite:                         Test Files  49 passed | 1 skipped (50)
-                                      Tests     1017 passed | 2 skipped (1019)
-                                      `npm run test`, exit 0, 169.81s.
+- test suite:                         Test Files  50 passed | 1 skipped (51)
+                                      Tests     1020 passed | 2 skipped (1022)
+                                      `npm run test`, exit 0, 166.54s.
                                       The 2 skips are the live-OpenAI test,
                                       which skips when no key is configured.
                                       NO TEST FAILED.
@@ -3266,7 +3281,7 @@ MERGE-READINESS — facts, each with the command that produced it
                                       4,624 applicable checks (12,472 evaluated)
                                       0 violations
                                       0 network attempts
-                                      `npm run qa:sweep`, RESULT: PASS, 132.5s.
+                                      `npm run qa:sweep`, RESULT: PASS, 132.6s.
                                       (Baseline V1 was 601 / 2,791. The increase
                                       is family L-locale-parity plus INV-15,
                                       INV-16, INV-17 — § 8.3.5, not a regression.)
@@ -3274,7 +3289,7 @@ MERGE-READINESS — facts, each with the command that produced it
 - determinism:                        IDENTICAL.
                                       `npm run qa:sweep -- --determinism`,
                                       823 / 4,624 (12,472), 0 violations,
-                                      0 network attempts, RESULT: PASS, 99.3s.
+                                      0 network attempts, RESULT: PASS, 94.9s.
                                       INV-09: "a second full run produced
                                       byte-identical classifications for every
                                       scenario id."
@@ -3361,7 +3376,7 @@ smoothed:**
    pressure** (§ 6.5.4). The chokepoint governs actions, not sentences. § 9.3
    names the programmatic post-turn check that would fix it. **It is not built.**
 3. **Test coverage is closed for scheduling and still open for the provider
-   transport, the context assembler and the eval layer** (§ 10.1). 1,017 tests is
+   transport, the context assembler and the eval layer** (§ 10.1). 1,020 tests is
    not 500, and it is also not complete.
 
 **None of the three is a reason to hold the merge.** Baseline V1 is intact and

@@ -147,8 +147,8 @@ describe('the Founder review lives under docs/, and its citations resolve', () =
 
     const citations: { line: number; path: string }[] = [];
     lines.forEach((line, index) => {
-      const matched = line.match(citation);
-      if (matched) citations.push({ line: index + 1, path: matched[1] });
+      const cited = citation.exec(line)?.[1];
+      if (cited) citations.push({ line: index + 1, path: cited });
     });
 
     expect(
