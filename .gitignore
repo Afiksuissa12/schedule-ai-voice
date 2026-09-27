@@ -32,6 +32,7 @@ coverage/
 # regenerated, because you cannot go back and re-measure what the machine was
 # doing during a run that has finished. They are also tiny.
 eval-output/runs/
+eval-output-*/runs/
 
 # agent coordination mailbox (runtime state, not source)
 .agent-inbox/

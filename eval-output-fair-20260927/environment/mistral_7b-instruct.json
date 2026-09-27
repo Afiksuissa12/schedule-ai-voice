@@ -1,0 +1,1587 @@
+{
+    "schemaVersion":  "1.0.0",
+    "modelId":  "mistral:7b-instruct",
+    "runId":  "fairness-sweep-2026-09-27",
+    "numCtx":  16384,
+    "sampledBy":  "host-env-sampler 1.0.0 (external, runs on the Windows host)",
+    "startedAtIso":  "2026-09-27T07:14:47.148Z",
+    "endedAtIso":  "2026-09-27T08:08:17.791Z",
+    "modelResidentBytes":  6722064218,
+    "offload":  {
+                    "reportedBy":  "ollama 0.34.3 /api/ps",
+                    "gpuBytes":  6200775147,
+                    "cpuBytes":  521289071,
+                    "runtimeReportedText":  "8%/92% CPU/GPU"
+                },
+    "note":  "Unreal Editor and Blender closed for every candidate; GPU otherwise idle apart from desktop apps holding no VRAM; Docker Desktop WSL VM and the agent-server container running; no AutonomousDevTeam mission active during generation.",
+    "samples":  [
+                    {
+                        "atIso":  "2026-09-27T07:14:48.606Z",
+                        "freeSystemRamBytes":  14322360320,
+                        "vramUsedBytes":  46137344,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  0,
+                        "cpuLoadPercent":  26
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:15:04.969Z",
+                        "freeSystemRamBytes":  14297673728,
+                        "vramUsedBytes":  46137344,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  0,
+                        "cpuLoadPercent":  13
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:15:21.298Z",
+                        "freeSystemRamBytes":  12251439104,
+                        "vramUsedBytes":  6372196352,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  0,
+                        "cpuLoadPercent":  16
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:15:37.709Z",
+                        "freeSystemRamBytes":  10182881280,
+                        "vramUsedBytes":  6372196352,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  72,
+                        "cpuLoadPercent":  9
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:15:54.138Z",
+                        "freeSystemRamBytes":  10084839424,
+                        "vramUsedBytes":  6372196352,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  80
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:16:10.608Z",
+                        "freeSystemRamBytes":  9003565056,
+                        "vramUsedBytes":  6372196352,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  77
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:16:27.063Z",
+                        "freeSystemRamBytes":  7870361600,
+                        "vramUsedBytes":  6372196352,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  65,
+                        "cpuLoadPercent":  73
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:16:43.534Z",
+                        "freeSystemRamBytes":  7834460160,
+                        "vramUsedBytes":  6372196352,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  74
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:17:00.034Z",
+                        "freeSystemRamBytes":  7854854144,
+                        "vramUsedBytes":  6372196352,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  80
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:17:16.480Z",
+                        "freeSystemRamBytes":  7909015552,
+                        "vramUsedBytes":  6372196352,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  76
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:17:32.922Z",
+                        "freeSystemRamBytes":  7900405760,
+                        "vramUsedBytes":  6372196352,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  65,
+                        "cpuLoadPercent":  73
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:17:49.412Z",
+                        "freeSystemRamBytes":  7755526144,
+                        "vramUsedBytes":  6372196352,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  65,
+                        "cpuLoadPercent":  80
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:18:05.893Z",
+                        "freeSystemRamBytes":  7838625792,
+                        "vramUsedBytes":  6372196352,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  64,
+                        "cpuLoadPercent":  87
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:18:22.303Z",
+                        "freeSystemRamBytes":  7266336768,
+                        "vramUsedBytes":  6372196352,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  98,
+                        "cpuLoadPercent":  0
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:18:38.677Z",
+                        "freeSystemRamBytes":  6180978688,
+                        "vramUsedBytes":  6372196352,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  76
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:18:55.152Z",
+                        "freeSystemRamBytes":  6121005056,
+                        "vramUsedBytes":  6372196352,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  69,
+                        "cpuLoadPercent":  91
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:19:11.627Z",
+                        "freeSystemRamBytes":  5105266688,
+                        "vramUsedBytes":  6372196352,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  69,
+                        "cpuLoadPercent":  80
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:19:28.134Z",
+                        "freeSystemRamBytes":  5093748736,
+                        "vramUsedBytes":  6372196352,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  69,
+                        "cpuLoadPercent":  80
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:19:44.592Z",
+                        "freeSystemRamBytes":  6071422976,
+                        "vramUsedBytes":  6372196352,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  70,
+                        "cpuLoadPercent":  77
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:20:01.015Z",
+                        "freeSystemRamBytes":  6044422144,
+                        "vramUsedBytes":  6372196352,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  69,
+                        "cpuLoadPercent":  69
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:20:17.440Z",
+                        "freeSystemRamBytes":  6072029184,
+                        "vramUsedBytes":  6372196352,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  68,
+                        "cpuLoadPercent":  82
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:20:33.878Z",
+                        "freeSystemRamBytes":  6077177856,
+                        "vramUsedBytes":  6372196352,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  68,
+                        "cpuLoadPercent":  82
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:20:50.280Z",
+                        "freeSystemRamBytes":  5852815360,
+                        "vramUsedBytes":  6372196352,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  68,
+                        "cpuLoadPercent":  74
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:21:06.754Z",
+                        "freeSystemRamBytes":  5890109440,
+                        "vramUsedBytes":  6372196352,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  70
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:21:23.207Z",
+                        "freeSystemRamBytes":  5877272576,
+                        "vramUsedBytes":  6372196352,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  14
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:21:39.727Z",
+                        "freeSystemRamBytes":  5875245056,
+                        "vramUsedBytes":  6372196352,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  11
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:21:56.204Z",
+                        "freeSystemRamBytes":  5886525440,
+                        "vramUsedBytes":  6372196352,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  64,
+                        "cpuLoadPercent":  83
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:22:12.665Z",
+                        "freeSystemRamBytes":  6807117824,
+                        "vramUsedBytes":  6372196352,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  99,
+                        "cpuLoadPercent":  10
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:22:29.107Z",
+                        "freeSystemRamBytes":  7581384704,
+                        "vramUsedBytes":  6372196352,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  70,
+                        "cpuLoadPercent":  69
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:22:45.548Z",
+                        "freeSystemRamBytes":  6444015616,
+                        "vramUsedBytes":  6372196352,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  68,
+                        "cpuLoadPercent":  83
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:23:02.125Z",
+                        "freeSystemRamBytes":  5318451200,
+                        "vramUsedBytes":  6372196352,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  68
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:23:18.573Z",
+                        "freeSystemRamBytes":  5298282496,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  69,
+                        "cpuLoadPercent":  77
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:23:35.049Z",
+                        "freeSystemRamBytes":  6302294016,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  69,
+                        "cpuLoadPercent":  82
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:23:51.518Z",
+                        "freeSystemRamBytes":  5115305984,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  100,
+                        "cpuLoadPercent":  9
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:24:07.941Z",
+                        "freeSystemRamBytes":  5278789632,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  69,
+                        "cpuLoadPercent":  74
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:24:24.412Z",
+                        "freeSystemRamBytes":  6828646400,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  84,
+                        "cpuLoadPercent":  22
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:24:40.842Z",
+                        "freeSystemRamBytes":  6840647680,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  93
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:24:57.230Z",
+                        "freeSystemRamBytes":  5743808512,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  91,
+                        "cpuLoadPercent":  22
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:25:13.554Z",
+                        "freeSystemRamBytes":  5515718656,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  99,
+                        "cpuLoadPercent":  8
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:25:30.000Z",
+                        "freeSystemRamBytes":  6517190656,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  31
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:25:46.557Z",
+                        "freeSystemRamBytes":  5428064256,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  98,
+                        "cpuLoadPercent":  3
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:26:02.921Z",
+                        "freeSystemRamBytes":  5439193088,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  71,
+                        "cpuLoadPercent":  30
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:26:19.373Z",
+                        "freeSystemRamBytes":  5425070080,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  70,
+                        "cpuLoadPercent":  65
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:26:35.785Z",
+                        "freeSystemRamBytes":  5588033536,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  76
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:26:52.204Z",
+                        "freeSystemRamBytes":  6788874240,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  83
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:27:08.625Z",
+                        "freeSystemRamBytes":  5695700992,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  70
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:27:25.086Z",
+                        "freeSystemRamBytes":  5715898368,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  68,
+                        "cpuLoadPercent":  16
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:27:41.522Z",
+                        "freeSystemRamBytes":  5689430016,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  22
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:27:57.958Z",
+                        "freeSystemRamBytes":  5645701120,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  64,
+                        "cpuLoadPercent":  76
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:28:14.434Z",
+                        "freeSystemRamBytes":  5656989696,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  68,
+                        "cpuLoadPercent":  77
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:28:30.912Z",
+                        "freeSystemRamBytes":  5590294528,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  79
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:28:47.384Z",
+                        "freeSystemRamBytes":  5650722816,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  79
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:29:03.808Z",
+                        "freeSystemRamBytes":  5664489472,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  82
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:29:20.306Z",
+                        "freeSystemRamBytes":  6873264128,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  80
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:29:36.834Z",
+                        "freeSystemRamBytes":  6976155648,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  69,
+                        "cpuLoadPercent":  77
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:29:53.285Z",
+                        "freeSystemRamBytes":  5861085184,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  54
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:30:09.727Z",
+                        "freeSystemRamBytes":  5880336384,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  74
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:30:26.169Z",
+                        "freeSystemRamBytes":  6942253056,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  70,
+                        "cpuLoadPercent":  85
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:30:42.623Z",
+                        "freeSystemRamBytes":  6918606848,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  70,
+                        "cpuLoadPercent":  82
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:30:59.062Z",
+                        "freeSystemRamBytes":  6919270400,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  64,
+                        "cpuLoadPercent":  90
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:31:15.530Z",
+                        "freeSystemRamBytes":  6942109696,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  79
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:31:31.992Z",
+                        "freeSystemRamBytes":  6932942848,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  80
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:31:48.552Z",
+                        "freeSystemRamBytes":  6920888320,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  68
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:32:04.976Z",
+                        "freeSystemRamBytes":  6937448448,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  79
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:32:21.406Z",
+                        "freeSystemRamBytes":  6930661376,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  70,
+                        "cpuLoadPercent":  62
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:32:37.836Z",
+                        "freeSystemRamBytes":  6957088768,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  65,
+                        "cpuLoadPercent":  72
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:32:54.263Z",
+                        "freeSystemRamBytes":  6803226624,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  66
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:33:10.698Z",
+                        "freeSystemRamBytes":  6839017472,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  71
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:33:27.145Z",
+                        "freeSystemRamBytes":  6835204096,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  20
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:33:43.619Z",
+                        "freeSystemRamBytes":  6810292224,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  20
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:34:00.136Z",
+                        "freeSystemRamBytes":  6827200512,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  65,
+                        "cpuLoadPercent":  80
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:34:16.571Z",
+                        "freeSystemRamBytes":  6831779840,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  70,
+                        "cpuLoadPercent":  85
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:34:33.005Z",
+                        "freeSystemRamBytes":  6876536832,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  70,
+                        "cpuLoadPercent":  76
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:34:49.490Z",
+                        "freeSystemRamBytes":  6875140096,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  68,
+                        "cpuLoadPercent":  84
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:35:05.939Z",
+                        "freeSystemRamBytes":  6893428736,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  68,
+                        "cpuLoadPercent":  85
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:35:22.424Z",
+                        "freeSystemRamBytes":  6866673664,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  65,
+                        "cpuLoadPercent":  90
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:35:38.906Z",
+                        "freeSystemRamBytes":  6897856512,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  71
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:35:55.325Z",
+                        "freeSystemRamBytes":  6887092224,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  65,
+                        "cpuLoadPercent":  74
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:36:11.762Z",
+                        "freeSystemRamBytes":  6870290432,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  52,
+                        "cpuLoadPercent":  85
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:36:28.213Z",
+                        "freeSystemRamBytes":  6879440896,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  68,
+                        "cpuLoadPercent":  73
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:36:44.647Z",
+                        "freeSystemRamBytes":  6878863360,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  87
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:37:01.089Z",
+                        "freeSystemRamBytes":  6861991936,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  85
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:37:17.555Z",
+                        "freeSystemRamBytes":  6890078208,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  68,
+                        "cpuLoadPercent":  87
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:37:33.998Z",
+                        "freeSystemRamBytes":  6868553728,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  76
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:37:50.492Z",
+                        "freeSystemRamBytes":  6720843776,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  85
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:38:07.091Z",
+                        "freeSystemRamBytes":  6828605440,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  65,
+                        "cpuLoadPercent":  69
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:38:23.525Z",
+                        "freeSystemRamBytes":  6810783744,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  70,
+                        "cpuLoadPercent":  71
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:38:39.966Z",
+                        "freeSystemRamBytes":  6814302208,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  65,
+                        "cpuLoadPercent":  66
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:38:56.381Z",
+                        "freeSystemRamBytes":  6774153216,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  85
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:39:12.835Z",
+                        "freeSystemRamBytes":  6881861632,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  71
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:39:29.274Z",
+                        "freeSystemRamBytes":  6887038976,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  21
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:39:45.728Z",
+                        "freeSystemRamBytes":  6871687168,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  65,
+                        "cpuLoadPercent":  57
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:40:02.173Z",
+                        "freeSystemRamBytes":  6880808960,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  80
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:40:18.651Z",
+                        "freeSystemRamBytes":  5364498432,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  69,
+                        "cpuLoadPercent":  77
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:40:35.065Z",
+                        "freeSystemRamBytes":  5372395520,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  68,
+                        "cpuLoadPercent":  83
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:40:51.492Z",
+                        "freeSystemRamBytes":  5344366592,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  74
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:41:07.979Z",
+                        "freeSystemRamBytes":  5364383744,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  68,
+                        "cpuLoadPercent":  80
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:41:24.494Z",
+                        "freeSystemRamBytes":  5346533376,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  68,
+                        "cpuLoadPercent":  74
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:41:40.968Z",
+                        "freeSystemRamBytes":  5338075136,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  65,
+                        "cpuLoadPercent":  74
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:41:57.487Z",
+                        "freeSystemRamBytes":  5360349184,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  80
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:42:13.927Z",
+                        "freeSystemRamBytes":  5340135424,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  69,
+                        "cpuLoadPercent":  85
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:42:30.390Z",
+                        "freeSystemRamBytes":  5339648000,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  69,
+                        "cpuLoadPercent":  82
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:42:46.877Z",
+                        "freeSystemRamBytes":  5286625280,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  80
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:43:03.315Z",
+                        "freeSystemRamBytes":  5285068800,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  82
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:43:19.731Z",
+                        "freeSystemRamBytes":  5268262912,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  68,
+                        "cpuLoadPercent":  82
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:43:36.237Z",
+                        "freeSystemRamBytes":  5321887744,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  68,
+                        "cpuLoadPercent":  80
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:43:52.687Z",
+                        "freeSystemRamBytes":  5274320896,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  77
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:44:09.173Z",
+                        "freeSystemRamBytes":  5371838464,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  65,
+                        "cpuLoadPercent":  68
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:44:25.597Z",
+                        "freeSystemRamBytes":  5379391488,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  69
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:44:42.016Z",
+                        "freeSystemRamBytes":  5338181632,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  76
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:44:58.440Z",
+                        "freeSystemRamBytes":  5383794688,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  70,
+                        "cpuLoadPercent":  70
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:45:14.896Z",
+                        "freeSystemRamBytes":  5372305408,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  69,
+                        "cpuLoadPercent":  85
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:45:31.365Z",
+                        "freeSystemRamBytes":  5367762944,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  68,
+                        "cpuLoadPercent":  15
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:45:47.856Z",
+                        "freeSystemRamBytes":  5386235904,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  65,
+                        "cpuLoadPercent":  88
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:46:04.318Z",
+                        "freeSystemRamBytes":  5355700224,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  68,
+                        "cpuLoadPercent":  90
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:46:20.777Z",
+                        "freeSystemRamBytes":  5384306688,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  80
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:46:37.283Z",
+                        "freeSystemRamBytes":  5409292288,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  68,
+                        "cpuLoadPercent":  90
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:46:53.700Z",
+                        "freeSystemRamBytes":  5376679936,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  71,
+                        "cpuLoadPercent":  82
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:47:10.145Z",
+                        "freeSystemRamBytes":  5335351296,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  77
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:47:26.598Z",
+                        "freeSystemRamBytes":  5366550528,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  90
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:47:43.044Z",
+                        "freeSystemRamBytes":  5375373312,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  68,
+                        "cpuLoadPercent":  77
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:47:59.492Z",
+                        "freeSystemRamBytes":  5307379712,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  72
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:48:15.952Z",
+                        "freeSystemRamBytes":  5319266304,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  68,
+                        "cpuLoadPercent":  87
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:48:32.404Z",
+                        "freeSystemRamBytes":  5314068480,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  80
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:48:48.851Z",
+                        "freeSystemRamBytes":  5342371840,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  70,
+                        "cpuLoadPercent":  85
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:49:05.301Z",
+                        "freeSystemRamBytes":  5359955968,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  69,
+                        "cpuLoadPercent":  88
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:49:21.742Z",
+                        "freeSystemRamBytes":  5304946688,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  80
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:49:38.184Z",
+                        "freeSystemRamBytes":  5399830528,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  85
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:49:54.649Z",
+                        "freeSystemRamBytes":  5382701056,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  77
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:50:11.134Z",
+                        "freeSystemRamBytes":  5355737088,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  87
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:50:27.605Z",
+                        "freeSystemRamBytes":  5373677568,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  85
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:50:44.009Z",
+                        "freeSystemRamBytes":  5360705536,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  82
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:51:00.457Z",
+                        "freeSystemRamBytes":  5352001536,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  69,
+                        "cpuLoadPercent":  74
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:51:16.979Z",
+                        "freeSystemRamBytes":  5375234048,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  12
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:51:33.424Z",
+                        "freeSystemRamBytes":  5369331712,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  13
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:51:49.869Z",
+                        "freeSystemRamBytes":  5373247488,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  65,
+                        "cpuLoadPercent":  85
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:52:06.309Z",
+                        "freeSystemRamBytes":  5379493888,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  82
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:52:22.768Z",
+                        "freeSystemRamBytes":  5376970752,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  94
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:52:39.181Z",
+                        "freeSystemRamBytes":  6148026368,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  68,
+                        "cpuLoadPercent":  77
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:52:55.624Z",
+                        "freeSystemRamBytes":  6012293120,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  65,
+                        "cpuLoadPercent":  80
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:53:12.111Z",
+                        "freeSystemRamBytes":  6086410240,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  68,
+                        "cpuLoadPercent":  66
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:53:28.582Z",
+                        "freeSystemRamBytes":  6005579776,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  69,
+                        "cpuLoadPercent":  79
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:53:45.051Z",
+                        "freeSystemRamBytes":  5981577216,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  69,
+                        "cpuLoadPercent":  77
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:54:01.492Z",
+                        "freeSystemRamBytes":  5968142336,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  74
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:54:18.115Z",
+                        "freeSystemRamBytes":  5971881984,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  65,
+                        "cpuLoadPercent":  80
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:54:34.568Z",
+                        "freeSystemRamBytes":  6026997760,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  85
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:54:51.033Z",
+                        "freeSystemRamBytes":  6025015296,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  69,
+                        "cpuLoadPercent":  80
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:55:07.602Z",
+                        "freeSystemRamBytes":  6066532352,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  82
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:55:24.043Z",
+                        "freeSystemRamBytes":  6060437504,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  68,
+                        "cpuLoadPercent":  76
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:55:40.444Z",
+                        "freeSystemRamBytes":  6040494080,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  71
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:55:56.919Z",
+                        "freeSystemRamBytes":  6048935936,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  68,
+                        "cpuLoadPercent":  76
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:56:13.387Z",
+                        "freeSystemRamBytes":  6034313216,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  79
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:56:29.857Z",
+                        "freeSystemRamBytes":  6035955712,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  65,
+                        "cpuLoadPercent":  77
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:56:46.252Z",
+                        "freeSystemRamBytes":  6034948096,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  70,
+                        "cpuLoadPercent":  83
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:57:02.683Z",
+                        "freeSystemRamBytes":  6032896000,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  65,
+                        "cpuLoadPercent":  66
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:57:19.111Z",
+                        "freeSystemRamBytes":  6049759232,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  69,
+                        "cpuLoadPercent":  15
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:57:35.576Z",
+                        "freeSystemRamBytes":  6051491840,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  65,
+                        "cpuLoadPercent":  12
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:57:52.068Z",
+                        "freeSystemRamBytes":  5919395840,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  82
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:58:08.554Z",
+                        "freeSystemRamBytes":  6014701568,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  72
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:58:25.036Z",
+                        "freeSystemRamBytes":  6002118656,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  79
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:58:41.498Z",
+                        "freeSystemRamBytes":  5970931712,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  80
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:58:57.964Z",
+                        "freeSystemRamBytes":  5996367872,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  65,
+                        "cpuLoadPercent":  71
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:59:14.596Z",
+                        "freeSystemRamBytes":  7500959744,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  82
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:59:31.040Z",
+                        "freeSystemRamBytes":  7536005120,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  83
+                    },
+                    {
+                        "atIso":  "2026-09-27T07:59:47.510Z",
+                        "freeSystemRamBytes":  7550697472,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  68,
+                        "cpuLoadPercent":  80
+                    },
+                    {
+                        "atIso":  "2026-09-27T08:00:04.037Z",
+                        "freeSystemRamBytes":  7495536640,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  68,
+                        "cpuLoadPercent":  80
+                    },
+                    {
+                        "atIso":  "2026-09-27T08:00:20.522Z",
+                        "freeSystemRamBytes":  7477530624,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  88
+                    },
+                    {
+                        "atIso":  "2026-09-27T08:00:36.968Z",
+                        "freeSystemRamBytes":  7528775680,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  68,
+                        "cpuLoadPercent":  82
+                    },
+                    {
+                        "atIso":  "2026-09-27T08:00:53.397Z",
+                        "freeSystemRamBytes":  7491350528,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  83
+                    },
+                    {
+                        "atIso":  "2026-09-27T08:01:09.893Z",
+                        "freeSystemRamBytes":  7534424064,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  73
+                    },
+                    {
+                        "atIso":  "2026-09-27T08:01:26.370Z",
+                        "freeSystemRamBytes":  7547052032,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  65,
+                        "cpuLoadPercent":  73
+                    },
+                    {
+                        "atIso":  "2026-09-27T08:01:42.822Z",
+                        "freeSystemRamBytes":  7525318656,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  70,
+                        "cpuLoadPercent":  79
+                    },
+                    {
+                        "atIso":  "2026-09-27T08:01:59.417Z",
+                        "freeSystemRamBytes":  7521734656,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  64,
+                        "cpuLoadPercent":  76
+                    },
+                    {
+                        "atIso":  "2026-09-27T08:02:15.838Z",
+                        "freeSystemRamBytes":  7535837184,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  69,
+                        "cpuLoadPercent":  72
+                    },
+                    {
+                        "atIso":  "2026-09-27T08:02:32.314Z",
+                        "freeSystemRamBytes":  7531606016,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  65,
+                        "cpuLoadPercent":  85
+                    },
+                    {
+                        "atIso":  "2026-09-27T08:02:48.753Z",
+                        "freeSystemRamBytes":  7426129920,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  88
+                    },
+                    {
+                        "atIso":  "2026-09-27T08:03:05.195Z",
+                        "freeSystemRamBytes":  7482335232,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  65,
+                        "cpuLoadPercent":  74
+                    },
+                    {
+                        "atIso":  "2026-09-27T08:03:21.639Z",
+                        "freeSystemRamBytes":  7416217600,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  19
+                    },
+                    {
+                        "atIso":  "2026-09-27T08:03:38.096Z",
+                        "freeSystemRamBytes":  7447965696,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  65,
+                        "cpuLoadPercent":  9
+                    },
+                    {
+                        "atIso":  "2026-09-27T08:03:54.550Z",
+                        "freeSystemRamBytes":  7398068224,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  84
+                    },
+                    {
+                        "atIso":  "2026-09-27T08:04:10.986Z",
+                        "freeSystemRamBytes":  7472558080,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  83
+                    },
+                    {
+                        "atIso":  "2026-09-27T08:04:27.446Z",
+                        "freeSystemRamBytes":  7395127296,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  74
+                    },
+                    {
+                        "atIso":  "2026-09-27T08:04:43.916Z",
+                        "freeSystemRamBytes":  7394471936,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  88
+                    },
+                    {
+                        "atIso":  "2026-09-27T08:05:00.346Z",
+                        "freeSystemRamBytes":  7416360960,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  77
+                    },
+                    {
+                        "atIso":  "2026-09-27T08:05:16.778Z",
+                        "freeSystemRamBytes":  7431839744,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  76
+                    },
+                    {
+                        "atIso":  "2026-09-27T08:05:33.300Z",
+                        "freeSystemRamBytes":  7438852096,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  77
+                    },
+                    {
+                        "atIso":  "2026-09-27T08:05:49.722Z",
+                        "freeSystemRamBytes":  7403319296,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  66
+                    },
+                    {
+                        "atIso":  "2026-09-27T08:06:06.182Z",
+                        "freeSystemRamBytes":  7440388096,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  80
+                    },
+                    {
+                        "atIso":  "2026-09-27T08:06:22.600Z",
+                        "freeSystemRamBytes":  7448481792,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  65,
+                        "cpuLoadPercent":  83
+                    },
+                    {
+                        "atIso":  "2026-09-27T08:06:39.022Z",
+                        "freeSystemRamBytes":  7508987904,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  87
+                    },
+                    {
+                        "atIso":  "2026-09-27T08:06:55.478Z",
+                        "freeSystemRamBytes":  7503507456,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  69,
+                        "cpuLoadPercent":  87
+                    },
+                    {
+                        "atIso":  "2026-09-27T08:07:11.904Z",
+                        "freeSystemRamBytes":  7492345856,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  90
+                    },
+                    {
+                        "atIso":  "2026-09-27T08:07:28.525Z",
+                        "freeSystemRamBytes":  7524802560,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  66,
+                        "cpuLoadPercent":  83
+                    },
+                    {
+                        "atIso":  "2026-09-27T08:07:44.969Z",
+                        "freeSystemRamBytes":  7491842048,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  67,
+                        "cpuLoadPercent":  77
+                    },
+                    {
+                        "atIso":  "2026-09-27T08:08:01.380Z",
+                        "freeSystemRamBytes":  7438462976,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  0,
+                        "cpuLoadPercent":  25
+                    },
+                    {
+                        "atIso":  "2026-09-27T08:08:17.749Z",
+                        "freeSystemRamBytes":  7493378048,
+                        "vramUsedBytes":  6374293504,
+                        "vramTotalBytes":  8585740288,
+                        "gpuUtilizationPercent":  0,
+                        "cpuLoadPercent":  13
+                    }
+                ]
+}
