@@ -121,7 +121,7 @@ interface UnknownLanguageCase {
  * Every one of these carries the one thing the OLD grammar could read - a digit
  * clock time - next to a day word it could not. That combination is precisely
  * what used to produce `implicit_today` and a booking a day early, in any
- * language at all. `FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 8.3.
+ * language at all. `docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 8.3.
  */
 const UNKNOWN_LANGUAGE_CASES: readonly UnknownLanguageCase[] = [
   {

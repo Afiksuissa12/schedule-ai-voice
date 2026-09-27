@@ -1316,7 +1316,7 @@ const resolvedDayIsTheDayThePhraseNamed: Invariant = {
           `${row.kind} ${row.id}: the receipt says the contact named "${anchor}", which is ${named} in ` +
             `${zone} counting from now=${provenance.nowUtc} - but the persisted instant ${row.startUtc} ` +
             `falls on ${landedOn}. This is a booking on the wrong calendar day ` +
-            '(FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md § 8.3).',
+            '(docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md § 8.3).',
         );
       }
       return pass(

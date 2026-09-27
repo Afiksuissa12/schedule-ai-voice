@@ -71,7 +71,7 @@
  * report on the build. So § 3 prints it as a labelled OBSERVATION - the same
  * treatment `(no tool call this turn - the model just talked, which is often
  * correct)` already gets - and the run's verdict stays a statement about the
- * code. `FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 8.6 carries the measured
+ * code. `docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 8.6 carries the measured
  * rate; the benchmark's scheduling-intent metric is where that number belongs.
  *
  * Flags: `--model <tag>`, `--num-ctx <n>`, `--base-url <url>`, `--rolling-summary`,

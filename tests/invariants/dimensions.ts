@@ -265,7 +265,7 @@ export const VALID_EXPRESSIONS: readonly ExpressionDimension[] = [
     rationale:
       'THE EXPRESSION THE WHOLE MISSION IS ABOUT. "tomorrow at 15:00" in Hebrew with the clock time in ' +
       'DIGITS. It used to resolve to TODAY with ok:true - a validated booking one calendar day early ' +
-      '(FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md § 8.3). Swept, not just unit-tested, because the defect ' +
+      '(docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md § 8.3). Swept, not just unit-tested, because the defect ' +
       'was invisible until it was crossed with a zone and a `now`.',
   },
   {

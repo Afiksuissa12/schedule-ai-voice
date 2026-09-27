@@ -4,7 +4,7 @@
  *
  * `now` is Wednesday 2026-03-04, 10:00 Asia/Jerusalem (08:00Z) - the pinned
  * `now` of the Hebrew corpus, `tests/e2e/hebrewDigitClockTime.test.ts` and
- * `FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 8.3. So `מחר` is THURSDAY
+ * `docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 8.3. So `מחר` is THURSDAY
  * 2026-03-05, and every expectation below can be checked by hand.
  *
  * The strings are the repository's own. `מחר`, `ב-15:00`, `יום חמישי`,

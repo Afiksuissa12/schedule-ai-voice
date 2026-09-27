@@ -48,7 +48,7 @@
  * "a refusal is expected", so a wrong-day booking would have scored as a merely
  * unmet expectation. They use `resolvedDay` instead, which fails the run when the
  * instant the product committed to lands on a different calendar day from the one
- * the contact named. See `FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 8.3.
+ * the contact named. See `docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 8.3.
  *
  * EVAL_HARNESS.md reports the resolver gap as a headline finding with this
  * evidence behind it.

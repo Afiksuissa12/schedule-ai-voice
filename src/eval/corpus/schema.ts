@@ -214,7 +214,7 @@ export const PassthroughExpectationSchema = z
  * `expectsToolFailure` the harness would have scored that as a merely unmet
  * expectation - "expected failure DID NOT OCCUR" - which reads like a model that
  * did better than predicted rather than a mis-scheduling. See
- * `FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 8.3.
+ * `docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 8.3.
  *
  * SEMANTICS. Applicable only when the turn actually produced a resolved instant
  * (some successful time-bearing tool call). A REFUSAL is not scored here at all,

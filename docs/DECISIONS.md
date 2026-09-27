@@ -125,6 +125,113 @@ out again in `docs/LEGACY_LESSONS.md`.
 | Transcript retention | Full `ConversationTurn` history, no truncation, no expiry | Retention is a legal question |
 | Should conflicts also check our own `Meeting` rows? | Only the `AvailabilityProvider` is consulted | See § 5.3 |
 
+### 1.8 Default local model — **recommendation recorded, NOTHING CHANGED**
+
+**Recorded 2026-09-27.** The fair five-model benchmark is finished and it
+recommends a default. **The recommendation is `qwen2.5:7b-instruct`, which is
+already the configured default, so no value was changed anywhere.** What changed
+is the *status* of that default, and that is the thing needing your signature.
+
+| | |
+|---|---|
+| Recommended | **`qwen2.5:7b-instruct`** |
+| Wired today | `LOCAL_LLM_MODEL="qwen2.5:7b-instruct"` in `.env.example`; `DEFAULT_LOCAL_LLM_MODEL` in `src/llm/localLlmProvider.ts`; `model: 'qwen2.5:7b-instruct'` in `src/config/env.ts` |
+| Changed by this mission | **Nothing.** No value in `.env.example`, no default constant in `src/`, no provider-selection logic, no prompt |
+| Evidence | `docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 9, and the artefacts under `eval-output-fair-20260927/` (`results.json`, `COMPARISON.md`, `transcripts/`, `environment/`) |
+| Blocked on you | Confirming that the incumbent default is now also the *recommended* default, **for English only**, and deciding what to do about Hebrew |
+
+`qwen2.5:7b-instruct` is recommended as the intended default for the local-brain
+path on the evidence in `docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 9, and
+is wired as such, **pending your approval** — deliberately the same standing, and
+the same wording, as `num_ctx` **16384**, which that review's § 9.1 records as
+"recommended as the intended default ... pending your approval" and which is wired
+as `LOCAL_LLM_NUM_CTX=16384` in `.env.example`.
+
+**Why the status change matters even though the value does not.** Until this
+benchmark it was the default *because the provider slice needed a model to
+develop against* and it was the strongest instruction-follower of its
+generation — **not because a comparison chose it.** It is now the default the
+evidence earns. That is a different claim, and it is the one being put to you.
+
+**SCOPE, and this qualification is load-bearing.** `qwen2.5:7b-instruct` is
+recommended for **ENGLISH-language customer-facing use only. NO candidate is
+earned for HEBREW customer-facing use**, and the review says so explicitly.
+
+**The evidence, in the order it forces.** Two of the five candidates fail a hard
+gate and are therefore ranked below every gate-passer whatever their score:
+`llama3.1:8b-instruct-q4_K_M` fails the fabricated-timestamp gate (1 gate failure
+/ 65 turns, 1.5%) and `aya-expanse:8b` fails it too (2 / 65, 3.1%). That leaves
+`qwen2.5:7b-instruct`, `hermes3:8b` and `mistral:7b-instruct`. On the primary
+criterion — natural human conversation quality — qwen2.5 scores **85.2%**,
+hermes3 77.7%, mistral 33.6%. qwen2.5 also leads the composite (**88.2%** vs
+82.1% and 51.9%) and tool/structural correctness (**93.1%**), records **0**
+native-malformed tool calls (native 8 / recovered 0 / malformed 0, malformed rate
+0.0%), 100.0% argument validity <sub>n=8</sub>, 100.0% structured output
+<sub>n=8</sub>, 100.0% no-unnecessary-calls <sub>n=54</sub> and 100.0%
+non-repetitive <sub>n=65</sub>. It is the **only gate-passer with an EXERCISED
+wrong-day denominator**: PASS on 1 applicable turn, 0 wrong day, 0.0% — hermes3
+and mistral both show `n/a - not exercised`, **which is not a pass and must not
+be written as one.**
+
+`hermes3:8b` is disqualified on programmatic grounds despite passing the
+fabrication gate: **43.3% no-hallucinated-ids** <sub>n=30</sub>, i.e. it invented
+contact ids on the majority of its tool calls and then read real internal ids
+aloud to the contact; its transcripts also show persona collapse (it describes
+itself as *"a tool used for calling functions"*) and fabricated product facts (it
+asserts a Salesforce integration the grounding explicitly denies).
+`mistral:7b-instruct` collapses on latency and verbosity (turn p95 120,122 ms;
+content expectations 13.0% <sub>n=54</sub>; length budget 14.2% <sub>n=50</sub>).
+
+On latency qwen2.5 is also the cleanest number in the set because it is one of
+only two models held **entirely in VRAM** (100.0% on GPU, 0.00 GiB in system
+RAM) — TTFT p50 98 ms, turn p50 2,410 ms, 50.2 tok/s. Three of the five did not
+fit entirely on the 8 GB GPU; `EVAL_HARNESS.md` § 10.5 and § 10.6 name them and
+say what it costs their latency figures.
+
+**Stated honestly alongside it, because the review does not hide these.**
+qwen2.5's worst observed behaviour is the adversarial-guardrail scenario, where it
+**invented a confirmation number (`CONF123456`) and then claimed a callback was
+booked when no tool call had been made** — a real, unfixed product risk that needs
+a **programmatic guard rather than a prompt clause.** Its weakest judged dimension
+is *remembers earlier information* at 65.6% <sub>n=16</sub>. And its Hebrew is the
+worst of the five on transcript reading despite a 78.4% Hebrew composite: it
+code-switches into Chinese for whole turns, emits Korean/Japanese glyphs inside
+Hebrew words, and on one mixed scenario emitted 7,402 characters that included a
+Chinese translation of the system prompt.
+
+**HEBREW — no model is earned, and this is a decision for you, not a gap to be
+closed by picking differently.** The best Hebrew *composite* is llama3.1's 81.3%,
+but llama3.1 answered an entire Hebrew scenario **in English** (0% Hebrew letters
+on all five turns of `hebrew-intro-and-booking`) and fails the fabrication gate.
+The best language-match figure is hermes3's 98.5% <sub>n=65</sub>, but hermes3
+stays in Hebrew script while saying content that is off-persona and partly
+non-words. The only model whose Hebrew transcripts actually **read as fluent
+native Hebrew** is `aya-expanse:8b` — and it fails the fabrication gate, scores
+14.6% argument validity <sub>n=41</sub>, has a 12.0% malformed-tool-call rate,
+leaks raw tool-call JSON to the contact, and claimed a meeting was booked when
+none was. **Fluent-but-unsafe versus safe-but-not-fluent: neither is shippable in
+Hebrew.**
+
+**What approving this would concretely involve — and it is deliberately almost
+nothing.** Because the recommendation *is* the incumbent, approval changes no
+code: it promotes the existing value from "a development choice" to "the
+evidenced default", and the honest wording in
+`docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 9.1 stops being provisional.
+
+Had the recommendation differed, changing the default would have meant all of:
+the value of `LOCAL_LLM_MODEL` in `.env.example`; `DEFAULT_LOCAL_LLM_MODEL` in
+`src/llm/localLlmProvider.ts`; the `model` default in `src/config/env.ts`; a pull
+of the new tag on every host (`npm run llm:probe` to confirm presence); a re-check
+that `LOCAL_LLM_NUM_CTX=16384` still fits the new model's resident size on an 8 GiB
+card; and **a re-run of the benchmark**, because a default nothing measured under
+the recorded conditions is the exact situation this mission existed to end. None
+of that was done, because none of it is needed.
+
+**An existing `.env` is not touched by any of this.** `npm run db:generate` copies
+`.env.example` to `.env` only when `.env` is absent, and whatever is in your `.env`
+beats the defaults in `src/` (§ 4). If your `.env` names a different model, that is
+what runs, approved or not.
+
 ---
 
 ## 2. Could the legacy export be read?
@@ -595,8 +702,8 @@ cannot fail is not evidence, so this was established rather than assumed.
 ## 9. The natural-language resolver fails closed, and its vocabulary is data
 
 **Recorded 2026-09-27.** This fixes the most serious open finding in
-`FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 8.3: a Hebrew `when` with the clock
-time in digits was not refused — it booked the **wrong calendar day**.
+`docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 8.3: a Hebrew `when` with the
+clock time in digits was not refused — it booked the **wrong calendar day**.
 
 ### 9.1 What was actually wrong — two root causes, not one
 

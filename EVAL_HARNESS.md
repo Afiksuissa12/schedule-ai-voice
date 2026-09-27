@@ -403,7 +403,7 @@ digits recognised, its Hebrew day word **silently dropped**, and is resolved to 
 persisted, audit-trailed booking a day early with no warning anywhere. `expectsToolFailure`, the only
 field the corpus previously had, could only have scored that as "expected failure DID NOT OCCUR": an
 unmet expectation, reading like a model that did better than predicted. The full finding, with the
-parser table and the end-to-end repro, is `FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 8.3.
+parser table and the end-to-end repro, is `docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 8.3.
 
 **How a scenario states it.** A turn carries
 `resolvedDay: { mustResolveToLocalDate: '2026-03-05', contactSaid: 'מחר ב-15:00' }`. The date is
@@ -513,7 +513,8 @@ than merely implied by the absence of a rule.
 > **This is not a formality.** All 57 of those files were dropped during the branch merge that carried
 > the Founder Review, so for three branches the review cited evidence that was not in the repository.
 > `.gitignore` has one line for this (`eval-output/runs/`) and it means what it says: everything else
-> under `eval-output/` is committed. Restored — see `FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 5.2.
+> under `eval-output/` is committed. Restored — see
+> [`docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md`](docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md).
 
 **Every path above is derived from the output root**, and the root comes from `EVAL_OUT_DIR`. Nothing
 is hardcoded to `eval-output/`, so a fresh run can be written and reported **beside** the preliminary
@@ -827,5 +828,179 @@ report the rest. What must not happen is a five-row table that looks like a rank
 ## 10. Results
 
 <!-- RESULTS:BEGIN -->
-_Populated by the completed benchmark run - see below._
+
+This section is an **index to the evidence, not the analysis.** Every figure below is copied verbatim
+from the committed artefacts at the precision they record it. The argument these numbers support — why
+one model is recommended, what its worst behaviour is, and what no model earned — is in
+[`docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md`](docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md) § 5.
+
+### 10.1 Where the evidence is
+
+```
+eval-output-fair-20260927/
+  results.json                         machine-readable - schema schedule-ai-voice/eval-results@2
+  COMPARISON.md                        the human-readable side-by-side
+  transcripts/<model>/<scenario>.md    every conversation, with its judge verdicts
+  environment/<model-slug>.json        host conditions per run, written EXTERNALLY (§ 9.3)
+```
+
+Five `environment/` records, one per candidate, all present — `recordPresent: true` and an empty
+`notMeasured` list for all five, so no cell in `COMPARISON.md` § 7 or § 8 reads `not measured`.
+`runs/` is absent by design: it is gitignored (§ 8).
+
+### 10.2 Run identity
+
+| | |
+| --- | --- |
+| Output directory | `eval-output-fair-20260927/` |
+| Generated | `2026-09-27T09:07:29.898Z` |
+| `runId` | `fairness-sweep-2026-09-27` — identical across all five `environment/` records |
+| Harness | `1.1.0` |
+| Corpus | `1.1.0` |
+| Rubric | `1.1.0` |
+| Judge prompt | `1.0.0` |
+| `num_ctx` | **16384 for all five candidates**, recorded per model in `environment/` so the rule can be verified rather than trusted |
+| Scenarios | **21**, covering all 26 required shapes |
+| Candidates | `qwen2.5:7b-instruct`, `hermes3:8b`, `mistral:7b-instruct`, `llama3.1:8b-instruct-q4_K_M`, `aya-expanse:8b` |
+| Judges | `qwen2.5:7b-instruct` and `llama3.1:8b-instruct-q4_K_M` — both also candidates (§ 9.4) |
+
+### 10.3 The gates
+
+**Manufactured timestamps** (`COMPARISON.md` § 1.1) — denominator is all 65 turns:
+
+| Model | Turns | Gate failures | Rate | Verdict |
+| --- | ---: | ---: | ---: | --- |
+| `qwen2.5:7b-instruct` | 65 | 0 | 0.0% | **PASS** |
+| `hermes3:8b` | 65 | 0 | 0.0% | **PASS** |
+| `mistral:7b-instruct` | 65 | 0 | 0.0% | **PASS** |
+| `llama3.1:8b-instruct-q4_K_M` | 65 | 1 | 1.5% | **FAIL** |
+| `aya-expanse:8b` | 65 | 2 | 3.1% | **FAIL** |
+
+**Wrong-day resolution** (`COMPARISON.md` § 1.2) — denominator is turns where a day was asserted *and*
+an instant resolved, which is why three rows carry no rate at all:
+
+| Model | Turns where a day was asserted and an instant resolved | Wrong day | Rate | Verdict |
+| --- | ---: | ---: | ---: | --- |
+| `qwen2.5:7b-instruct` | 1 | 0 | 0.0% | **PASS** |
+| `hermes3:8b` | 0 | 0 | n/a | not exercised |
+| `mistral:7b-instruct` | 0 | 0 | n/a | not exercised |
+| `llama3.1:8b-instruct-q4_K_M` | 2 | 0 | 0.0% | **PASS** |
+| `aya-expanse:8b` | 0 | 0 | n/a | not exercised |
+
+**No run ended in a booking on a day the contact did not name.** `not exercised` is **not a pass** and
+must not be quoted as one: that model was refused by the resolver, or never reached a time-bearing tool,
+and is credited with nothing.
+
+### 10.4 Composite ranking
+
+Weights: Conversation quality 55%, Tool and structural correctness 30%, Language quality 15%. **A model
+failing either gate is ranked below every model that passes both, whatever its score** — which is why
+rows 4 and 5 carry higher composites than row 3.
+
+| # | Model | Composite | Conversation | Tool/structural | Language | Fabrication gate | Wrong-day gate |
+| ---: | --- | ---: | ---: | ---: | ---: | --- | --- |
+| 1 | `qwen2.5:7b-instruct` | 88.2% | 85.2% | 93.1% | 89.5% | pass | pass |
+| 2 | `hermes3:8b` | 82.1% | 77.7% | 83.8% | 94.5% | pass | n/a |
+| 3 | `mistral:7b-instruct` | 51.9% | 33.6% | 76.0% | 70.9% | pass | n/a |
+| 4 | `llama3.1:8b-instruct-q4_K_M` | 80.8% | 75.9% | 84.4% | 91.7% | **FAIL** | pass |
+| 5 | `aya-expanse:8b` | 71.6% | 71.0% | 64.3% | 88.0% | **FAIL** | n/a |
+
+Conversation and Language contain judged dimensions and are **part opinion**. Tool/structural is
+entirely programmatic and entirely reproducible. Judge failures: **0** for all five.
+
+**Run completeness** (`COMPARISON.md` § 9) — all five ran 21 scenarios and 65 turns, but two did not
+complete cleanly: `hermes3:8b` records 20 OK / 0 errored, and `mistral:7b-instruct` records
+**13 OK / 2 errored**. Every other candidate records 21 OK / 0 errored.
+
+### 10.5 Three of the five did NOT fit entirely on the 8 GB GPU
+
+Straight from `COMPARISON.md` § 8, as the local runtime reported it while the model was resident:
+
+| Model | Resident (GiB) | On GPU (GiB) | In system RAM (GiB) | On GPU (%) | Runtime said |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `qwen2.5:7b-instruct` | 5.09 | 5.09 | 0.00 | 100.0% | `100% GPU` |
+| `hermes3:8b` | 6.52 | 5.86 | 0.66 | 89.9% | `10%/90% CPU/GPU` |
+| `mistral:7b-instruct` | 6.26 | 5.77 | 0.49 | 92.2% | `8%/92% CPU/GPU` |
+| `llama3.1:8b-instruct-q4_K_M` | 6.76 | 5.88 | 0.88 | 87.0% | `13%/87% CPU/GPU` |
+| `aya-expanse:8b` | 5.81 | 5.81 | 0.00 | 100.0% | `100% GPU` |
+
+**3 model(s) did not fit entirely on the GPU:** `hermes3:8b` (0.66 in system RAM),
+`mistral:7b-instruct` (0.49 in system RAM), `llama3.1:8b-instruct-q4_K_M` (0.88 in system RAM). Only
+`qwen2.5:7b-instruct` and `aya-expanse:8b` were held **entirely in VRAM**. The device reported
+8.00 GiB total throughout, for every candidate.
+
+### 10.6 Consistency with § 9.6 — one invalidator applies, and it is the spill
+
+§ 9.6 is the list of things that make the cross-model comparison invalid. Checked item by item against
+this run, **one of them applies.**
+
+- **A model spilled into system RAM — YES, THIS APPLIES, to three of the five (§ 10.5).** § 9.6 gives
+  two remedies: free VRAM and re-run, or *state the spill next to every speed claim about it.* The
+  second was taken, and it is stated here rather than written around: **`COMPARISON.md` § 6 is not a
+  latency ranking for `hermes3:8b`, `mistral:7b-instruct` or `llama3.1:8b-instruct-q4_K_M`.** Each of
+  those three pays a PCIe round trip per token that the two resident models do not, so their TTFT,
+  turn-latency and tok/s figures describe the 8 GB card as much as the model. The quality scores in
+  § 10.3 and § 10.4 are unaffected — a spill changes how fast a model answers, not what it says.
+- Conditions changed mid-run — no. All five `environment/` notes record the same conditions: Unreal
+  Editor and Blender **closed for every candidate**, GPU otherwise idle apart from desktop apps holding
+  no VRAM, the Docker Desktop WSL VM and the agent-server container running, no mission active during
+  generation.
+- The candidates did not all run at the same `num_ctx` — no. 16,384 for all five, recorded per model.
+- The corpus or rubric version changed mid-sweep — no. Corpus `1.1.0` and rubric `1.1.0` throughout.
+- Any model was resumed rather than re-run *in the generation pass* — no. Generation was forced for
+  every candidate.
+- `--force` was passed to the judging pass — no. Judging was a resume, as § 9.4 requires.
+- Models were run concurrently, or one was not unloaded before the next started — no. Sequential, one
+  model resident at a time, with the runtime **verified empty before each candidate.**
+- Judging ran inline with generation — no. Generation ran with `--skip-judge`; judging was a separate
+  phase after all five had generated.
+- Conditions were not recorded at all — no. Five records, all present, nothing `not measured`.
+
+Per § 9.6's own closing rule, a partially-invalid sweep is worth keeping as long as it says *which*
+models are affected and *why*: the three spilled models are named above, the affected table is
+`COMPARISON.md` § 6, and the quality ranking stands.
+
+### 10.7 The fairness protocol was followed — and one operator irregularity, disclosed
+
+§ 9.2 was followed: one output directory per sweep, all five candidates generated **sequentially** with
+one model resident at a time and the runtime verified empty before each, the same `num_ctx` 16384 for
+all five, generation forced, judging run as a **separate phase after all generation**, one corpus and
+rubric version throughout, and host conditions sampled **externally** into `environment/`. The run was
+made on the tree that carries the Mission 2B Hebrew wrong-day fix.
+
+> **OPERATOR DISCLOSURE — `llama3.1:8b-instruct-q4_K_M` was judged in a second pass.** A
+> variable-scoping bug in the host sweep driver **skipped `llama3.1:8b-instruct-q4_K_M` judging on the
+> first pass**, so that candidate was judged in a second, judging-only pass afterwards.
+> **Generation and host conditions were not affected**: no candidate was re-generated, no
+> `environment/` record describes a discarded pass, and every latency figure was fixed during
+> generation and only re-read.
+>
+> **This is not one of the § 9.6 invalidators, and the reason is in § 9.4 rather than a judgement
+> call.** Judging is *required* to be a resume: a record that has turns but no verdicts is exactly the
+> case `runModel` puts into the judging queue, so a second judging-only pass over unjudged records is
+> the designed path, not a workaround. `--force` was not passed, so nothing was re-generated. Judging
+> re-reads recorded runs and writes verdicts back, changing no generated text and no latency number,
+> and the judges' own latency is never reported. `results.json` records **0 judge failures** for all
+> five candidates, so no scenario went unjudged. It is recorded here because an undisclosed deviation
+> from a protocol is worse than a disclosed one, not because it costs the comparison anything.
+> The review discusses it at
+> [`docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md`](docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md)
+> § 6.3.1.
+
+### 10.8 The earlier `eval-output/` run is preliminary and NOT comparable
+
+`eval-output/` is kept, committed, and **must not be read alongside the tables above.** It is the
+earlier, preliminary run, retained per § 9.5 because the fresh directory is committed *next to* it
+rather than on top of it. It is not comparable for reasons that are structural, not presentational:
+
+- it covers **three** of the five candidates, not five, so it has no cross-model ranking to compare;
+- its runs were **not all produced under recorded conditions**, which is the gap § 9.1 and § 9.3 exist
+  to close — conditions cannot be reconstructed after a run has finished;
+- it predates the fixes this tree carries, including the Mission 2B Hebrew wrong-day resolver fix, so
+  its wrong-day and Hebrew numbers describe superseded application code.
+
+Treat it as history. The comparison of record is `eval-output-fair-20260927/`, and the review's
+discussion of why the earlier run does not count is at
+[`docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md`](docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md) § 5.4.
+
 <!-- RESULTS:END -->

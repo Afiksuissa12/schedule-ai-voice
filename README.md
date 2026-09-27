@@ -16,7 +16,7 @@ browser-only prototype, built by the Autonomous Development Team
 > running on your own hardware now drives the conversation, opt-in, behind the
 > same `LlmProvider` port — see [**the local AI brain**](#the-local-ai-brain-mission-2)
 > below and the review package
-> [`FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md`](FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md).
+> [`docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md`](docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md).
 > Nothing about the Baseline V1 path changed: it is still the default, still
 > offline, still deterministic, and still needs no credential.
 
@@ -135,11 +135,11 @@ failure message and is enough to reproduce it on its own.
 ## The local AI brain (Mission 2)
 
 **Awaiting Founder review.** Review package:
-[`FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md`](FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md)
-at the repository root. It lives there rather than in `docs/` only because the
-mission that produced it had no write access to `docs/`; whoever merges it should
-move it alongside [`docs/FOUNDER_REVIEW.md`](docs/FOUNDER_REVIEW.md), which is
-where it belongs.
+[`docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md`](docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md),
+alongside [`docs/FOUNDER_REVIEW.md`](docs/FOUNDER_REVIEW.md), which is where it
+belongs. It sat at the repository root for three branches only because the
+mission that produced it had no write access to `docs/`; that move has now been
+made.
 
 `docs/BASELINE_V1.md` § 4 records a Founder directive: **customer-facing
 conversation must not be scripted.** It must be generated, in the moment, from
@@ -221,7 +221,7 @@ explaining the scheduling turn, and — when something was booked — the follow
 engine dispatching it. **Whether the model proposes a booking at all is printed
 as a labelled observation, not scored as a check**, because it is model behaviour
 that varies run to run; the benchmark's scheduling-intent rate is the number that
-measures it. See `FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 8.6.
+measures it. See `docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 8.6.
 
 Its last section is the directive's evidence: every sentence the agent said is
 checked against **every string literal under `src/`**, and the check carries a
@@ -384,13 +384,14 @@ application code owns state and executes actions.**
 | `SCHEDULING_CONTRACT.md` | Datetime resolution and validation, provider doubles, meetings, durable follow-up |
 | `AGENT_CONTRACT.md` | LLM boundary, guardrailed prompt, the nine tools, the dispatcher chokepoint, conversations, the agent turn |
 
-**Mission 2 — the local AI brain.** These four sit at the repository root rather
-than in `docs/` because the missions that wrote them had no write access to
-`docs/`. Whoever merges Mission 2 should move them.
+**Mission 2 — the local AI brain.** The review package now sits in `docs/`,
+alongside the Baseline V1 review. The remaining three still sit at the repository
+root because the missions that wrote them had no write access to `docs/`; whoever
+merges Mission 2 should move them too.
 
 | Document | What is in it |
 |---|---|
-| [`FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md`](FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md) | **The review package.** Models evaluated and rejected, measured VRAM, the comparison, real transcripts, the four defects found by running it, the Baseline V1 re-run, and the `npm audit` assessment |
+| [`docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md`](docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md) | **The review package, and the FINAL revision of it.** The fair five-model benchmark — all five candidates re-run one at a time under recorded host conditions at the same `num_ctx` — the **recommendation** it earns, and the Mission 2B Hebrew wrong-day fix that closes the review's most serious finding. Also: models evaluated and rejected, measured VRAM and the offload split, real committed transcripts, the Baseline V1 re-run, and the `npm audit` assessment |
 | [`LOCAL_PROVIDER.md`](LOCAL_PROVIDER.md) | `LocalLlmProvider` and the Ollama transport: the port contract, `num_ctx` sizing and what Ollama actually does with an over-long prompt, timeouts, streaming, the operator CLIs |
 | [`CONVERSATION_CONTEXT.md`](CONVERSATION_CONTEXT.md) | The context assembler, the business profile, the budget ladder, the rolling summary, the anti-scripting rule, the nine proofs |
 | [`EVAL_HARNESS.md`](EVAL_HARNESS.md) | The benchmark: corpus, rubric, the LLM judges and their known failure modes, and the two gates — manufactured timestamps and wrong-day resolution |
