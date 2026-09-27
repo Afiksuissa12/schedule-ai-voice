@@ -36,6 +36,11 @@ Three things make those enforceable rather than aspirational:
 import {
   DateTimeResolver, SchedulingValidator, MeetingSchedulingService,
   schedulingPolicyFromAgentConfiguration,
+  // The natural-language grammar and its locale lexicons, for callers that
+  // need to reason about a `when` without going through the validator.
+  parseNaturalLanguageDateTime, normalizeScript,
+  REGISTERED_LEXICONS, EN_LEXICON, HE_LEXICON,
+  type LocaleLexicon, type LexiconEvent, type NaturalLanguageInterpretation,
 } from './src/scheduling/index.js';
 ```
 
@@ -84,28 +89,107 @@ interface ResolvedSlot     { startUtc; endUtc; timezone; startLocal; endLocal;
 Accepts an ISO instant, an ISO local datetime, or natural language. Pure: no
 wall clock, no database, no mutation.
 
-**Natural-language coverage.** `today` · `tomorrow` · `day after tomorrow` ·
-weekday names and abbreviations, bare and with `next` · `end of the week` ·
+#### The natural-language grammar is fail-closed and its vocabulary is data
+
+> **A phrase may resolve only if EVERY non-whitespace token of the normalised
+> text was consumed by a rule. Anything left over is refused, and the refusal
+> names the leftover.**
+
+This is the contract's most important sentence and it holds in every language,
+including ones the grammar will never learn. Nothing in the resolver names a
+script: `غدا في 15:00`, `завтра в 15:00`, `demain à 15:00` and `qqzzx wibble
+flurm at 15:00` all refuse through the same branch, each naming the words it
+could not read. `docs/DECISIONS.md` § 9 records why, and what used to happen
+instead.
+
+Each locale is a declarative lexicon module — `src/scheduling/lexicon/en.ts`,
+`src/scheduling/lexicon/he.ts` — exporting one `LocaleLexicon` of pure data.
+The resolver holds no language-specific literal, matches against the **union**
+of `REGISTERED_LEXICONS`, and matches whole **tokens** rather than substrings.
+**Adding a locale is adding a module and registering it**, with no resolver
+edit; `tests/scheduling/failClosedGrammar.test.ts` proves that by registering a
+synthetic third locale at runtime through `ParseNaturalLanguageOptions.lexicons`.
+
+**There is no language field anywhere.** `Contact` does not carry one and the
+model is not asked. Because the union is matched, one rule is stated explicitly:
+
+> **A token that two registered locales would read as DIFFERENT days or
+> DIFFERENT times is refused. A token they AGREE on is not an ambiguity** —
+> agreement means the same kind of thing with the same value, and two entries of
+> *different* kinds always disagree.
+
+`en` and `he` use disjoint scripts, so no token triggers it today. Both sides
+are tested against a synthetic locale rather than left untested.
+
+**Carrier tokens.** Each locale declares the filler words it permits and
+discards **on purpose** — English `call`, `me`, `back`, `please`; Hebrew
+`תתקשר`, `אליי`, `בוא`, `נגיד`. They are matched *last*, so a carrier can never
+shadow a real match, and consuming one is a recorded grammar event rather than a
+silent drop. `call me back tomorrow afternoon at 3` therefore still resolves,
+and the receipt says which three words were ignored and by whose rule.
+
+**Script normalisation** (`src/scheduling/lexicon/script.ts`, exported as
+`normalizeScript`) runs first: Unicode NFC, bidi controls and zero-width
+characters stripped, Hebrew niqqud stripped, maqaf → hyphen, geresh →
+apostrophe, gershayim → double quote. It does **not** lower-case, which is what
+makes it provably the identity on English input.
+
+**English coverage.** `today` · `tomorrow` · `day after tomorrow` · weekday
+names and abbreviations, bare and with `next` · `end of the week` ·
 `morning`/`afternoon`/`evening`/`tonight` · `noon`/`midday`/`midnight` · clock
 times with and without am/pm, `HH:mm`, `o'clock`, `p.m.` · `in N
 minutes/hours/days/weeks`, including `in a couple of hours`, `in an hour`,
 `half an hour` · explicit `YYYY-MM-DD` dates.
 
+**Hebrew coverage.** `היום` / `מחר` / `מחרתיים` · all weekday names in the
+`יום X`, `ביום X` and bare forms, with the modifier Hebrew puts *after* the
+weekday (`יום חמישי הבא`) · `סוף השבוע` · day parts `בבוקר`,
+`אחרי הצהריים`, `בערב`, and `הערב` for this evening · named times `בצהריים`,
+`בחצות` · clock times in digits with the prepositional prefix in every written
+form — `ב-15:00`, `ב־15:00` (maqaf), `ב15:00`, `ב 15:00`, `בשעה 15:00`,
+`ל-15:00` · relative offsets `בעוד N דקות/שעות/ימים/שבועות`, the DUAL forms
+`שעתיים` / `יומיים` / `שבועיים`, and `חצי שעה` · dates with or without a time ·
+and code-switched phrases such as `call me back מחר ב-16:00`.
+
+*Not covered, deliberately:* an hour spelled out in Hebrew words. `בשתיים`
+("at two") refuses **naming that word**, because 02:00 and 14:00 are twelve
+hours apart. See `docs/DECISIONS.md` § 9.9.
+
 **Weekday semantics.** A bare weekday means the soonest future one *excluding
 today*; `next tuesday` means the Tuesday of the following ISO week; `end of the
 week` means Friday of the current ISO week, or the next one if that has passed.
+The arithmetic is locale-agnostic and applies to whichever locale's word
+matched. *Which* days a business works is policy and lives in `businessHours`.
 
 **It refuses rather than guesses.** All of these return `INVALID_FORMAT`:
 
-- a bare 12-hour time with nothing to settle am vs pm — `tomorrow at 3`
+- a bare 12-hour time with nothing to settle am vs pm — `tomorrow at 3`,
+  `מחר ב-9:00` (Hebrew has no am/pm, so the same rule applies unchanged)
 - a contradiction — `tomorrow morning at 3pm`, `tomorrow in two hours`
-- vague intent — `sometime next week`, `later`, `soon`, `asap`
-- a period rather than a moment — `next week`, `next month`
+- vague intent — `sometime next week`, `later`, `soon`, `asap`, `אולי מחר`
+- a period rather than a moment — `next week`, `next month`, `שבוע הבא`
 - a day with no time — `next tuesday`
 - any leftover number the grammar cannot account for — `tomorrow at 3pm on the 15th`
+- **any leftover token at all** — `غدا في 15:00`, `qqzzx wibble flurm`
+- a genuine cross-locale ambiguity
 
 A bare time with no day resolves to **today** and is *not* rolled forward, so a
 time that has passed is reported as `IN_THE_PAST` rather than silently moved.
+That branch applies **only** when every token was consumed: a day word the
+grammar could not read can no longer become "the contact meant today".
+
+#### What the interpretation records
+
+`NaturalLanguageInterpretation` keeps `matched`, `dayAnchor`, `dayPart`,
+`timeAnchor` and `normalized`, and adds, additively: `locales` (which lexicons
+matched, in order), `lexicon` (every grammar event with its rule, locale,
+declared form and consumed text — carriers included), `carriers`, `leftover`
+(empty on success, the evidence on a refusal) and `scriptNormalization`.
+`SlotInterpretation` carries `locales`, `lexicon` and `carriers` into
+`ResolvedSlot`, and the whole interpretation continues to ride in
+`ValidationProvenance.notes.interpretation`. Day-anchor labels stay canonical
+and language-neutral, so `מחר ב-15:00` and `tomorrow at 15:00` both record
+`dayAnchor: 'tomorrow'` and differ only in `locales`.
 
 ### `SchedulingValidator`
 

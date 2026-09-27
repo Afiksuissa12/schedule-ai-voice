@@ -1,11 +1,28 @@
 /**
  * The wrong-day gate, at the scoring layer.
  *
- * `tests/e2e/hebrewDigitClockTime.test.ts` proves the defect is real against the
- * real dispatcher. This file proves the CONSEQUENCE: that a turn which booked
- * the wrong calendar day is scored as a failure - zeroing the tool-and-structural
- * category and ranking the run below a clean one - rather than as the mild
- * "expected failure DID NOT OCCUR" non-event `expectsToolFailure` produces.
+ * WHAT THIS FILE IS FOR, NOW THAT THE RESOLVER IS FIXED
+ * ---------------------------------------------------------------------------
+ * The gate was added because `src/scheduling/naturalLanguage.ts` was
+ * English-only and a Hebrew `when` with the clock time in digits resolved to
+ * the WRONG CALENDAR DAY instead of being refused. That defect is gone: the
+ * resolver now understands Hebrew and, more importantly, refuses anything it
+ * cannot account for (`docs/DECISIONS.md` § 9). `tests/e2e/hebrewDigitClockTime.test.ts`
+ * used to record the wrong instant against the real dispatcher and now asserts
+ * the right one.
+ *
+ * **This file did not become less sharp, and must not.** A gate is only worth
+ * having if it still fires, and the only place that can now be demonstrated is
+ * here - because no real run in the suite produces a wrong day to feed it. So
+ * every fixture below is SYNTHETIC by design: a hand-built recorded run whose
+ * `resolvedDay` check already says "wrong", fed straight to the scorer. What is
+ * proved is the CONSEQUENCE - that such a turn zeroes the tool-and-structural
+ * category, moves the composite, and ranks the model below every clean one,
+ * rather than being recorded as the mild "expected failure DID NOT OCCUR"
+ * non-event `expectsToolFailure` would have produced.
+ *
+ * If a future change to the resolver reintroduces a wrong-day booking, these
+ * tests are what makes the benchmark say so out loud.
  *
  * Everything here is a pure function of a recorded run, so no database and no
  * model are involved.
@@ -105,6 +122,11 @@ function run(modelId: string, turns: readonly TurnRecord[]): ScenarioRun {
   };
 }
 
+/**
+ * A SYNTHETIC wrong-day result. No code path produces this any more, which is
+ * exactly why it is written by hand: the gate has to be exercised on the
+ * outcome it exists to catch, whether or not anything currently causes it.
+ */
 const WRONG_DAY = {
   applicable: true,
   passed: false,
@@ -221,6 +243,14 @@ describe('checkResolvedDay', () => {
 });
 
 describe('the corpus', () => {
+  /**
+   * These two scenarios were added because the resolver got this input class
+   * wrong. It no longer does - the product now RESOLVES `מחר ב-15:00` onto the
+   * day the contact named - so what they measure has changed from "does the
+   * product commit to the wrong day" to "does it still commit to the right
+   * one". The corpus shape that makes either question askable is the same, and
+   * it is what is asserted here.
+   */
   it('carries a Hebrew AND a mixed scenario whose `when` has a digit-bearing clock time', () => {
     const scenarios = loadCorpus().scenarios.filter((s) =>
       s.turns.some((t) => t.resolvedDay !== undefined && /\d{1,2}:\d{2}/.test(t.utterance)),
@@ -233,11 +263,15 @@ describe('the corpus', () => {
     for (const scenario of scenarios) {
       for (const t of scenario.turns) {
         if (!t.resolvedDay) continue;
-        // The whole point: this class of turn must NOT be filed as an expected
-        // failure, because the dangerous outcome is a booking that succeeded.
+        // Still the whole point, and still true after the fix: this class of
+        // turn must NOT be filed as an expected failure. `expectsToolFailure`
+        // can only ever say "a refusal is expected", so it could not have told
+        // a wrong-day booking from a good one - and it would now misreport the
+        // correct booking as an unmet expectation.
         expect(t.expectsToolFailure, `${scenario.id} must not mark a wrong-day probe as an expected failure`)
           .not.toBe(true);
-        // And it must contain Hebrew, or it is not testing the resolver gap.
+        // And it must contain Hebrew, or it is not exercising the path that
+        // used to be English-only.
         expect(/[֐-׿]/.test(t.utterance)).toBe(true);
       }
     }

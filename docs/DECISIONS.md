@@ -589,3 +589,245 @@ reports `declared REJECT but the system accepted it` for both sub-minute
 shortfalls. Six of the seven cases in `tests/e2e/timezoneOverride.test.ts` fail;
 the seventh is a control that is meant to pass either way. An invariant that
 cannot fail is not evidence, so this was established rather than assumed.
+
+---
+
+## 9. The natural-language resolver fails closed, and its vocabulary is data
+
+**Recorded 2026-09-27.** This fixes the most serious open finding in
+`FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 8.3: a Hebrew `when` with the clock
+time in digits was not refused — it booked the **wrong calendar day**.
+
+### 9.1 What was actually wrong — two root causes, not one
+
+`src/scheduling/naturalLanguage.ts` normalised the input, ran a sequence of
+regexes (day part, named time, ISO date, relative offset, day anchor, clock
+time), and blanked each match out of a `remaining` string. What survived was
+checked against exactly two safety nets: `/\d/.test(remaining)` and an
+**English-only** blocklist of period words. **Everything else in `remaining` was
+silently discarded.**
+
+Separately, when no day anchor was found but a clock time or day part was, the
+assembly step fell through to a branch that set the date to
+`nowLocal.startOf('day')` and the anchor to `implicit_today`.
+
+Put together, reproduced on this branch before anything was changed, with `now`
+= Wednesday 2026-03-04 10:00 Asia/Jerusalem:
+
+| `when` | Resolved | `dayAnchor` | |
+|---|---|---|---|
+| `tomorrow at 15:00` | 2026-03-05 15:00 | `tomorrow` | correct |
+| `מחר ב-15:00` | **2026-03-04** 15:00 | `implicit_today` | **WRONG DAY**, `ok: true` |
+| `יום חמישי ב-15:00` | **2026-03-04** 15:00 | `implicit_today` | **WRONG DAY**, `ok: true` |
+| `مرحبا غدا 15:00` | **2026-03-04** 15:00 | `implicit_today` | **WRONG DAY**, `ok: true` |
+| `завтра в 15:00` | **2026-03-04** 15:00 | `implicit_today` | **WRONG DAY**, `ok: true` |
+| `demain à 15:00` | **2026-03-04** 15:00 | `implicit_today` | **WRONG DAY**, `ok: true` |
+
+Every validator check passed. A `Meeting` or a `FutureAction` was persisted with
+a complete receipt, and `DueActionRunner` would have dialled it a day early.
+
+So there were **two** root causes, and fixing only the visible one would have
+left the dangerous one in place:
+
+1. **Fail-open leftovers.** A token no rule claimed was thrown away.
+2. **An English-only lexicon.** Nothing but English could ever be understood.
+
+### 9.2 Why fail-closed beats a Hebrew string patch
+
+Teaching the grammar Hebrew fixes **one language**. It does nothing for Arabic,
+Russian, French, Polish or any of the other languages a `when` argument can
+arrive in, and every one of them would still have produced a silent wrong-day
+booking through exactly the same branch. The general rule is now:
+
+> **A phrase may resolve only if EVERY non-whitespace token of the normalised
+> text was consumed by a rule. Anything left over refuses, and the refusal names
+> the leftover.**
+
+Nothing in the code names a script or an alphabet. `qqzzx wibble flurm at 15:00`
+refuses through the identical branch that refuses `غدا في 15:00`, which is the
+proof that the rule is general rather than a list of the languages somebody
+happened to think of. The `implicit_today` branch — the most dangerous line in
+the file — is additionally guarded on `everyTokenConsumed`, so the guarantee is
+stated where the decision is made and not only in the refusal above it.
+
+The Hebrew lexicon was then added **as well**, because a refusal is safe but a
+correct booking is the product. The order matters: fail-closed first, then
+vocabulary. Adding vocabulary to a fail-open grammar would have shrunk the hole
+without closing it.
+
+### 9.3 Carrier tokens, and why the fix could not be a one-line check
+
+`call me back tomorrow afternoon at 3` is an accepted input, pinned by
+`tests/scheduling/naturalLanguage.test.ts`, and it leaves `call`, `me` and
+`back` unconsumed. A naive "refuse on any leftover" rule would have broken it —
+and the mission required every existing English behaviour to be preserved byte
+for byte unless a test documents a deliberate change.
+
+So each locale now declares a **carrier** list: tokens it permits to be present
+and discards **on purpose**. Consuming one is a recorded grammar event, not a
+silent drop. The distinction being implemented is:
+
+| | |
+|---|---|
+| *"this token was discarded by a rule somebody wrote down"* | a carrier — appears in the provenance as `carrier:en:back` |
+| *"this token was discarded because nobody looked at it"* | the defect — now impossible |
+
+Two design rules keep the list honest. Carriers are matched **last**, after
+every rule that could want the token, so a carrier can never shadow a real match
+(`a` is the quantity word in `in a couple of hours` and a carrier only where the
+offset rule did not take it). And the lists are deliberately **short**: a carrier
+list that grows until it covers any sentence is a fail-open rule with extra
+steps.
+
+### 9.4 The lexicon is data, and the resolver is locale-agnostic
+
+`WEEKDAY_NUMBERS`, `WEEKDAY_ALTERNATION`, `NUMBER_WORDS`, `RELATIVE_OFFSET_RE`,
+`VAGUENESS_MARKERS`, `LEFTOVER_BLOCKLIST_RE`, `TIME_RE`, the day-part and
+named-time alternations, every literal inside `matchDayAnchor`, and the rewrite
+rules inside `normalize()` are gone from the resolver. They are now
+`src/scheduling/lexicon/en.ts` and `src/scheduling/lexicon/he.ts`, each
+exporting one `LocaleLexicon` of pure data — weekday names and their forms, day
+anchors, relative-offset units and quantity words, day-part markers, named clock
+times, clock-time prefix and separator forms, carrier tokens and vagueness
+markers. `naturalLanguage.ts` contains no language-specific literal at all.
+
+**Adding a locale is adding a module and registering it.** That claim is proved
+rather than asserted: `tests/scheduling/failClosedGrammar.test.ts` registers a
+synthetic third locale at runtime, through
+`ParseNaturalLanguageOptions.lexicons`, and resolves phrases in it — weekdays,
+day parts, offsets, vagueness and period words all work with no resolver edit.
+
+**Matching is on whole tokens, not substrings.** This is not a style choice.
+JavaScript's `\b` is defined on ASCII word characters, so `\bמחר\b` never
+matches anything — a regex grammar of the old shape could not have been extended
+to Hebrew by adding alternatives to it, however many were added. Token equality
+works in every script, and it also turns "every token was accounted for" into an
+exact statement rather than a guess about leftover whitespace.
+
+### 9.5 The cross-locale ambiguity rule
+
+**There is no schema change. `Contact` has no language field and none was
+added.** A model-supplied language would be one more unaudited model assertion
+deciding what a booking means. The resolver therefore matches against the
+**union** of every registered lexicon and lets the words decide. That raises one
+real question, and the answer is stated explicitly rather than left to emerge:
+
+> **A token that two registered locales would read as DIFFERENT days or
+> DIFFERENT times is a refusal. A token they AGREE on is not an ambiguity.**
+
+"Agree" is exact: two entries agree when they are the same kind of thing with
+the same value — the same day offset, the same ISO weekday, the same day part,
+the same named hour and minute, the same offset unit or quantity. Everything
+else disagrees, **including two entries of different kinds**, because a token one
+language reads as a day and another reads as a time of day is precisely the
+confusion worth refusing over. The rule is evaluated only where the grammar
+would actually read the token — on the longest form matching at a position — so
+a disagreement buried inside a phrase that matched as a whole cannot cause a
+spurious refusal.
+
+With `en` and `he` registered there is no such token, because the two use
+disjoint scripts. That is a fact about today's registry and not a property of the
+rule, so **both sides are tested against a synthetic locale**: one that reads
+`tomorrow` as two days out (refuses), one that reads it as one day out (resolves
+— agreement is not ambiguity), and one that reads `afternoon` as a day rather
+than a time of day (refuses, cross-kind).
+
+### 9.6 Hebrew script normalisation is a separate, documented step
+
+`src/scheduling/lexicon/script.ts` normalises Unicode NFC, strips bidi controls
+and zero-width characters, strips niqqud, and maps maqaf → hyphen, geresh →
+apostrophe, gershayim → double quote and the Hebrew stops → space. It reports
+which steps fired, and those land in the provenance.
+
+Two decisions inside it are worth recording:
+
+- **It does not lower-case.** Case folding is a grammar step. Keeping it out is
+  what makes "this function is the identity on English" an exact, testable claim
+  rather than an approximate one — and it is tested, byte for byte, across every
+  English expression the suite and the invariant sweep put through the resolver.
+- **Its rules are a table of numeric code-point ranges, not a regex of literal
+  characters.** The characters involved are invisible. Written literally, no
+  reviewer could confirm that the niqqud range excludes U+05BE MAQAF — and
+  sweeping the whole Hebrew block would have silently destroyed the maqaf that
+  `ב־15:00` depends on.
+
+It deliberately does **not** convert Arabic-Indic or Devanagari digits. No
+registered locale needs it, and inventing an untested digit rule would be the
+same class of mistake as the one being fixed; such a phrase fails closed
+instead.
+
+### 9.7 What the provenance now records
+
+`NaturalLanguageInterpretation` keeps `matched`, `dayAnchor`, `dayPart`,
+`timeAnchor` and `normalized` exactly as they were, and gains, additively:
+
+| field | what it says |
+|---|---|
+| `locales` | which lexicons supplied a match, in first-match order — `['he']`, or `['he','en']` for a code-switched phrase |
+| `lexicon` | every grammar event in order, each with its `rule`, `locale`, the declared `form` and the `text` consumed |
+| `carriers` | the filler tokens discarded **by rule** |
+| `leftover` | the tokens nobody accounted for. Always empty on success; on a refusal it is the evidence |
+| `scriptNormalization` | which normalisation steps actually changed the raw input |
+
+`SlotInterpretation` carries `locales`, `lexicon` and `carriers` into
+`ResolvedSlot`, and the full interpretation continues to ride in
+`ValidationProvenance.notes.interpretation`. `matched` also now carries
+`carrier:<locale>:<token>` entries, which is a deliberate change to the English
+receipt: a reader has to be able to see the difference between a word that was
+ignored by a rule and a word that was ignored by accident.
+
+### 9.8 Deliberate behaviour changes, listed rather than buried
+
+Everything else about English is unchanged, and
+`tests/scheduling/naturalLanguage.test.ts` and `dst.test.ts` pass **unmodified**.
+These are the differences a careful reader would spot:
+
+1. **`at midnight` consumes its `at`.** A named time is introduced the same way
+   a digit one is, so the preposition belongs to that rule. The `at` used to
+   survive as a leftover, which only went unnoticed because leftovers were being
+   thrown away.
+2. **`timeAnchor` is the text actually said.** `tomorrow at 3 p.m.` records
+   `at 3 p.m.` rather than `at 3 pm`, because `normalize()` no longer rewrites
+   the input behind the reader's back. The resolved instant is identical.
+3. **`matched` carries carrier events** (§ 9.7).
+4. **A leftover report is now the leftover.** `tomorrow at 3pm on the 15th` still
+   refuses with the same "could not interpret" reason, but names `15th` rather
+   than `on the 15th`, because `on` and `the` were consumed by rules.
+
+### 9.9 What was deliberately left out of scope
+
+- **Hours spelled out in Hebrew words.** `בשתיים` ("at two") is not a clock time
+  in this lexicon, so `מחר אחרי הצהריים, בשתיים` resolves `מחר` and
+  `אחרי הצהריים` and then refuses, **naming `בשתיים`**. Guessing that `שתיים`
+  means 14:00 rather than 02:00 is exactly the guess this grammar exists to
+  refuse. The required coverage was digit clock times and it is complete.
+- **An hour of 1–11 that nothing settles still refuses, in Hebrew too.** Hebrew
+  has no am/pm, so `מחר ב-9:00` refuses with "09:00 or 21:00" while
+  `מחר ב-9:00 בבוקר` resolves. That is the pre-existing English rule applying
+  unchanged, by the same code, and changing it would have altered English
+  behaviour.
+- **`שני` as a quantity word.** It means both "two (of)" and "Monday". The
+  idiomatic Hebrew for "in two days" is the dual `יומיים`, which is supported.
+- **Israeli working days.** The seeded business-hours policy is Monday to
+  Friday and Israeli working days are not. That is a **policy configuration**
+  matter and was explicitly out of scope, so `סוף השבוע` resolves through the
+  same locale-agnostic end-of-ISO-week rule English uses and the business-hours
+  check then has its own say.
+
+### 9.10 What was touched outside `src/scheduling`
+
+Nothing in `src/llm/scriptedLlmProvider`, `src/audit`, `src/db`, `prisma` or
+`src/eval` was modified, and no schema changed. Outside `src/scheduling` this
+change touched only:
+
+| file | why |
+|---|---|
+| `tests/e2e/hebrewDigitClockTime.test.ts` | it pinned the WRONG instant on purpose and its own failure message said what to change. Now asserts the day the contact named; the wrong-day branch and the constant behind it are deleted. Both controls kept and updated honestly |
+| `tests/eval/wrongDayGate.test.ts` | its narrative described the resolver as producing the wrong day. Every scorer assertion is kept — the gate must stay sharp, and with no real run producing a wrong day any more, its synthetic fixtures are now the only place its teeth can be demonstrated |
+| `tests/scheduling/scriptNormalization.test.ts`, `hebrewGrammar.test.ts`, `failClosedGrammar.test.ts` | new unit coverage |
+| `SCHEDULING_CONTRACT.md`, this file | the contract and the decision |
+
+The nine ordered validation checks and their order, the `ValidationProvenance`
+receipt and its write path, the pinned-slot single-resolution guarantee, the
+business-hours anchor zone, the dispatcher chokepoint and refusals-as-values are
+all untouched.
