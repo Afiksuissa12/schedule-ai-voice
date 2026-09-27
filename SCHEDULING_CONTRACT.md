@@ -363,3 +363,89 @@ repositories.
 `parseJsonWith` is typed `ZodType<T>`, which resolves to a schema's *input* type
 when `.default()` is used, making every defaulted field look
 possibly-undefined. Both were reported through the mailbox.
+
+---
+
+## 6. The regression and invariant coverage that backs § 2
+
+> Added by the locale-regression task. It adds no behaviour and changes no
+> existing section: everything below is a description of the tests that now hold
+> § 2's promises to account. `src/scheduling` is untouched by it.
+
+§ 2 makes three strong claims — the grammar is **fail-closed**, its vocabulary is
+**data**, and the day-anchor labels are **language-neutral**. Those are the kind
+of claim that stays true for exactly as long as something is watching. This is
+what watches.
+
+### 6.1 Four regression files, and what each one is for
+
+| File | The claim it holds to account |
+|---|---|
+| `tests/scheduling/localeParity.test.ts` | **Hebrew and English translations resolve to the same instant.** 37 translated pairs × 6 `now` instants × 6 contact zones, asserted on the resolved UTC instant *and* on the local calendar day in the contact's zone — a RELATION, so no expected wall-clock string can go stale. Plus 3 pairs that are faithful translations and deliberately do NOT agree, each carrying its reason and asserted in its divergent shape. |
+| `tests/scheduling/localeTimezoneBoundaries.test.ts` | **A day word is counted on the contact's calendar, never on UTC's**, at five instants where the two disagree (Asia/Jerusalem, America/New_York, Pacific/Auckland, Pacific/Honolulu) with one agreeing control; and the **DST gap and autumn repeat in Israel *and* the United States**, plus Pacific/Auckland's southern-hemisphere pair and Pacific/Honolulu's absence of one. Reuses `dst.test.ts`'s idioms, and re-derives every transition date from Luxon so the header table cannot become a lie. |
+| `tests/scheduling/localeDateAndTime.test.ts` | **A date without a time is not a slot** — 9 day forms × 3 zones × both languages, refused with the same reason on both sides; and **a date with a time is a slot**, the same slot, for 4 different ways of naming a time. |
+| `tests/scheduling/localeRefusalBreadth.test.ts` | **The fail-closed rule names no alphabet.** 13 scripts — Arabic, Cyrillic, French, Han, Hangul, Greek, Thai, Devanagari, Georgian, Ethiopic, Armenian, an invented Latin word, an emoji — each refused with the leftover quoted in the reason *and* recorded as data in the receipt. Plus the **cross-locale ambiguity** rule across all seven kinds of disagreement it distinguishes, each with an agreement control. |
+
+Every refusal in the last file is held to the same three statements: it refuses
+with `INVALID_FORMAT`, the reason NAMES the token, and it never becomes "the
+contact meant today". The last of those is the one that matters — a refusal
+nobody can act on is a nuisance, a wrong day is a customer on the phone at the
+wrong hour.
+
+### 6.2 Three new invariants in the sweep
+
+`tests/invariants/` grew from 601 scenarios in 11 families to **823 in 12**, and
+from 12 per-scenario invariants to **15**:
+
+| Invariant | Statement |
+|---|---|
+| `INV-15-no-accepted-resolution-ignores-a-token` | Every ACCEPTED natural-language `when` consumed every token: `interpretation.leftover` is empty. Read from the `TOOL_CALL_VALIDATED` audit event, so it covers `check_availability` too, which accepts a time and writes nothing. |
+| `INV-16-hebrew-and-english-parity` | A translated pair resolves to the same instant under the same `now`, zone and policy — and where a row was persisted, that row's instant equals both sides. |
+| `INV-17-resolved-day-is-the-day-the-phrase-named` | Every persisted instant falls on the calendar day its own receipt names, read in the zone the phrase was resolved in — which, for every scenario that does not populate the model-supplied `timezone` argument, is asserted to BE the contact's persisted zone. |
+
+The new family is **`L-locale-parity`**: 10 Hebrew/English pairs, *both sides of
+each*, through the real dispatcher against a seeded Asia/Jerusalem,
+America/New_York or Pacific/Auckland contact. `REJECTED_EXPRESSIONS` also gained
+9 entries — the Hebrew refusal classes and four unknown-language ones — which
+family C crosses with all five main zones.
+
+### 6.3 What this coverage does NOT give you
+
+Stated here because silent truncation that reads as full coverage is a defect in
+itself. All of it is also in `KNOWN_COVERAGE_GAPS`, so it appears in the printed
+`npm run qa:sweep` report and not only in a document.
+
+- **Family L is bounded to 3 zones and 2 `now` instants, deliberately.** Adding
+  Asia/Jerusalem and Pacific/Auckland to the shared `TIMEZONES` axis would have
+  cost ~224 extra scenarios across seven families to re-prove *English* behaviour
+  at a different offset. The consequence: Hebrew is not swept in Europe/London,
+  Australia/Sydney, Asia/Kolkata or UTC. `localeParity.test.ts` covers six zones
+  at the resolver level, where a cell costs microseconds rather than a database.
+- **`INV-16` is not an independent oracle.** It resolves the counterpart phrase
+  through `DateTimeResolver`, the system under test, because no oracle can know
+  what a Hebrew phrase means without a Hebrew dictionary and writing one in the
+  harness would be the reimplementation the design forbids. It is worth having
+  because the claim is *relational* and because it is tied to the persisted row.
+  A change that broke both languages identically passes it — and fails
+  `tests/scheduling/naturalLanguage.test.ts`, which pins English independently.
+- **`INV-17` re-derives only the day anchors whose meaning is fixed arithmetic**
+  (`today`, `implicit_today`, `tonight`, `tomorrow`, `day_after_tomorrow`,
+  `iso_date:*`). A `weekday:*`, `next_weekday:*` or `end_of_week` anchor is
+  reported INAPPLICABLE *naming the label*, because deriving it would mean
+  reimplementing the ISO-week arithmetic under test.
+- **The Hebrew grammar cannot name a local time between 01:00 and 03:00**, which
+  is where every ordinary DST transition sits: Hebrew has no am/pm and no
+  declared day part covers 02:00, so a digit hour of 1–11 is refused first
+  (`docs/DECISIONS.md` § 9.9). The gap and repeat classes are therefore driven
+  through the locale-agnostic ISO path and the English grammar. That a *Hebrew*
+  phrase reaches the same DST checks is proved with America/Havana, whose
+  spring-forward happens at local midnight — the one transition hour Hebrew can
+  name, because `בחצות` is a declared named time.
+
+### 6.4 The wrong-day gate is still sharp
+
+`tests/eval/wrongDayGate.test.ts` was not weakened. Nothing in this coverage
+touches it: it still feeds a **synthetic** wrong-day result to the scorer and
+still proves the gate zeroes the tool-and-structural category, moves the
+composite, and fails the run. Now that no real run in the suite produces a wrong
+day, that file is the only place the gate's teeth can be demonstrated at all.

@@ -371,10 +371,10 @@ UTTERANCE_RECEIVED -> AGENT_TURN_STARTED -> PROVIDER_INVOKED -> AGENT_DECISION
 | Suite | What it establishes |
 |---|---|
 | `tests/foundation/` | Schema round-trips, transaction atomicity, audit chain, provenance refusal, per-test isolation |
-| `tests/scheduling/` | Resolver grammar, the nine ordered checks, DST, policy from the persisted row, provider boundary, runner restart/backoff |
+| `tests/scheduling/` | Resolver grammar, the nine ordered checks, DST, policy from the persisted row, provider boundary, runner restart/backoff, and the locale regression net: Hebrew/English parity, timezone and DST boundaries in Israel and the US, date-only vs date-plus-time, refusals across thirteen scripts |
 | `tests/agent/` | Prompt composition, the nine-tool contract, dispatcher ordering, conversation durability, qualification rubric |
 | `tests/e2e/` | The slice end to end, 13 adversarial turns, the bounded turn loop |
-| `tests/invariants/` | **The sweep**: 601 generated scenarios x 12 per-scenario invariants, plus determinism and the network trap |
+| `tests/invariants/` | **The sweep**: 823 generated scenarios x 15 per-scenario invariants, plus determinism and the network trap |
 
 ### The invariant sweep
 
@@ -384,11 +384,11 @@ writing one test per example.
 
 | File | Role |
 |---|---|
-| `dimensions.ts` | The axes: 5 contact timezones, 7 model-ASSERTED timezones, 10 `now` instants (plus 5 sub-minute ones for the lead-time boundary), 17 expressions, 4 policies, 4 availability states. Pure data. |
+| `dimensions.ts` | The axes: 5 contact timezones (plus 3 locale zones for family L), 7 model-ASSERTED timezones, 10 `now` instants (plus 5 sub-minute ones for the lead-time boundary and 2 for family L), 35 expressions of which 19 are Hebrew, code-switched or in a language no lexicon covers, 10 Hebrew/English parity pairs, 4 policies, 4 availability states. Pure data. |
 | `dimensions.test.ts` | Re-derives every factual claim the dimensions make (that a local time really is in a DST gap, that Kolkata really has a half-hour offset) so a comment can never quietly become a lie |
-| `scenarios.ts` | Crosses them into **601** scenarios in 11 named families. Pure function, fixed seed, stable ids |
+| `scenarios.ts` | Crosses them into **823** scenarios in 12 named families. Pure function, fixed seed, stable ids |
 | `runner.ts` | Drives each scenario through `AgentTurnService.handleTurn` - the real front door |
-| `invariants.ts` | The 12 per-scenario properties |
+| `invariants.ts` | The 15 per-scenario properties. INV-15/16/17 are the locale-aware ones: no accepted resolution ignores an unconsumed token; a translated Hebrew/English pair resolves to the same instant; the resolved calendar day is the day the phrase named, read in the contact's zone |
 | `networkTrap.ts` | Patches `fetch`/`http`/`https`/`net` and records any outbound attempt |
 | `sweep.ts` | generate → run → check → summarize |
 | `sweep.test.ts` | Asserts zero violations, plus **non-vacuity** guards |
@@ -407,4 +407,6 @@ a matrix no one could enumerate by hand.
 
 Because a corpus of conditional properties could pass vacuously,
 `sweep.test.ts` additionally asserts the sweep persisted >100 rows, refused >100
-calls, and that **no invariant had zero applicable checks**.
+calls, that **no invariant had zero applicable checks**, that Asia/Jerusalem is
+in the swept zones at all, and that INV-15/16/17 each examined more than 50
+cases - a locale invariant with three applicable checks is not evidence either.

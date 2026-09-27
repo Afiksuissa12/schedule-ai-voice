@@ -8,11 +8,12 @@
  *
  * ONE `it` FOR THE WHOLE CORPUS, ON PURPOSE
  * ---------------------------------------------------------------------------
- * 509 scenarios x 11 invariants is 5,599 checks. Emitting one vitest case per
- * check would bury every other test in the repository and make the run
- * unreadable. Instead the sweep runs once and every violation is reported
- * together, each quoting its scenario id - which is stable, generated from
- * fixed data, and sufficient to reproduce the case on its own:
+ * The corpus is several hundred scenarios and the invariant list is fifteen, so
+ * this is thousands of checks. Emitting one vitest case per check would bury
+ * every other test in the repository and make the run unreadable. Instead the
+ * sweep runs once and every violation is reported together, each quoting its
+ * scenario id - which is stable, generated from fixed data, and sufficient to
+ * reproduce the case on its own:
  *
  *     npm run qa:sweep -- --family B
  *
@@ -26,10 +27,10 @@ import { summarizeInvariants } from '../qa/report.js';
 import { executeSweep } from './sweep.js';
 import { generateScenarios } from './scenarios.js';
 
-// The corpus is ~509 scenarios against real SQLite databases. It is the slowest
-// thing in the suite by design; the budget is generous so a loaded CI machine
-// does not produce a flaky failure that looks like a real one.
-const SWEEP_TIMEOUT_MS = 600_000;
+// The corpus is several hundred scenarios against real SQLite databases. It is
+// the slowest thing in the suite by design; the budget is generous so a loaded
+// CI machine does not produce a flaky failure that looks like a real one.
+const SWEEP_TIMEOUT_MS = 900_000;
 
 describe('the invariant sweep', () => {
   it(
@@ -85,12 +86,51 @@ describe('the invariant sweep', () => {
       expect(futureActions, 'no FutureAction rows were produced, so INV-01 examined nothing').toBeGreaterThan(20);
       expect(qualifications, 'no QualificationState rows, so INV-08 examined nothing').toBeGreaterThan(10);
 
+      // --- the locale work is actually exercised ---------------------------
+      // Structural invariants can pass on an all-English corpus, so the
+      // presence of Hebrew in the matrix is asserted rather than assumed. A
+      // future edit that dropped family L, or that stopped `seedSliceWorld`
+      // accepting Asia/Jerusalem, would otherwise leave INV-16 quietly
+      // inapplicable and everything still green.
+      const hebrewLetters = /[֐-׿]/;
+      const localeScenarios = sweep.scenarios.filter((scenario) => scenario.family === 'L-locale-parity');
+      expect(localeScenarios.length, 'family L must be in the corpus').toBeGreaterThan(50);
+      expect(
+        localeScenarios.filter((scenario) => hebrewLetters.test(JSON.stringify(scenario.args))).length,
+        'half of family L must actually carry Hebrew in the tool arguments',
+      ).toBeGreaterThan(20);
+      expect(
+        new Set(sweep.scenarios.map((scenario) => scenario.world.contactTimezone)),
+        'Asia/Jerusalem - the zone the defect was found in - must be swept',
+      ).toContain('Asia/Jerusalem');
+
+      const localePersisted = sweep.observations.filter(
+        (observation) => observation.family === 'L-locale-parity' && observation.outcome === 'PERSISTED',
+      );
+      expect(
+        localePersisted.length,
+        'family L that refused everything would satisfy INV-15 and INV-17 vacuously',
+      ).toBeGreaterThan(30);
+
       // --- no invariant may be vacuous -------------------------------------
-      const vacuous = summarizeInvariants(sweep.results).filter((summary) => summary.vacuous);
+      const summaries = summarizeInvariants(sweep.results);
+      const vacuous = summaries.filter((summary) => summary.vacuous);
       expect(
         vacuous.map((summary) => summary.id),
         'an invariant with nothing to check is not evidence; it must not be reported as passing',
       ).toEqual([]);
+
+      // And the three locale invariants in particular must have had real work
+      // to do, not one applicable check each.
+      for (const id of [
+        'INV-15-no-accepted-resolution-ignores-a-token',
+        'INV-16-hebrew-and-english-parity',
+        'INV-17-resolved-day-is-the-day-the-phrase-named',
+      ]) {
+        const summary = summaries.find((candidate) => candidate.id === id);
+        expect(summary, `${id} is not registered in INVARIANTS`).toBeDefined();
+        expect(summary?.checked, `${id} examined too little to be evidence`).toBeGreaterThan(50);
+      }
     },
     SWEEP_TIMEOUT_MS,
   );

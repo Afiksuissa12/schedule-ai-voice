@@ -25,7 +25,7 @@
  * contact, agent configuration and calendar via `seedSliceWorld({ suffix })`,
  * and every assertion is scoped to those ids.
  *
- * That is not a weaker test - it is a stronger one. Five hundred scenarios
+ * That is not a weaker test - it is a stronger one. Hundreds of scenarios
  * sharing a database means invariant 5 ("a rejected tool call changes no row
  * counts") is asserted against a database that already contains hundreds of
  * other organizations' rows, so a query missing an `organizationId` filter has

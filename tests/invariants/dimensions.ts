@@ -196,6 +196,18 @@ export interface ExpressionDimension {
   readonly raw: string;
   readonly direction: Direction;
   readonly rationale: string;
+  /**
+   * Which locale lexicons this expression is expected to exercise, if any.
+   *
+   * Absent for the English expressions that were here before locale support:
+   * they are the baseline and nothing about them changed. Present - `['he']`,
+   * `['he','en']`, or `[]` for a phrase in a language no lexicon covers - on
+   * every expression added by the Hebrew work, which is what lets the report
+   * show a `locales` axis and what family L selects on. It is a statement about
+   * the INPUT, not a prediction of the output: an expression declaring `['he']`
+   * is one written in Hebrew, not one asserted to resolve.
+   */
+  readonly locales?: readonly string[];
 }
 
 /** Expressions that are well-formed English and a plausible agreed time. */
@@ -229,6 +241,88 @@ export const VALID_EXPRESSIONS: readonly ExpressionDimension[] = [
     raw: 'in 3 hours',
     direction: 'EITHER',
     rationale: 'A pure OFFSET. Lands wherever now lands, including outside business hours.',
+  },
+
+  // -------------------------------------------------------------------------
+  // Hebrew and code-switched expressions.
+  //
+  // APPENDED, NEVER INSERTED. Families A, B and E select from this array BY
+  // INDEX (`slice(0, 3)`, `[0]`, `[3]`), so adding at the end leaves every
+  // pre-existing scenario id and every pre-existing scenario byte-for-byte
+  // unchanged. Anything inserted above would silently re-shuffle 200 ids and
+  // make this sweep's results incomparable with the ones already reported.
+  //
+  // These are consumed by family L, which crosses them with its own zone and
+  // `now` axes. Direction is EITHER for all of them for the usual reason: 15:00
+  // on a Saturday is refused by the business-hours policy, and discovering that
+  // is the sweep's job rather than the author's.
+  // -------------------------------------------------------------------------
+  {
+    key: 'e06-he-tomorrow-digit-time',
+    raw: 'מחר ב-15:00',
+    direction: 'EITHER',
+    locales: ['he'],
+    rationale:
+      'THE EXPRESSION THE WHOLE MISSION IS ABOUT. "tomorrow at 15:00" in Hebrew with the clock time in ' +
+      'DIGITS. It used to resolve to TODAY with ok:true - a validated booking one calendar day early ' +
+      '(FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md § 8.3). Swept, not just unit-tested, because the defect ' +
+      'was invisible until it was crossed with a zone and a `now`.',
+  },
+  {
+    key: 'e07-he-tomorrow-maqaf',
+    raw: 'מחר ב־15:00',
+    direction: 'EITHER',
+    locales: ['he'],
+    rationale:
+      'The same phrase written with U+05BE MAQAF instead of an ASCII hyphen - which is what a Hebrew ' +
+      'keyboard and a Hebrew-aware CRM actually produce. It reaches the grammar only because ' +
+      '`normalizeScript` maps it, so this cell fails if that step is ever dropped.',
+  },
+  {
+    key: 'e08-he-weekday-digit-time',
+    raw: 'יום חמישי ב-15:00',
+    direction: 'EITHER',
+    locales: ['he'],
+    rationale:
+      'A named Hebrew weekday rather than a relative day word. § 8.3 lists this as a second wrong-day ' +
+      'shape, and it exercises the weekday arithmetic on a week that starts on Sunday.',
+  },
+  {
+    key: 'e09-he-day-part',
+    raw: 'מחר אחרי הצהריים',
+    direction: 'EITHER',
+    locales: ['he'],
+    rationale:
+      'A Hebrew day part with NO clock time, so the documented preferred hour has to supply one. Also ' +
+      'the pair where the two-token day part must not collapse into the one-token named time for noon.',
+  },
+  {
+    key: 'e10-he-offset-dual',
+    raw: 'בעוד שעתיים',
+    direction: 'EITHER',
+    locales: ['he'],
+    rationale:
+      "Hebrew's DUAL: one word meaning two hours, with no separable quantity. It lands wherever `now` " +
+      'lands, so it crosses the business-hours boundary differently in every zone.',
+  },
+  {
+    key: 'e11-mixed-callback',
+    raw: 'call me back מחר ב-16:00',
+    direction: 'EITHER',
+    locales: ['he', 'en'],
+    rationale:
+      'The code-switched shape from `src/eval/corpus/scenarios.he.ts`: English carriers around a Hebrew ' +
+      'day word and time. Two lexicons have to match in one phrase and every token still has to be ' +
+      'accounted for.',
+  },
+  {
+    key: 'e12-mixed-english-time',
+    raw: 'מחר at 3pm',
+    direction: 'EITHER',
+    locales: ['he', 'en'],
+    rationale:
+      'The other half of the code switch - Hebrew day word, English clock time - and the fourth row of ' +
+      "§ 8.3's parser table. The `am/pm` path has to work next to a Hebrew anchor.",
   },
 ];
 
@@ -294,6 +388,99 @@ export const REJECTED_EXPRESSIONS: readonly ExpressionDimension[] = [
     direction: 'REJECT',
     rationale: 'Beyond every horizon in this matrix (max 365 days).',
   },
+
+  // -------------------------------------------------------------------------
+  // Refusals in, and around, the languages the lexicons cover.
+  //
+  // APPENDED for the reason given above `e06`: family E selects
+  // `REJECTED_EXPRESSIONS[9]` by index. Family C crosses this whole array with
+  // 5 zones and 2 instants, so each entry here is 10 scenarios, and each one
+  // must be unconditionally refusable in EVERY zone under EVERY policy in the
+  // matrix - which is why the list is refusals of the grammar rather than
+  // refusals of a policy.
+  // -------------------------------------------------------------------------
+  {
+    key: 'x11-he-unsettled-hour',
+    raw: 'מחר ב-9:00',
+    direction: 'REJECT',
+    locales: ['he'],
+    rationale:
+      'Hebrew has no am/pm, so 9:00 could be 09:00 or 21:00 and nothing settles it. The SAME rule that ' +
+      'refuses `tomorrow at 3` in English, applied by the same code - swept so that a future "helpful" ' +
+      'Hebrew default cannot be added without turning this cell red. docs/DECISIONS.md § 9.9.',
+  },
+  {
+    key: 'x12-he-hour-in-words',
+    raw: 'מחר אחרי הצהריים, בשתיים',
+    direction: 'REJECT',
+    locales: ['he'],
+    rationale:
+      'An hour spelled out in Hebrew WORDS, deliberately out of the lexicon. Two thirds of the phrase ' +
+      'IS understood, which is the dangerous shape: a grammar that refused only when it understood ' +
+      'nothing would let this through. It must refuse, naming `בשתיים`.',
+  },
+  {
+    key: 'x13-he-period-not-moment',
+    raw: 'שבוע הבא',
+    direction: 'REJECT',
+    locales: ['he'],
+    rationale:
+      'A PERIOD rather than a moment, in Hebrew. The English-only leftover blocklist could not see this ' +
+      'at all; the period rule is now per-locale data, and this cell is what keeps it declared.',
+  },
+  {
+    key: 'x14-he-vague',
+    raw: 'אולי מחר',
+    direction: 'REJECT',
+    locales: ['he'],
+    rationale:
+      'Hebrew vagueness ("maybe tomorrow") sitting next to a day word the grammar DOES understand. ' +
+      'Understanding half a phrase is not permission to book the other half.',
+  },
+  {
+    key: 'x15-arabic-digit-time',
+    raw: 'غدا في 15:00',
+    direction: 'REJECT',
+    locales: [],
+    rationale:
+      'THE GENERALISATION OF THE DEFECT. Arabic for "tomorrow at 15:00". No lexicon covers it and none ' +
+      'ever will here, so it must refuse naming the leftover rather than keeping the digits and ' +
+      'dropping the day word. `locales: []` records that no lexicon is expected to claim it.',
+  },
+  {
+    key: 'x16-russian-digit-time',
+    raw: 'завтра в 15:00',
+    direction: 'REJECT',
+    locales: [],
+    rationale: 'The same shape in Cyrillic. Named in the Founder Review alongside the Arabic case.',
+  },
+  {
+    key: 'x17-french-digit-time',
+    raw: 'demain à 15:00',
+    direction: 'REJECT',
+    locales: [],
+    rationale:
+      'The same shape in the SAME ALPHABET English uses, so nothing about the script can be what is ' +
+      'refusing it.',
+  },
+  {
+    key: 'x18-japanese-digit-time',
+    raw: '明日 15:00',
+    direction: 'REJECT',
+    locales: [],
+    rationale:
+      'A script no lexicon in this product\'s plausible future covers, written without spaces. The floor ' +
+      'of the claim: the rule names no alphabet, so it holds for alphabets nobody has thought about.',
+  },
+  {
+    key: 'x19-he-plus-unknown-token',
+    raw: 'מחר ב-15:00 blorp',
+    direction: 'REJECT',
+    locales: ['he'],
+    rationale:
+      'Perfectly good Hebrew plus ONE word of noise. The most dangerous shape of all, because enough is ' +
+      'understood to look like a successful parse. One unaccounted token must sink the whole phrase.',
+  },
 ];
 
 /** Offsets small enough to fall under a configured minimum lead time. */
@@ -309,6 +496,232 @@ export const LEAD_TIME_EXPRESSIONS: readonly ExpressionDimension[] = [
     raw: 'in 40 minutes',
     direction: 'EITHER',
     rationale: 'Over the default 30-minute lead but UNDER the tight policy\'s 120. Policy decides.',
+  },
+
+  // APPENDED for the reason given above `e06`: families C and E select
+  // `LEAD_TIME_EXPRESSIONS[0]` and `[1]` by index.
+  {
+    key: 'l03-he-in-five-minutes',
+    raw: 'בעוד 5 דקות',
+    direction: 'REJECT',
+    locales: ['he'],
+    rationale:
+      'The Hebrew translation of l01, and the same verdict for the same reason. Lead time is a policy ' +
+      'question and policy knows nothing about language, so a Hebrew phrase must be refused by the ' +
+      'lead-time gate rather than by the grammar - which only happens if the grammar understood it ' +
+      'first. A cell that turned INVALID_FORMAT here would mean the Hebrew offset had stopped parsing.',
+  },
+  {
+    key: 'l04-he-in-forty-minutes',
+    raw: 'בעוד 40 דקות',
+    direction: 'EITHER',
+    locales: ['he'],
+    rationale:
+      'The Hebrew translation of l02: over the default 30-minute lead, under the tight policy\'s 120. ' +
+      'The point of the pair is that the POLICY decides, identically, in either language.',
+  },
+];
+
+// ---------------------------------------------------------------------------
+// 3a-bis. The locale axes: parity pairs, and the zones and instants family L
+// crosses them with.
+//
+// WHY FAMILY L HAS ITS OWN ZONE AND `now` LISTS, AND WHY THAT IS A BOUND
+// ---------------------------------------------------------------------------
+// The obvious move would have been to add Asia/Jerusalem to `TIMEZONES`.
+// Families A, B, C, D, F, H and J all iterate that array, so one extra zone
+// costs 112 scenarios and two cost 224 - a 37% larger corpus, on a sweep that
+// already runs against real SQLite on a memory-constrained host, to re-prove
+// English behaviour in a zone that differs from the existing five only by its
+// offset.
+//
+// So the locale work is crossed with its OWN three zones instead. That is a
+// DELIBERATE BOUND, not an oversight, and it has a consequence worth stating
+// plainly: the Hebrew expressions are swept in three zones, not five, and the
+// two zones added here (Asia/Jerusalem, Pacific/Auckland) are NOT crossed with
+// families A-K. It is repeated in `KNOWN_COVERAGE_GAPS` in `tests/qa/report.ts`
+// so it appears in the printed report as well as here, and
+// `tests/scheduling/localeParity.test.ts` covers six zones at the resolver
+// level where a cell costs microseconds instead of a database.
+// ---------------------------------------------------------------------------
+
+export interface LocaleZoneDimension {
+  readonly key: string;
+  readonly zone: string;
+  readonly rationale: string;
+}
+
+export const LOCALE_ZONES: readonly LocaleZoneDimension[] = [
+  {
+    key: 'jer',
+    zone: 'Asia/Jerusalem',
+    rationale:
+      'THE ZONE THE DEFECT WAS FOUND IN, and one this sweep had no coverage of at all. It also ' +
+      'transitions on its own DST dates, neither the US ones nor the EU ones.',
+  },
+  {
+    key: 'nyc',
+    zone: 'America/New_York',
+    rationale: 'The fixture zone, so a Hebrew phrase is also swept somewhere the rest of the corpus lives.',
+  },
+  {
+    key: 'akl',
+    zone: 'Pacific/Auckland',
+    rationale:
+      'UTC+12/+13. The contact is on the far side of the date line from the Hebrew corpus, which is ' +
+      'where a day word computed on the wrong clock goes wrong by a whole day.',
+  },
+];
+
+export interface LocaleNowDimension {
+  readonly key: string;
+  readonly nowUtc: string;
+  readonly rationale: string;
+}
+
+export const LOCALE_NOW_INSTANTS: readonly LocaleNowDimension[] = [
+  {
+    key: 'ln1-midweek',
+    nowUtc: '2026-03-04T15:00:00.000Z',
+    // Deliberately the same instant as `n01-midweek`, so a difference between
+    // family L and families A/B cannot be a difference of clock.
+    rationale: 'The repository baseline: Wednesday 10:00 New York, 17:00 Jerusalem, Thursday 04:00 Auckland.',
+  },
+  {
+    key: 'ln2-across-local-midnight',
+    nowUtc: '2026-03-05T04:30:00.000Z',
+    rationale:
+      'America/New_York is on 2026-03-04 while UTC is already on 2026-03-05. A day word computed from ' +
+      'the UTC day rather than the contact clock is exactly one day out here, which is the § 8.3 shape.',
+  },
+];
+
+/**
+ * A Hebrew expression and its English translation, which MUST resolve to the
+ * same instant under the same `now`, zone and policy.
+ *
+ * This is the only dimension in this file that relates two inputs to each
+ * other, and it is the one `INV-16` is made of. It still predicts no outcome:
+ * it says "these two mean the same thing", never "they mean 15:00".
+ *
+ * `identical: false` marks a pair that is a faithful translation and is NOT
+ * expected to agree, with the reason. Those pairs are still swept - they have
+ * to satisfy every other invariant - and `INV-16` records them as inapplicable
+ * QUOTING THE REASON, so a reader of the report sees the exception rather than
+ * a silent absence.
+ */
+export interface LocaleParityPair {
+  readonly key: string;
+  /** The Hebrew or code-switched side. Keyed to an `ExpressionDimension`. */
+  readonly expressionKey: string;
+  readonly hebrew: string;
+  readonly english: string;
+  readonly identical: boolean;
+  /** Required when `identical` is false. */
+  readonly whyNotIdentical?: string;
+  readonly rationale: string;
+}
+
+export const LOCALE_PARITY_PAIRS: readonly LocaleParityPair[] = [
+  {
+    key: 'lp1-tomorrow-digit-time',
+    expressionKey: 'e06-he-tomorrow-digit-time',
+    hebrew: 'מחר ב-15:00',
+    english: 'tomorrow at 15:00',
+    identical: true,
+    rationale:
+      'The headline pair. These two resolved to DIFFERENT CALENDAR DAYS before the fix, and only the ' +
+      'English one was ever asserted anywhere.',
+  },
+  {
+    key: 'lp2-tomorrow-maqaf',
+    expressionKey: 'e07-he-tomorrow-maqaf',
+    hebrew: 'מחר ב־15:00',
+    english: 'tomorrow at 15:00',
+    identical: true,
+    rationale: 'The same pair with the maqaf spelling, so script normalisation is inside the parity claim.',
+  },
+  {
+    key: 'lp3-weekday-digit-time',
+    expressionKey: 'e08-he-weekday-digit-time',
+    hebrew: 'יום חמישי ב-15:00',
+    english: 'thursday at 15:00',
+    identical: true,
+    rationale:
+      'Weekday arithmetic has to be locale-agnostic: the Hebrew week starts on Sunday and the ISO week ' +
+      'on Monday, and the answer must not depend on which word was used.',
+  },
+  {
+    key: 'lp4-day-part',
+    expressionKey: 'e09-he-day-part',
+    hebrew: 'מחר אחרי הצהריים',
+    english: 'tomorrow afternoon',
+    identical: true,
+    rationale:
+      'A day part with no clock time. The preferred hour comes from POLICY, so the two languages must ' +
+      'reach the same policy value rather than each carrying their own default.',
+  },
+  {
+    key: 'lp5-offset-dual',
+    expressionKey: 'e10-he-offset-dual',
+    hebrew: 'בעוד שעתיים',
+    english: 'in two hours',
+    identical: true,
+    rationale:
+      "Hebrew's DUAL against English's quantity-plus-unit. Two entirely different grammar shapes that " +
+      'have to produce one instant.',
+  },
+  {
+    key: 'lp6-mixed-callback',
+    expressionKey: 'e11-mixed-callback',
+    hebrew: 'call me back מחר ב-16:00',
+    english: 'call me back tomorrow at 16:00',
+    identical: true,
+    rationale: 'Code-switched against wholly English, with the same carriers on both sides.',
+  },
+  {
+    key: 'lp7-mixed-english-time',
+    expressionKey: 'e12-mixed-english-time',
+    hebrew: 'מחר at 3pm',
+    english: 'tomorrow at 3pm',
+    identical: true,
+    rationale: 'The other code switch: only the day word is Hebrew, and it is the word that used to vanish.',
+  },
+  {
+    key: 'lp8-lead-time-short',
+    expressionKey: 'l03-he-in-five-minutes',
+    hebrew: 'בעוד 5 דקות',
+    english: 'in 5 minutes',
+    identical: true,
+    rationale:
+      'A pair that must be refused IDENTICALLY, by the lead-time gate rather than by the grammar. ' +
+      'Parity is not only about what resolves.',
+  },
+  {
+    key: 'lp9-hour-in-words',
+    expressionKey: 'x12-he-hour-in-words',
+    hebrew: 'מחר אחרי הצהריים, בשתיים',
+    english: 'tomorrow afternoon at 2pm',
+    identical: false,
+    whyNotIdentical:
+      'An hour spelled out in Hebrew WORDS is deliberately outside the lexicon, so the Hebrew side ' +
+      'refuses naming `בשתיים` while the English side resolves. Guessing that שתיים means 14:00 rather ' +
+      'than 02:00 is exactly the guess the fail-closed rule exists to refuse. docs/DECISIONS.md § 9.9. ' +
+      'Swept anyway, because every OTHER invariant still has to hold for it.',
+    rationale: 'The documented asymmetry, carried in the matrix rather than left out of it.',
+  },
+  {
+    key: 'lp10-unsettled-hour',
+    expressionKey: 'x11-he-unsettled-hour',
+    hebrew: 'מחר ב-9:00',
+    english: 'tomorrow at 9am',
+    identical: false,
+    whyNotIdentical:
+      'Hebrew has no am/pm, so `9:00` could be 09:00 or 21:00 and is refused; English carries `am` and ' +
+      'resolves. This is the pre-existing English rule applying unchanged by the same code, not a ' +
+      'Hebrew gap - `מחר ב-9:00 בבוקר` resolves, and that pair holds in ' +
+      '`tests/scheduling/localeParity.test.ts`. docs/DECISIONS.md § 9.9.',
+    rationale: 'The second documented asymmetry, for the same reason.',
   },
 ];
 
