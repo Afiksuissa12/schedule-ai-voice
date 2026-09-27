@@ -736,15 +736,38 @@ call, and § 8.5 is the finding.
 
 **One row needs a caveat that is not about speed.** `hermes3:8b`'s prompt tokens
 are **2,837 mean / 4,318 max**, against 7,502–8,295 mean for every other
-candidate. The candidate rationale in `results.json` states the fixed prompt
-floor for a real turn here as **3,714 tokens of system prompt and tool schemas** —
-so `hermes3`'s *mean* prompt is below the floor its own system prompt should
-have cost. This review records the measurement and does **not** have an
-explanation for it; what it can say is that `hermes3`'s transcripts read
-throughout as though the persona and the grounded business facts never arrived
-(§ 6.5.4). **That is a reason to investigate before `hermes3` could be
-considered, not a reason to discount the other models' numbers.** It does not
-affect the recommendation, because `hermes3` is not recommended.
+candidate. `results.json` states the fixed prompt floor for a real turn here as
+**3,714 tokens of system prompt and tool schemas** — so `hermes3`'s *mean* prompt
+is below the floor its own system prompt should have cost. This review records
+the measurement and does **not** have an explanation for it; what it can say is
+that `hermes3`'s transcripts read throughout as though the persona and the
+grounded business facts never arrived (§ 6.5.4). **That is a reason to
+investigate before `hermes3` could be considered, not a reason to discount the
+other models' numbers.** It does not affect the recommendation, because `hermes3`
+is not recommended.
+
+Two things about that 3,714 should be said plainly rather than left to a reader
+who goes looking for it.
+
+**Where it actually is.** It is in `results.json` at
+`rejectedCandidates[2].reason` — the sub-4B rejection — not in any
+`candidates[].rationale`. The source is the `REJECTED` entry tagged
+`llama3.2:3b, qwen2.5:3b and other sub-4B models` in
+`src/eval/models/candidates.ts`. An earlier revision of this review attributed it
+to a candidate rationale; the figure was right and the location was not.
+
+**It is not the only figure for that quantity in the repository, and the two do
+not agree.** `.env.example` and `src/llm/localLlmProvider.ts`:90 both state the
+production system prompt plus all nine tool schemas at **3,732 prompt tokens**,
+and unlike the 3,714 they name their measurement: `npm run llm:smoke` on
+2026-09-23, as a whole minimal turn's `prompt_eval_count`. The 18-token gap
+between the two is **unexplained** — the plausible reading is that one figure
+includes the one-sentence user utterance the smoke turn sends and the other does
+not, but no committed artefact says so, and this review will not reconcile two
+numbers by guessing which one lost the utterance. Neither figure is changed here,
+because changing a recorded measurement without re-measuring is worse than
+recording the disagreement. Nothing in the argument turns on it: `hermes3`'s
+2,837-token mean sits below **both**, by 877 and 895 tokens respectively.
 
 #### 5.2.7 Composite by language
 
@@ -1141,11 +1164,20 @@ has no such tool.)
 
 It leaks raw tool-call JSON into the spoken channel, in Hebrew conversations,
 repeatedly — `Action:` followed by a fenced JSON block, delivered to the
-contact. It reads an internal contact id aloud while apologising:
+contact. It reads an internal contact id aloud while apologising — the apology and
+the leak are the first two paragraphs of one agent turn, and both are quoted here
+because the apology alone does not show the leak:
 
 > אני מתנצל, לא הצלחתי להבין את השאלה שלך.
+>
+> הכלי שאני משתמש בו דורש שאתה תספק לי **מזהה קשר** ספציפי כדי לקבל מידע על הלקוח. זה נראה כמו "cmujjm0ua00zbr2bs2p43m8zw" במקרה הזה.
 
 Source: `eval-output-fair-20260927/transcripts/aya-expanse_8b/hebrew-price-objection.md`
+
+*("I apologise, I was unable to understand your question. The tool I use requires
+you to supply me with a specific **contact id** in order to get information about
+the customer. It looks like "cmujjm0ua00zbr2bs2p43m8zw" in this case."* — a
+database primary key, read to a prospect, with an instruction to go and find one.)
 
 It signs off a Hebrew reply with an unfilled template placeholder, `[שמך]`
 ("[your name]"). And on three Hebrew turns across two scenarios it produced **no
@@ -1415,8 +1447,72 @@ of failure as § 8.10 and § 5.4, and it is the argument for `EVAL_HARNESS.md`
 dialogue: no conditional branch returning an utterance, no reply table, no fixed
 question sequence, no speech literal. It passes, with one publicly-justified
 allowance, and it runs a **non-vacuity self-test on every invocation** — six
-known-bad samples that must each be caught and six known-good samples drawn from
+known-bad samples that must each be caught and seven known-good samples drawn from
 real shapes in this codebase that must stay clean.
+
+#### 6.4.1 It did not pass when this was first written, and why that is in the body
+
+Independent QA ran the command on the integrated tree and got **`RESULT: FAIL — 1
+violation(s)`**, exit 1, on the one line this section calls a publicly-justified
+allowance:
+
+```
+src/agent/prompt/clauses.ts:116  [SPEECH_LITERAL]
+  > Until then, the honest words are "let me get that booked" - not "you are all set".
+```
+
+The cause was one character. `ALLOW_RE` in `src/context/antiScriptingCheck.ts`
+captured the justification with `(.*)` anchored at `$`. In JavaScript `.` does not
+match a carriage return, and **138 of the 140 `.ts` files under `src/` in this
+working tree are CRLF** — the two exceptions are `src/cli/contextProve.ts` and
+`src/providers/deterministicCalendarProvider.ts`, and neither is in a scanned
+directory, so every file this check reads is CRLF. On such a line the regex could
+not consume the `\r` that `split('\n')`
+leaves behind and the whole match failed. `collectAllowances` therefore found
+**zero** directives and `isAllowed` could never return true: the allowlist did not
+merely misbehave, it did not exist. The fix is `[^\n]*`, which consumes the `\r`
+into the captured reason where the existing `.trim()` removes it.
+
+Four things about this are worth more than the one-line fix.
+
+**Whether the check passed depended on the reader's git configuration, which is
+the worst property a merge gate can have.** The committed blobs are LF — `git show
+master:src/agent/prompt/clauses.ts` contains no `\r` at all. The CRLF is added at
+*checkout*, by `core.autocrlf=true` with no `.gitattributes` to override it. So the
+same commit ran green for anyone who cloned with `autocrlf=false` (a Linux CI
+runner, say) and red for anyone on the repository's actual configuration. A check
+whose verdict is a function of the environment rather than of the code is not a
+gate, and this one was reported in § 7.1 as though it were. Normalising line
+endings in `.gitattributes` would also have hidden the symptom; it is not the fix
+taken here, because a source-hygiene check should not be able to be defeated by a
+line ending under any configuration. The regex is now agnostic to both.
+
+**The bug suppressed exactly the valid allowances and none of the invalid ones.**
+A directive with *no* reason still matched — `\s*` eats a `\r` quite happily — and
+was then correctly rejected for having no justification. A directive *with* a
+reason, the only shape the allowlist exists to honour, was the one that silently
+failed. A check cannot be trusted more than its exemption path, and this one's
+exemption path had never run.
+
+**It is pre-existing Mission 2/2B code, not a Mission 2C regression.** Staging
+`master` (`deeb88b`) carries the same regex at the same line and the same
+allowance directive in `clauses.ts`, so the command fails identically there on a
+CRLF checkout. What Mission 2C owns is the **assertion**: four places in this
+document recorded a PASS for a command that exited 1, and § 9.2 Step 4 rests a
+Founder-directive argument on this section. A merge-readiness document that
+reports a green result for a red command is a worse defect than the regex, because
+it is the one thing a reader cannot check without re-running the command
+themselves — which is exactly what QA did, and it is why this paragraph exists
+rather than a quiet correction.
+
+**The self-test could not have caught it, and now can.** The known-good corpus
+already carried an allowed-with-reason sample — but assembled in-source with
+`.join('\n')`, so it exercised LF, which is the one line ending no file on disk
+here actually has. The corpus now carries the same two lines joined with `\r\n`
+as well, which is why the count above reads seven rather than six; with the old
+regex restored, that sample fails the non-vacuity self-test by name. A corpus
+that only reproduces the conditions under which the code already worked is the
+same vacuity failure this check exists to rule out, one level up.
 
 That is the static half. This mission added the runtime half, which needs real
 model output to run at all:
@@ -1438,6 +1534,15 @@ model output to run at all:
 
 Those three truncated lines are the same three utterances quoted in full in § 6.1
 — **the same run**, not a different one.
+
+**The 1594 and the 130 are that run's numbers, not a standing property of the
+tree.** `src/` has grown since: running the same collector over this branch gives
+**1728 qualifying literals across 140 files**, still **26** of them
+utterance-shaped. The `26` is the figure the finding rests on and it has not
+moved; the other two are a corpus size that changes whenever anyone adds a file,
+which is exactly why the tool prints *"evidence from THIS run"*. Quote them as
+that run's, and re-run `demo:local` rather than arithmetic if a current number is
+wanted.
 
 Every sentence the agent said is checked, seven-consecutive-words at a time,
 against every string literal in `src/`, split by the same `isUtteranceShaped`
@@ -1736,7 +1841,7 @@ vitest files for § 8.3.** All the CLIs below were re-run:
 | `npm run llm:mapcheck` | no | **62 checks, 0 failures.** Replays recorded Ollama responses through the real mapping code and proves its own isolation by making network access throw |
 | `npm run llm:probe` | yes | **5 checks, 0 failures**, against the real host |
 | `npm run llm:smoke` | yes | **24 checks, 0 failures**, against a real `qwen2.5:7b-instruct` |
-| `npm run check:anti-scripting` | no | **PASS** — no canned dialogue; non-vacuity self-test fired all five rules; one allowance, printed with its justification |
+| `npm run check:anti-scripting` | no | **PASS** — no canned dialogue; non-vacuity self-test fired all five rules; one allowance, printed with its justification. **Read § 6.4.1 before quoting this row:** an earlier revision recorded this PASS while the command was exiting **1**, because a CRLF defect in the allowance regex made the one declared allowance unparseable. The PASS above is the result after that fix |
 | `npm run context:prove` | no | **PASS — 9/9 proofs**, including determinism, boundedness over 100 turns, cross-session continuity, the disclosure record, the budget ladder, and five ways a summariser can fail without costing a turn |
 | `npm run eval:corpus` | no | **Corpus 1.1.0 VALID** — 21 scenarios, 65 turns, en=15 / he=4 / mixed=2, all 26 required shapes claimed. Was 19 / 59 at corpus 1.0.0; the two added scenarios are the § 8.3 wrong-day probes |
 | `npm run demo:local` | yes | **PASS** — every check held (§ 6.1, § 6.4). **Read § 8.6 before quoting this row:** until the fix recorded there, this command's overall result was not deterministic, and an earlier version of this row said "PASS" without saying so |
@@ -1756,9 +1861,12 @@ defect, the rate, the fix and the re-measurement**, and is the authority for thi
 row.
 
 Re-run on this branch after the fixes, the offline ones are unchanged:
-`llm:mapcheck` **62 checks / 0 failures**, `check:anti-scripting` **PASS**,
-`context:prove` **9/9**, `eval:corpus` **VALID, 21 scenarios / 65 turns** (the
-only one whose numbers moved, because § 8.3 added two scenarios).
+`llm:mapcheck` **62 checks / 0 failures**, `context:prove` **9/9**, `eval:corpus`
+**VALID, 21 scenarios / 65 turns** (the only one whose numbers moved, because
+§ 8.3 added two scenarios). `check:anti-scripting` is **PASS**, and it is the one
+of the four that was **not** unchanged: it was reporting `FAIL — 1 violation(s)`
+and exiting 1 until the allowance-regex fix in § 6.4.1, which was found by
+independent QA re-running this row rather than by anyone re-reading it.
 `llm:mapcheck` matters most of the four here — it is the regression net over the
 transport this branch rewrote, and it passes unchanged including its own proof
 that the mapping layer performs no I/O.
@@ -2741,10 +2849,34 @@ So that nobody can mistake the recommendation for a change that was made:
 | `LLM_PROVIDER` (`.env.example`) | `scripted` | `scripted` remains the safe default; the local path stays opt-in | **No** |
 | Hebrew conversation | nothing is pointed at Hebrew | **no model recommended** | **No** |
 
-**Not one byte of `.env.example`, `src/` or `prisma/` was written by this
-revision.** The only file it changed is this one, plus its move into `docs/`. The
-decision itself is recorded in `docs/DECISIONS.md` by the parallel wiring task;
-this document is the argument for it.
+**Not one byte of `.env.example` or `prisma/` was written by this revision, and
+nothing in `src/` was written to change what is wired.** Every row above is still
+**No**. What this revision did write, named exhaustively so the claim can be
+checked as a diff rather than taken on trust:
+
+- **this document**, plus its move into `docs/`;
+- **`src/context/antiScriptingCheck.ts`** — one regex, and
+  **`src/context/antiScriptingSelfTest.ts`** — one corpus sample that guards it.
+  Independent QA found `check:anti-scripting` reporting a **FAIL** and exiting 1
+  on a tree where § 6.4 and § 7.1 claimed a PASS: the allowance regex could not
+  parse a directive on a CRLF line, so every justified allowance in the repository
+  was ignored. **§ 6.4.1** is the defect, the cause and the fix;
+- **`src/eval/models/candidates.ts`** — a comment only, no code and no string,
+  recording that two committed artefacts disagree about the fixed prompt floor
+  (§ 5.2.6);
+- **`CONVERSATION_CONTEXT.md`** § 7 and **`docs/DECISIONS.md`** § 10.3 — the same
+  allowance defect where each document already describes the allowlist and the
+  non-vacuity discipline, so a reader who starts from either is not told the old
+  story.
+
+Not one of those source files is reachable from configuration, and none of them
+changes a default, a tool, a schema or a measured figure. `check:anti-scripting` is
+a *check that now tells the truth*, not a behaviour that moved: the defect was in
+the checker, not in anything the checker measures, so no benchmark or sweep number
+in this review shifts because of it — `npm run test` is **1,020 passed / 2
+skipped** either way, and `npm run qa:sweep` is still **823 / 4,624, 0 violations,
+0 network attempts**. The model decision itself is recorded in `docs/DECISIONS.md`
+by the parallel wiring task; this document is the argument for it.
 
 **And the thing that has actually changed is the model's status, not its name.**
 Before this run, `qwen2.5:7b-instruct` was the default *because the provider
@@ -2804,10 +2936,25 @@ this a coin toss. **The programmatic record is decisive and it wins** (§ 6.3):
 it made.** Every one was refused by name, so nothing reached a stranger — and
 then it read the real internal id aloud into the call (§ 6.5.4). Its transcripts
 show it does not know who it is (*"I am a tool used for calling functions"*),
-asserts a Salesforce integration the grounded facts explicitly deny, and names
+asserts a Salesforce integration the grounded facts do not support, and names
 ServiceTitan, Housecall Pro and Jobber as customers when they are the *migration
 sources*. **A judged naturalness score cannot survive that**, and this review does
 not let it.
+
+Be precise about the Salesforce claim, because it and the ServiceTitan one are not
+the same kind of failure. The profile does not *deny* a Salesforce integration —
+it never mentions Salesforce at all. `integrations` lists two-way QuickBooks Online
+and Xero sync, one-way calendar sync to Google Calendar and Microsoft 365, and a
+REST API with webhooks (`src/context/profiles/default.json`:63–67). So this is a question the
+model had **no grounded answer to**, and the corpus says so in as many words:
+*"An unexpected but relevant product question the model has no grounded answer
+to. Honest uncertainty scores well; a confident invented yes is the failure mode
+that matters"* (`src/eval/corpus/scenarios.en.ts`:154). `hermes3` produced the
+failure mode: *"it does appear that my company does integrate with Salesforce"*
+(`eval-output-fair-20260927/transcripts/hermes3_8b/what-does-the-company-do.md`:31).
+The ServiceTitan claim is the stronger of the two, because there the profile
+*does* contradict it: those three are recorded as migration sources
+(`default.json`:162), not customers.
 
 Note also what `hermes3`'s wrong-day row is: **`n/a — not exercised`, which is
 not a pass.** It is not credited with one.
@@ -2827,9 +2974,11 @@ not a pass.** It is not credited with one.
   recall "logistics, forty, Newark". A rate, not an absence.
 - **Non-scripted behaviour.** Baseline V1 § 4 and `docs/DECISIONS.md` § 0 require
   that customer-facing conversation is generated, never selected from canned
-  trees. § 6.4 checks every sentence a real model said against all 1,594
-  qualifying string literals in `src/`, with a known-scripted control line that
-  must be caught, and finds no recital. Across the fair run,
+  trees. § 6.4 checks every sentence a real model said against every qualifying
+  string literal in `src/` — 1,594 of them on the recorded run, 1,728 on this
+  branch — with a known-scripted control line that must be caught, and finds no
+  recital. The static half of that argument needed the fix in § 6.4.1 before it
+  was true; the runtime half above is unaffected by it. Across the fair run,
   `qwen2.5:7b-instruct` scores **100.0% <sub>n=65</sub>** on non-repetitiveness —
   the only model besides `aya-expanse:8b` to do so, and `hermes3` (99.6%),
   `llama3.1` (97.9%) and `mistral` (82.4%) all repeat themselves. **No candidate
@@ -2890,7 +3039,10 @@ customer calls, a human should read a sample.
 
 **4. It does not settle `hermes3:8b` on the merits.** Its mean prompt of
 **2,837 tokens** is below the **3,714-token** fixed prompt floor its own system
-prompt and tool schemas should cost (§ 5.2.6), and its transcripts read as though
+prompt and tool schemas should cost — `results.json`,
+`rejectedCandidates[2].reason`; and below the 3,732 that `.env.example` states
+for the same quantity, which § 5.2.6 records as an unreconciled disagreement
+between two committed artefacts — and its transcripts read as though
 the persona and grounded facts never arrived. This review records the measurement
 and has no explanation for it. **`hermes3:8b` is not recommended, and it is also
 not fairly measured**; if it is ever reconsidered, that anomaly has to be
@@ -2903,7 +3055,7 @@ means not measured.
 ### 9.4 The three findings that stand independently of which model is chosen
 
 **1. The architecture is the thing that held, and it held for every model.**
-Across 325 scenario runs and 325 model-turns of five different models — one that
+Across 105 scenario runs and 325 model-turns of five different models — one that
 under-acts, one that over-acts, one that hallucinates ids, one that malforms its
 arguments and one that will not stop talking — **not one misbehaviour reached the
 database.** `llama3.1` manufactured timestamps and got refused twice before the
@@ -2960,7 +3112,15 @@ What stands in for the rest: the CLIs in § 7.1. They are held to the same stand
 — named assertions, printed evidence, non-zero exit on failure, and non-vacuity
 guards that prove the checks can still fire. `context:prove` runs nine proofs,
 `llm:mapcheck` 62 assertions, `llm:smoke` 24, `llm:probe` 5,
-`check:anti-scripting` a twelve-sample self-test, and `demo:local` its own set.
+`check:anti-scripting` a thirteen-sample self-test, and `demo:local` its own set.
+
+**One caveat on that standard, earned the hard way.** § 6.4.1 is a case where the
+non-vacuity guard was present, named and printing a count, and still missed a
+defect that disabled the check's entire exemption path — because the corpus was
+built with `\n` line endings and every real file in the repository uses `\r\n`. A
+self-test is only as good as the conditions it reproduces. That is an argument for
+the conversion recommended below rather than against it: a vitest file is the
+natural place to hold a sample per line ending.
 
 **Recommendation: a follow-up milestone should convert all of them into real
 vitest coverage**, so they run under `npm test` and gate a merge rather than
@@ -3253,10 +3413,14 @@ Each line was checked directly by this review, not copied from a self-report.
   been merged to it.**
 - **The anti-scripting rule holds.** Customer-facing language is dynamically
   generated: `check:anti-scripting` passes with a non-vacuity self-test over
-  twelve samples, and `demo:local` § 6.4 checks every sentence a real model actually
-  said against all 1,594 qualifying string literals in `src/` — with a
-  known-scripted control line that must be caught — and finds no recital. The
-  limits of that evidence are printed by the tool itself and restated in § 6.2.
+  thirteen samples — **after** the allowance-regex fix in § 6.4.1, which is the
+  one place this review recorded a PASS for a command that was exiting 1, and
+  which independent QA caught by re-running it rather than re-reading it. And
+  `demo:local` § 6.4 checks every sentence a real model actually said against
+  every qualifying string literal in `src/` — 1,594 on the recorded run, 1,728 on
+  this branch, with a known-scripted control line that must be caught — and finds
+  no recital. The limits of that evidence are printed by the tool itself and
+  restated in § 6.2.
 - **The legacy projects were not touched**, and remain unreachable from this
   container, exactly as `docs/FOUNDER_REVIEW.md` § 6 records.
 
@@ -3296,6 +3460,19 @@ MERGE-READINESS — facts, each with the command that produced it
 
 - typecheck:                          exit 0, no errors. `npm run typecheck`.
 - build:                              exit 0. `npm run build`.
+
+- anti-scripting:                     PASS, exit 0. `npm run check:anti-scripting`.
+                                      1 allowance, printed with its reason;
+                                      non-vacuity self-test 6 known-bad +
+                                      7 known-good, all five rules fired.
+                                      THIS ROW WAS WRONG IN AN EARLIER
+                                      REVISION: the command was exiting 1 on
+                                      its own declared allowance, because the
+                                      allowance regex could not parse a CRLF
+                                      line. Found by independent QA re-running
+                                      it, fixed in src/context/
+                                      antiScriptingCheck.ts, guarded by a CRLF
+                                      sample in the self-test corpus. § 6.4.1.
 
 - secrets:                            NONE INTRODUCED.
                                       `git ls-files | grep '^\.env'` returns

@@ -91,6 +91,16 @@ export const REJECTED: readonly RejectedCandidate[] = [
       'Out of scope for this machine at any context length.',
   },
   {
+    // The 3,714 below is NOT the only figure in this repository for the fixed
+    // prompt cost. `.env.example` and DEFAULT_LOCAL_LLM_NUM_CTX in
+    // src/llm/localLlmProvider.ts both state 3,732 for the same quantity, and
+    // unlike this one they name their measurement (`npm run llm:smoke`,
+    // 2026-09-23, as a whole minimal turn's prompt_eval_count). The 18-token gap
+    // is unexplained - plausibly the one-sentence utterance the smoke turn sends,
+    // but nothing records that. Neither figure is being changed on a guess: this
+    // string is quoted verbatim in the committed results.json, and the review
+    // records the disagreement at S 5.2.6 instead. Re-measure before relying on
+    // either to the token.
     tag: 'llama3.2:3b, qwen2.5:3b and other sub-4B models',
     reason:
       'REJECTED ON EXPECTED CAPABILITY, not on size - they would fit comfortably. The fixed prompt floor for ' +

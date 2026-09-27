@@ -108,6 +108,20 @@ export const KNOWN_BAD: readonly BadSample[] = [
 ];
 
 /**
+ * The allowance sample's LINES, shared by the two KNOWN_GOOD entries that join
+ * them with `\n` and with `\r\n`.
+ *
+ * Declared once rather than written out twice so that the two samples cannot
+ * drift apart - the whole point of the pair is that the TEXT is identical and
+ * only the line ending differs, which a copy-paste would quietly stop being
+ * true of.
+ */
+const ALLOWED_GUARDRAIL_EXAMPLE = [
+  '// anti-scripting:allow SPEECH_LITERAL - a guardrail example contrasting two phrasings, not a line to deliver',
+  'const CLAUSE = "Until then, the honest words are \\"let me get that booked\\" - not \\"you are all set\\".";',
+] as const;
+
+/**
  * Shapes this codebase really contains, which must stay clean.
  *
  * If a rule ever fires on one of these, the rule is wrong, not the code. That
@@ -153,10 +167,24 @@ export const KNOWN_GOOD: readonly Sample[] = [
   },
   {
     name: 'an allowed guardrail example, with a reason',
-    source: [
-      '// anti-scripting:allow SPEECH_LITERAL - a guardrail example contrasting two phrasings, not a line to deliver',
-      'const CLAUSE = "Until then, the honest words are \\"let me get that booked\\" - not \\"you are all set\\".";',
-    ].join('\n'),
+    source: ALLOWED_GUARDRAIL_EXAMPLE.join('\n'),
+  },
+  {
+    // The SAME lines, joined with CRLF, and this pair is not redundant.
+    //
+    // The LF form above passed for the whole of Mission 2 while the CRLF form
+    // did not: the allowance regex captured its reason with `(.*)`, `.` does not
+    // match a carriage return, and every file in this checkout is CRLF - so the
+    // directive never matched, `collectAllowances` returned nothing, and every
+    // justified allowance in the repository was reported as a violation. The
+    // check exited 1 on its own declared exemption.
+    //
+    // Nothing caught that for two missions because this corpus was LF-only,
+    // which is to say it tested the one line ending the repository does not use.
+    // A non-vacuity corpus that reproduces conditions the code never meets is
+    // the same failure it exists to rule out, one level up.
+    name: 'the same sample with CRLF endings',
+    source: ALLOWED_GUARDRAIL_EXAMPLE.join('\r\n'),
   },
 ];
 

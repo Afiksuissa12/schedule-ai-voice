@@ -417,10 +417,21 @@ switched off. So code is judged on what text **does**, not on what it says.
 **It is proved non-vacuous on every run.** A green result that has not demonstrated the
 rules can still fire is not evidence of anything, so the CLI always runs a corpus with the
 answers written down: six known-bad samples (each must produce a specific rule, and every
-rule must be triggered by something) and six known-good samples drawn from shapes this
+rule must be triggered by something) and seven known-good samples drawn from shapes this
 codebase really contains (guardrail prose, an error-code branch, a validation message, a
 business fact, summariser instructions) which must stay clean. Precision matters as much as
 recall: a check that fails on real code gets turned off, which is worse than no check.
+
+**One of those seven is the same sample twice, and that pair is the scar of a real
+defect.** The allowed-with-reason sample appears once joined with `\n` and once with
+`\r\n`. Until Mission 2C the corpus was LF-only, while `core.autocrlf=true` means every
+one of the 27 files this check reads is CRLF on disk — and `ALLOW_RE` captured its reason
+with `(.*)`, which cannot match across a carriage return. So `collectAllowances` found **no directives at all**, the
+allowlist did not work, and `check:anti-scripting` exited 1 on the one allowance this
+document says is in force. The regex now uses `[^\n]*`; the CRLF sample is what stops that
+coming back. Read it as a warning about corpora generally: a non-vacuity corpus built with
+string literals in a test file reproduces whatever the author typed, not what the
+repository contains.
 
 ### What it cannot catch — read this before trusting it
 
