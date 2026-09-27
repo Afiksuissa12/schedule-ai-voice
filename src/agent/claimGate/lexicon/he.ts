@@ -44,6 +44,9 @@
  *    is therefore missed, and that is recorded as a known limit.
  *  - העברתי. It means both "I transferred [to a colleague]" and "I moved [the
  *    meeting]", so it cannot say which family it belongs to.
+ *  - תועדו, the RECORD plural. `tests/claimGate/claimGateCorpus.ts` records it as
+ *    a miss and it stays one here; it is the same shape of gap סידרתי was and it
+ *    is not in this fix's scope.
  *  - Clock times, weekdays, day anchors and day parts. Those come from
  *    `src/scheduling/lexicon/he.ts` through the verifier, so the gate and the
  *    resolver cannot disagree about what מחר means.
@@ -89,7 +92,14 @@ export const HE_CLAIM_LEXICON: ClaimLexicon = {
     // סגרנו is colloquial and means "we have closed it". It is included rather
     // than excluded on the fail-safe rule: a contact who hears it takes it as a
     // settled arrangement, so the system should be able to show one.
-    { forms: ['סגרנו', 'הכל מסודר', 'הכל סגור', 'זה סגור', 'מסודר'], family: 'ANY', mode: 'COMPLETED' },
+    //
+    // סידרתי / סידרנו are the first-person past of the same root as מסודר, which
+    // was already here as the adjective. They were missing, and independent QA
+    // showed `סידרתי לך פגישה למחר בשעה 15:00.` reaching a contact end to end with
+    // nothing booked. They belong in ANY rather than in MEETING for the same
+    // reason מסודר does: the verb says something was arranged and does not say
+    // what, so any state-changing effect should satisfy it.
+    { forms: ['סגרנו', 'הכל מסודר', 'הכל סגור', 'זה סגור', 'מסודר', 'סידרתי', 'סידרנו'], family: 'ANY', mode: 'COMPLETED' },
   ],
 
   identifierMarkers: ['מספר אישור', 'קוד אישור', 'מספר הזמנה', 'מספר סידורי', 'מספר האישור', 'אסמכתא'],

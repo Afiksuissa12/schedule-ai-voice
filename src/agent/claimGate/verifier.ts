@@ -163,8 +163,16 @@ export function verifyClaims(input: VerifyClaimsInput): ClaimVerification {
 
     if (claim.kind === 'IDENTIFIER_ASSERTED') {
       // A phrase announcing an identifier, with no identifier-shaped token
-      // beside it. Supported only when the system actually has one to give -
-      // anything else is a promise of a reference that does not exist.
+      // beside it AT ALL. Supported only when the system actually has one to
+      // give - anything else is a promise of a reference that does not exist.
+      //
+      // The narrower reading is deliberate and it is why the check above runs
+      // first: a marker phrase with a number-shaped token next to it is decided
+      // by whether THAT token was issued, not by whether some unrelated
+      // operational identifier exists. The detector collects the looser
+      // number-and-code shapes for exactly this claim, so
+      // `Your confirmation number is 483921.` reaches the INVENTED_IDENTIFIER
+      // branch instead of being satisfied here by a real booking's row id.
       if (claim.identifiers.length > 0 || hasIssuedOperationalIdentifier(input.ledger)) {
         supported.push({ claim, matchedEffect: null });
       } else {

@@ -20,6 +20,7 @@ import { describe, expect, it } from 'vitest';
 import {
   detectMaterialClaims,
   identifierShapeOf,
+  markerAdjacentShapeOf,
   IDENTIFIER_SHAPE_FORM,
 } from '../../src/agent/claimGate/detector.js';
 import type { ClaimLexicon } from '../../src/agent/claimGate/lexicon/index.js';
@@ -140,6 +141,88 @@ describe('the detector deliberately finds nothing', () => {
 
   it('in a product name that merely contains digits', () => {
     expect(detectMaterialClaims('Fieldpoint360 covers that, and v2 is out in March.')).toEqual([]);
+  });
+});
+
+describe('the detector reads the first-person simple past', () => {
+  /**
+   * The tense the lexicon did not have, as a table.
+   *
+   * The first revision of `lexicon/en.ts` carried only the perfect and the
+   * passive, so `I've booked the callback for 3pm` was caught and `I booked the
+   * callback for 3pm` was released - the § 6.5.4 defect one inflection sideways.
+   * Independent QA drove these through the real `AgentTurnService` and seven of
+   * eight reached the caller AND were persisted as spoken agent turns, with the
+   * gate reporting NO_MATERIAL_CLAIM, which means the ledger was never read.
+   *
+   * Each row names the family the frame commits to, because a claim that fires
+   * with the wrong family is judged against the wrong effects.
+   */
+  const PRETERITE: readonly (readonly [string, string])[] = [
+    ['I booked the callback for 3pm tomorrow.', 'MEETING'],
+    ['I scheduled the callback for 3pm tomorrow.', 'MEETING'],
+    ['I confirmed your meeting for tomorrow at 3pm.', 'MEETING'],
+    ['I booked you in for tomorrow at 3pm.', 'MEETING'],
+    ['I have reserved tomorrow at 3pm for you.', 'MEETING'],
+    ['I saved the appointment for Thursday.', 'MEETING'],
+    ["I've put you down for tomorrow at 3pm.", 'MEETING'],
+    ['We booked the callback for 3pm.', 'MEETING'],
+    ['I just booked it.', 'MEETING'],
+    ['I went ahead and booked it for 3pm tomorrow.', 'MEETING'],
+    ['I cancelled your meeting.', 'CANCELLATION'],
+    ['I canceled the meeting for you.', 'CANCELLATION'],
+    ['I moved your meeting to Friday at 10am.', 'RESCHEDULE'],
+    ['I rescheduled your meeting to Friday at 10am.', 'RESCHEDULE'],
+    ["I've gone ahead and arranged the callback for 3pm.", 'CALLBACK'],
+    ['I sent you a confirmation email with all the details.', 'MESSAGE'],
+    ["That's sorted for 3pm tomorrow.", 'ANY'],
+    ["Done - you're on the calendar for tomorrow afternoon.", 'ANY'],
+    ['סידרתי לך פגישה למחר בשעה 15:00.', 'ANY'],
+  ];
+
+  for (const [text, family] of PRETERITE) {
+    it(`as a ${family} claim in ${JSON.stringify(text)}`, () => {
+      expect(familiesIn(text)).toContain(family);
+    });
+  }
+
+  it('and still finds nothing in the past-tense sentences that assert nothing', () => {
+    // The precision direction. Both of these fired while the frames were being
+    // written, which is why `sorted` and `saved` carry their objects.
+    expect(detectMaterialClaims('I sorted through the options with you.')).toEqual([]);
+    expect(detectMaterialClaims('I saved you some time by checking the diary first.')).toEqual([]);
+    expect(detectMaterialClaims("I'll get that all sorted for you.")).toEqual([]);
+    expect(detectMaterialClaims('Let me get you on the calendar for Thursday.')).toEqual([]);
+  });
+});
+
+describe('a number-shaped token beside an identifier marker', () => {
+  it('is collected as an identifier, which a bare digit run is not', () => {
+    const beside = detectMaterialClaims('Your confirmation number is 483921.');
+    expect(beside.flatMap((claim) => claim.identifiers)).toContain('483921');
+
+    // Without the marker phrase the same digits are a price, a duration or a
+    // house number, and § 4.4's trade stands: they are NOT an identifier.
+    expect(detectMaterialClaims('Your confirmation is 884213.')).toEqual([]);
+  });
+
+  it('but a date or a clock reading in the same sentence is not', () => {
+    // `2026` is a year and `3pm` is a time, and a sentence that mentions a
+    // reference does not turn either of them into one.
+    const dated = detectMaterialClaims('Your confirmation number is for the meeting on 5 March 2026.');
+    expect(dated.flatMap((claim) => claim.identifiers)).toEqual([]);
+    const timed = detectMaterialClaims('Your booking reference relates to the 3pm slot tomorrow.');
+    expect(timed.flatMap((claim) => claim.identifiers)).toEqual([]);
+  });
+
+  it('and the marker-only shape table says which rule fired', () => {
+    expect(markerAdjacentShapeOf('483921')).toBe('DIGIT_RUN');
+    expect(markerAdjacentShapeOf('48-3921')).toBe('GROUPED_DIGITS');
+    expect(markerAdjacentShapeOf('AB12')).toBe('LETTER_LED_CODE');
+    // Letter-first on purpose: a time is not a reference.
+    expect(markerAdjacentShapeOf('3pm')).toBeNull();
+    expect(markerAdjacentShapeOf('v2')).toBeNull();
+    expect(markerAdjacentShapeOf('45')).toBeNull();
   });
 });
 

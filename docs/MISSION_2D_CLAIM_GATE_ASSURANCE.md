@@ -239,13 +239,22 @@ walk.
 `npm run test` → `tests/claimGate/claimGateNonVacuity.test.ts`, 4 tests, all
 passing. Corpus size and coverage, taken from the runner:
 
+> **Re-measured after the first-person-preterite fix**
+> (`docs/MISSION_2D_CLAIM_GATE.md` § 14). The counts below are the current ones;
+> the figures this section was first published with are in the right-hand column,
+> because a table that is silently overwritten cannot be checked against the run
+> that produced it. Nothing was removed from the corpus — every increase is an
+> addition.
+
 ```
-failures            : 0
-mustFlagChecked     : 35      (every one MUST produce a claim)
-mustNotFlagChecked  : 14      (none may produce one)
-ledgerCasesChecked  : 14      (8 unsupported + 6 supported)
-documentedMisses    : 14      (asserted as STILL missed)
-knownFalsePositives : 3       (asserted as STILL wrongly rejected)
+                                                                    AS FIRST
+                                                                    PUBLISHED
+failures            : 0                                             0
+mustFlagChecked     : 56      (every one MUST produce a claim)       35
+mustNotFlagChecked  : 18      (none may produce one)                 14
+ledgerCasesChecked  : 18      (12 unsupported + 6 supported)         14
+documentedMisses    : 14      (asserted as STILL missed)             14
+knownFalsePositives : 4       (asserted as STILL wrongly rejected)   3
 
 families exercised  : ANY, CALLBACK, CANCELLATION, HANDOVER, MEETING, MESSAGE, RECORD, RESCHEDULE   (8/8)
 locales exercised   : any, en, he
@@ -254,18 +263,26 @@ identifier shapes   : CODE_LIKE, CUID_LIKE, PREFIXED_CODE   (3/3)
 unsupported reasons : EFFECT_WAS_REFUSED, INVENTED_IDENTIFIER, NO_MATCHING_EFFECT,
                       NO_TOOL_FOR_PROMISE, WRONG_DAY, WRONG_TIME   (6/6)
 
-20 distinct kind/family/mode/locale triples fired:
+21 distinct kind/family/mode/locale triples fired (was 20):
   EFFECT_ASSERTED/ANY/COMPLETED/en           EFFECT_ASSERTED/ANY/COMPLETED/he
   EFFECT_ASSERTED/CALLBACK/COMMITTED/en      EFFECT_ASSERTED/CALLBACK/COMMITTED/he
   EFFECT_ASSERTED/CALLBACK/COMPLETED/en      EFFECT_ASSERTED/CANCELLATION/COMPLETED/en
   EFFECT_ASSERTED/CANCELLATION/COMPLETED/he  EFFECT_ASSERTED/HANDOVER/COMMITTED/en
   EFFECT_ASSERTED/HANDOVER/COMMITTED/he      EFFECT_ASSERTED/MEETING/COMPLETED/en
   EFFECT_ASSERTED/MEETING/COMPLETED/he       EFFECT_ASSERTED/MESSAGE/COMMITTED/en
-  EFFECT_ASSERTED/MESSAGE/COMMITTED/he       EFFECT_ASSERTED/RECORD/COMPLETED/en
-  EFFECT_ASSERTED/RECORD/COMPLETED/he        EFFECT_ASSERTED/RESCHEDULE/COMPLETED/en
-  EFFECT_ASSERTED/RESCHEDULE/COMPLETED/he    IDENTIFIER_ASSERTED/ANY/COMPLETED/any
-  IDENTIFIER_ASSERTED/ANY/COMPLETED/en       IDENTIFIER_ASSERTED/ANY/COMPLETED/he
+  EFFECT_ASSERTED/MESSAGE/COMMITTED/he       EFFECT_ASSERTED/MESSAGE/COMPLETED/en
+  EFFECT_ASSERTED/RECORD/COMPLETED/en        EFFECT_ASSERTED/RECORD/COMPLETED/he
+  EFFECT_ASSERTED/RESCHEDULE/COMPLETED/en    EFFECT_ASSERTED/RESCHEDULE/COMPLETED/he
+  IDENTIFIER_ASSERTED/ANY/COMPLETED/any      IDENTIFIER_ASSERTED/ANY/COMPLETED/en
+  IDENTIFIER_ASSERTED/ANY/COMPLETED/he
 ```
+
+The twenty-first triple is `EFFECT_ASSERTED/MESSAGE/COMPLETED/en`, and its absence
+from the first run is worth naming rather than absorbing: the English MESSAGE family
+had only `COMMITTED` forms exercised, because every sample said *"I'll send you a
+confirmation email"* and none said *"I sent you a confirmation email"* — the
+preterite the lexicon had no form for. The corpus reported coverage of the MESSAGE
+family truthfully and of that family's COMPLETED mode not at all.
 
 The family list is guarded at **compile time**, not by hand: `FAMILY_COVERAGE` is
 a `Record<ClaimEffectFamily, true>`, so if the gate task adds a ninth family this
@@ -336,6 +353,31 @@ are — the numbers below are p50/p95/mean over the stated run count on this hos
 
 First detector call in a fresh process, cache cold: **1.830 ms**, once per
 process (`text.ts` memoises every lexicon form split in `FORM_TOKENS`).
+
+> **Re-measured after the first-person-preterite fix**
+> (`docs/MISSION_2D_CLAIM_GATE.md` § 14.1). That fix took the English lexicon from
+> 112 completion forms to 775, which through the full scan this table was measured
+> against would have put the worst case at **14.1 ms** — a 2.3x regression. It does
+> not, because `matchLongestForm` now indexes each forms array by first token, so
+> its cost no longer depends on how many forms there are. Same command, same host,
+> `--runs 600`:
+>
+> | Sample | This table | After § 14 |
+> |---|---:|---:|
+> | `en-short-no-claim` | 0.035 ms | 0.033 ms |
+> | `en-short-claim` | 0.039 ms | 0.034 ms |
+> | `en-realistic-claim` | 0.122 ms | 0.082 ms |
+> | `he-short-claim` | 0.032 ms | 0.021 ms |
+> | `he-realistic-claim` | 0.102 ms | 0.066 ms |
+> | `mixed-realistic-claim` | 0.067 ms | 0.044 ms |
+> | **`mixed-worst-case-7402`** | **6.103 ms** | **3.847 ms** |
+>
+> Cache-cold first call rose to **3.491 ms**, once per process, because the index
+> is built on first use of each forms array as well as the split. The claim counts
+> are unchanged, including the 116 on the worst case, so the two runs are measuring
+> the same work. § 4.3's conclusion is untouched and is now stronger: one
+> `db.audit.record()` insert measured 28.7 ms p50 on the re-run, against a detector
+> pass of 3.8 ms on the worst input this repository has evidence for.
 
 `verifyClaims` calls the detector itself, so the third column is what one release
 really costs — not the first two added together.
@@ -581,6 +623,30 @@ I recommended the second.
 **A related miss in the same area:** `"I've arranged the callback for 3pm."`
 produces **zero** claims — `'is arranged'`/`'has been arranged'` are
 passive-framed, so the active `"i've arranged"` matches nothing in any family.
+
+> **Status after the first-person-preterite fix** (`docs/MISSION_2D_CLAIM_GATE.md`
+> § 14), added by the fix, not by this audit:
+>
+> - **The related miss is CLOSED.** `"I've arranged the callback for 3pm."` now
+>   fires as `CALLBACK/COMPLETED`, because `arranged` is a first-person frame verb
+>   in the CALLBACK family. `MUST_FLAG` carries
+>   `"I've gone ahead and arranged the callback for 3pm."`.
+> - **The false positive is NOT closed, and it is now reachable by more wordings.**
+>   Neither fix offered above was taken. `KNOWN_FALSE_POSITIVES` gained a fourth
+>   spelling — `"I booked the callback for Thursday at 2pm."` — and § 8 of the gate
+>   document now names this as limit 9, its only precision limit.
+> - **Why neither fix was taken, stated rather than implied.** Moving the
+>   family-agnostic verbs to `ANY` and adding verb-first CALLBACK forms both change
+>   the family the § 6.5.4 sentence is detected under, and that family is asserted
+>   as `MEETING` in two places written on purpose:
+>   `tests/agent/claimGateDetector.test.ts` (*"if either of them ever stops being
+>   detected, this file fails"*) and this corpus's own `MUST_FLAG`. Either fix is
+>   therefore a deliberate change to the flagship assertion about the defect the
+>   mission exists for, which is a decision for whoever owns that assertion and not
+>   a side effect of closing a detection gap. The recommendation stands: **take the
+>   second option** — add verb-first CALLBACK forms — and update both assertions in
+>   the same commit, so the § 6.5.4 turn is caught as the CALLBACK claim it is
+>   rather than, as this section correctly observes, for the wrong reason.
 
 ### 5.2 HIGH — negation and conditionality are sentence-scoped, so one word in a different clause suppresses a false claim
 
