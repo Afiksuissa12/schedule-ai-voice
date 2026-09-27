@@ -937,20 +937,15 @@ function precedingClockPrefix(
   index: LexiconIndex,
   start: number,
 ): ConsumedPart | undefined {
-  for (const entry of index.clockPrefixesStandalone) {
-    const length = entry.tokens.length;
+  const longest = index.clockPrefixesStandalone[0]?.tokens.length ?? 0;
+  for (let length = longest; length >= 1; length -= 1) {
     if (start - length < 0) continue;
     const hit = matchAt(tokens, consumed, start - length, index.clockPrefixesStandalone);
-    if (!hit || hit.length !== length) continue;
-    const matchedEntry = hit.entries[0];
-    if (!matchedEntry) continue;
-    return {
-      rule: 'clock_prefix',
-      locale: matchedEntry.locale,
-      form: matchedEntry.form,
-      start: start - length,
-      length,
-    };
+    const entry = hit?.entries[0];
+    // The span has to END where the time BEGINS, so a shorter match that
+    // happens to start here is not the introducer of this time.
+    if (!hit || !entry || hit.length !== length) continue;
+    return { rule: 'clock_prefix', locale: entry.locale, form: entry.form, start: start - length, length };
   }
   return undefined;
 }
