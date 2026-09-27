@@ -351,6 +351,20 @@ application code owns state and executes actions.**
   threaded through everything — including a callback executed days later.
 - **Nine tools, fully executed.** Nothing is a no-op; an unexecutable request
   refuses in structured, audited form rather than silently succeeding.
+- **A second chokepoint, for sentences rather than actions.** The dispatcher
+  governs what the agent *does*; the **effect and claim consistency gate**
+  (`src/agent/claimGate/`) governs what it *says about what it did*. Before any
+  customer-facing text is persisted or returned, application code decides whether
+  it asserts that something material happened — booked, confirmed, moved,
+  cancelled, will call, a confirmation number — and checks every such claim
+  against a ledger built only from real tool results and persisted rows, in
+  English, Hebrew and mixed Hebrew-English. A supported claim is released
+  **byte-identical**. An unsupported one never reaches the customer: the same
+  model is handed the authoritative state and writes its own words again, at most
+  twice, and if it still will not, the turn releases **no text at all** and asks
+  for a human being. It is on by default and there is no switch that turns it off.
+  `docs/MISSION_2D_CLAIM_GATE.md` is the report; `docs/ARCHITECTURE.md` § 5A is
+  the mechanism.
 
 ## What this slice deliberately does **not** do
 
@@ -382,7 +396,8 @@ application code owns state and executes actions.**
 | [`docs/LEGACY_LESSONS.md`](docs/LEGACY_LESSONS.md) | What was re-expressed from the legacy prototype, which of its limitations are structurally eliminated, and which are only *partially* addressed |
 | `FOUNDATION_CONTRACT.md` | Schema, repositories, audit store, ports, test helpers |
 | `SCHEDULING_CONTRACT.md` | Datetime resolution and validation, provider doubles, meetings, durable follow-up |
-| `AGENT_CONTRACT.md` | LLM boundary, guardrailed prompt, the nine tools, the dispatcher chokepoint, conversations, the agent turn |
+| `AGENT_CONTRACT.md` | LLM boundary, guardrailed prompt, the nine tools, the dispatcher chokepoint, the claim gate (§ 10), conversations, the agent turn |
+| [`docs/MISSION_2D_CLAIM_GATE.md`](docs/MISSION_2D_CLAIM_GATE.md) | The effect and claim consistency gate: the defect it closes, the detection design and why it is deterministic, the regeneration bound and why it is two, the exhaustion handover, the measured latency and what it means for token streaming, and what the gate still cannot catch |
 
 **Mission 2 — the local AI brain.** The review package now sits in `docs/`,
 alongside the Baseline V1 review. The remaining three still sit at the repository
@@ -410,6 +425,7 @@ src/providers/            deterministic Availability / Calendar / Telephony doub
 src/llm/                  ScriptedLlmProvider + the ONE file importing a vendor SDK
 src/conversation/         durable conversation + turn log
 src/agent/                prompt, the nine tools, the dispatcher, AgentTurnService
+src/agent/claimGate/      the effect and claim consistency gate            (Mission 2D)
 src/app/                  composition root, seed world, slice demo, audit report
 src/context/              the validated business/product/persona profile   (Mission 2)
 src/eval/                 the model benchmark: corpus, rubric, judges, runner (Mission 2)
