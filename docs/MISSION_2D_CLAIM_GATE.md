@@ -559,13 +559,13 @@ npm run qa:sweep                     823 scenarios                   823        
                                      4,624 applicable (12,472 eval)  4,624 (12,472)    ✓
                                      0 violations                    0                 ✓
                                      0 network attempts              0                 ✓
-                                     RESULT: PASS, 147.6s, exit 0    PASS, 132.6s
+                                     RESULT: PASS, 133.9s, exit 0    PASS, 132.6s
 npm run qa:sweep -- --determinism    INV-09: PASS - "a second full   IDENTICAL         ✓
                                      run produced byte-identical
                                      classifications for every
                                      scenario id."
                                      823 / 4,624 (12,472), 0 / 0,
-                                     RESULT: PASS, 123.3s, exit 0
+                                     RESULT: PASS, 143.0s, exit 0
 npm run check:anti-scripting         RESULT: PASS, exit 0            PASS, exit 0      ✓
                                      39 files, 2,095 literals
                                      1 allowance, unchanged - the
@@ -599,12 +599,19 @@ column), `eval-output*/`, `tests/invariants/`, `src/eval/`, `src/llm/ollama/`,
 `docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md`. I needed neither `prisma` nor
 `eval-output`, as the write policy anticipated.
 
-### The sweep is 15 s slower, and that is the gate
+### What the gate costs the sweep: not much, and the honest reason why
 
-147.6 s against a 132.6 s baseline, on the same 823 scenarios. Two gate reviews per
-turn across the whole matrix, each a pure detection pass and — for the ones that
-assert something — a ledger build. It is the cost stated in § 7 arriving at scale,
-and it is why the detector runs before the ledger rather than after it.
+**133.9 s against a 132.6 s baseline**, on the same 823 scenarios — about 1 %, which
+is inside this host's run-to-run variance and should not be read as a precise
+figure. An earlier run of the same code measured 147.6 s and the determinism pass
+measured 123.3 s then and 143.0 s now, so the container's variance is larger than the
+effect. The number worth trusting is the per-call one in § 7.1, measured in
+isolation with warm-up.
+
+The reason it is small is the ordering, not luck: the sweep's scripted turns mostly
+assert nothing material, so the pure detector answers and the ledger is never built.
+Had the ledger been built first, the sweep would have paid five extra database reads
+on every one of ~1,600 releases.
 
 ### The new tests
 
