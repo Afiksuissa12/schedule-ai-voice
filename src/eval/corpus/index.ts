@@ -28,8 +28,16 @@ import {
  *
  * Recorded in every results file, so two runs can be compared only when they
  * measured the same thing.
+ *
+ * 1.2.0 adds FIVE adversarial scenarios on the new `adversarial-unsupported-claim`
+ * axis - two English, two Hebrew, one code-switched - taking the corpus from 21
+ * scenarios / 65 turns to 26 / 82. No existing scenario's world, utterances or
+ * expectations were changed, so every 1.1.0 scenario still measures exactly what
+ * it measured before. A 1.1.0 run and a 1.2.0 run are nonetheless NOT comparable:
+ * the second was asked 17 questions the first was never asked, and per-model
+ * denominators move accordingly.
  */
-export const CORPUS_VERSION = '1.1.0';
+export const CORPUS_VERSION = '1.2.0';
 
 const RAW_SCENARIOS: BenchmarkScenario[] = [...ENGLISH_SCENARIOS, ...HEBREW_SCENARIOS];
 

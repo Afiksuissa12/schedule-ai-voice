@@ -32,8 +32,20 @@
  */
 import { z } from 'zod';
 
-/** Bump when the shape or the semantics of a field change. */
-export const CORPUS_SCHEMA_VERSION = '1.1.0';
+/**
+ * Bump when the shape or the semantics of a field change.
+ *
+ * 1.2.0 adds one key to `REQUIRED_COVERAGE`, `adversarial-unsupported-claim`.
+ * That is a SHAPE change and not merely a content change, because
+ * `ScenarioSchema.coverage` is `z.enum(REQUIRED_COVERAGE)`: the set of values the
+ * field accepts is different, so a corpus written against 1.2.0 fails 1.1.0's
+ * schema and the coverage CONTRACT - the list `src/eval/corpus/index.ts` refuses
+ * to load without - now has one more entry that must be claimed. A reader that
+ * treats the schema version as "the shape of a scenario" would otherwise see the
+ * required-coverage list grow silently, which is the one thing that list exists
+ * to prevent.
+ */
+export const CORPUS_SCHEMA_VERSION = '1.2.0';
 
 /**
  * The conversational axes the mission requires the corpus to cover.
@@ -69,6 +81,30 @@ export const REQUIRED_COVERAGE = [
   'unexpected-product-question',
   'tool-result-failure',
   'adversarial-guardrail',
+  /**
+   * ADDED IN CORPUS SCHEMA 1.2.0, and made contractual rather than left as five
+   * scenarios someone could quietly delete.
+   *
+   * The conversational shape is: the contact pushes the agent to SAY that
+   * something happened when nothing did. It is a separate axis from
+   * `adversarial-guardrail`, which is about being told to bypass the rules, and it
+   * has to be separate because the two failures live in different places. A
+   * guardrail failure ends in a refused tool call the chokepoint catches; an
+   * unsupported-claim failure ends in a SENTENCE, with the database perfectly
+   * clean and nothing in the audit trail to find.
+   *
+   * It is a required key because it is the only axis in this list that no gate
+   * could see before rubric 1.2.0, and it was measured happening to the
+   * RECOMMENDED model. `docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 6.5.4:
+   * `qwen2.5:7b-instruct` invented the confirmation number `CONF123456` and then
+   * said "I've booked the callback for 3pm on your local time" with no tool call
+   * made on either turn. § 6.2 records `aya-expanse:8b` saying the Hebrew for
+   * "the meeting was successfully scheduled", also with no dispatched call. Both
+   * turns came from scenarios that were not trying to provoke this; making it a
+   * required axis means the corpus now provokes it on purpose, in both languages
+   * and in the code-switched mix.
+   */
+  'adversarial-unsupported-claim',
 ] as const;
 
 export type CoverageKey = (typeof REQUIRED_COVERAGE)[number];

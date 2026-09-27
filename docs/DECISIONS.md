@@ -983,10 +983,12 @@ it false.
 The regression branch wrote invariants INV-16 (Hebrew/English parity) and INV-17
 (the resolved day is the day the phrase named) against a Hebrew lexicon that only
 existed on the resolver branch. Neither branch could demonstrate that pairing
-alone. In the merged tree `npm run qa:sweep` runs 823 scenarios and reports
-**INV-16 at 108 applicable checks and INV-17 at 258, both with zero failures**,
-which is the first evidence that the regression net and the fail-closed resolver
-agree about Hebrew. Likewise the evaluation-fairness branch's environment
+alone. In the Mission 2B merged tree `npm run qa:sweep` ran 823 scenarios and
+reported **INV-16 at 108 applicable checks and INV-17 at 258, both with zero
+failures**, which is the first evidence that the regression net and the
+fail-closed resolver agree about Hebrew. (Those two counts are a record of *that*
+integration. § 11 grew the corpus, so the figures moved with it — the current ones
+are in the sweep report, and `EVAL_HARNESS.md` § 0 carries the integrated totals.) Likewise the evaluation-fairness branch's environment
 records reach the report through `src/eval/report/generate.ts`, and the
 regression branch's `tests/qa/report.ts` reaches the operator through
 `tests/qa/sweepCli.ts`. Both seams are exercised by the merged suite rather than
@@ -1226,3 +1228,283 @@ is a different and weaker thing.
 Full method and the rest of the numbers are in `docs/MISSION_2D_CLAIM_GATE.md`
 § 7. `MISSION-2D-CLAIM-GATE-AND-HEBREW-MODEL-AUTO-CLAIM-ASSURANCE` publishes the
 measured-at-scale figures; this section records the design consequence.
+
+---
+
+## 12. Per-language model routing — DESIGN ONLY, not implemented, not recommended yet
+
+> **Nothing in this section is built.** No routing exists in `src/`, no default changed, and
+> `qwen2.5:7b-instruct` at `num_ctx` 16384 remains the single configured and proposed model — for
+> **English** (`docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 9.0, § 9.1). This is a design note
+> written so that the decision, when it is taken, is taken against thresholds rather than against a
+> hope. **On today's evidence the answer is no**, and § 12.6 is the list of things that would change it.
+
+### 12.1 Why the question is open at all
+
+The review's position is uncomfortable and worth restating plainly: **no model is earned for Hebrew**
+(§ 6.2, § 9.3). The model with the best Hebrew composite answered an entire Hebrew conversation in
+English; the one with the best language-match score does not know who it is or what it sells; the
+recommended model's Hebrew is the worst of the five on reading. The **only** candidate whose Hebrew
+reads as native Hebrew is `aya-expanse:8b`, and it fails the fabricated-timestamp gate.
+
+So routing is the shape of the obvious fix — English to the model that won on English, Hebrew to the
+model that can actually speak Hebrew — and it is worth designing before it is worth building, because
+the hard parts are not the routing.
+
+### 12.2 How it would be built: one more `LlmProvider`, and nothing else moves
+
+The port already permits this without a change. `src/ports/llm.ts` says an `LlmProvider` takes a
+`CompleteTurnRequest` and returns text plus **proposed** tool calls, and `src/app/composition.ts`
+already accepts a fully-built provider via `options.llm`, which wins over `llmProviderConfig`. So:
+
+```
+LanguageRoutingLlmProvider implements LlmProvider
+  ├── name()                -> "routed(en=qwen2.5:7b-instruct, he=<model>)"  // audited
+  ├── completeTurn(req)     -> delegate.completeTurn(req)
+  └── completeTurnStreaming -> advertised only if EVERY delegate streams
+```
+
+Four consequences of doing it this way, and each is a reason to do it this way:
+
+- **Each delegate is an ordinary `LocalLlmProvider`**, constructed exactly as today with its own model,
+  `num_ctx`, `keepAlive` and timeout. Nothing in `src/llm/localLlmProvider.ts` changes.
+- **`isStreamingLlmProvider` must be answered honestly.** The guard checks both that the method exists
+  *and* that the provider says it is usable. A router must advertise streaming only if **all** delegates
+  do, because a caller that asked for deltas and silently got a non-streaming path loses
+  time-to-first-token — the one metric a voice milestone depends on.
+- **`name()` must name the routing, not the router.** It is recorded on every audit event. A router
+  reporting a single opaque name would make the audit trail unable to answer "which model said this",
+  which is the first question anyone will ask of a routed transcript.
+- **The context budget needs the delegate's window.** `resolveContextBudget` cannot see the window of a
+  provider passed in as an instance, which is why the benchmark passes `modelNumCtx` explicitly. With
+  two delegates at possibly different windows, the budget must be computed from the **narrower** one, or
+  a Hebrew turn can be handed a prompt its model cannot hold.
+
+### 12.3 Where the language decision comes from — application state, never a model's opinion
+
+**The routing key is a persisted field, read from a row, never inferred from the text at request time.**
+This is the same rule as everywhere else in this architecture: the LLM controls language, application
+code controls authority, and *which model to ask* is authority.
+
+Today there is nowhere to put it. `Contact` carries `timezone` but no language; `Conversation` carries
+`channel` and `status` but no language. So routing needs a schema change, and it should be added to
+`§ 10.2`'s recommended-but-not-made list rather than smuggled in:
+
+| Field | Where | Why there |
+| --- | --- | --- |
+| `Contact.preferredLanguage` | `prisma/schema.prisma` | A language preference is a property of the **person**, the same argument `§ 10.2 R1` makes for `ContactFact`. It is also the field a human can correct. |
+| `Conversation.language` | `prisma/schema.prisma` | Pinned per conversation at start from the contact, so a replay routes the way the live call routed. Same reasoning as `agentConfigurationId`, which is pinned for exactly this. |
+
+**What must NOT be the routing input, stated because it is the tempting shortcut.** `checkLanguage` in
+`src/eval/rubric/programmatic.ts` counts the Hebrew-to-Latin letter ratio of a reply. It exists to
+**score** a run and it says of itself that it is "deliberately crude". Promoting it to a routing input
+would mean the model's own output chose which model handled the next turn — a feedback loop where a
+model that drifts into the wrong language gets *confirmed* in that drift. The committed transcripts show
+that drift happening: `qwen2.5:7b-instruct` replied to a Hebrew question entirely in English on
+`hebrew-intro-and-booking` turn 5, and switched to Chinese for three consecutive turns of
+`hebrew-price-objection`.
+
+**How it stays auditable.** Three requirements, none of them optional:
+
+1. The routing decision is written as its own audit event on the turn it applies to — the key read, the
+   row it came from, and the model selected.
+2. `LlmProvider.name()` carries the selected model, so every existing audit event already answers
+   "which model" without a schema change.
+3. A **change** of route mid-conversation is an audit event in its own right, not a silent switch.
+
+### 12.4 What must stay model-independent, and this is the list that makes routing safe
+
+Routing is only cheap because everything that matters is already downstream of the model. **Not one item
+below may be made conditional on which model answered:**
+
+- **the system prompt** (`sales-scheduler-local@v2`) — one prompt, both models. A per-model prompt is a
+  per-model product, and the anti-scripting guarantee is stated over one prompt;
+- **the nine tool JSON Schemas**, generated from the real Zod definitions, `.strict()` and closed;
+- **the `ToolDispatcher` chokepoint** and every one of its checks;
+- **the scheduling resolver**, which fails closed on any token no rule consumed (§ 9). It is already
+  locale-agnostic with the vocabulary as data — that work is what makes Hebrew routing conceivable, and
+  it must not acquire a model-shaped branch;
+- **the claim gate**, and therefore the `unsupportedClaimLeak` measure over it. A gate that applied to
+  one model and not the other would make the must-be-zero number meaningless;
+- **the audit trail**, its event types and its shapes.
+
+If any of those has to change to accommodate a second model, the second model is not a routing decision
+— it is a second product.
+
+### 12.5 The costs and the risks
+
+**Cost 1 — two resident models do not fit on this host, and this is measured, not estimated.** From
+review § 4: the card is **8,188 MiB** with a **7.5 GiB** working budget for weights plus KV cache. At
+`num_ctx` 16384, `qwen2.5:7b-instruct` is resident at **5.09 GiB** and `aya-expanse:8b` at **5.81 GiB**.
+**Together: 10.90 GiB against a 7.5 GiB budget.** They cannot both be resident. Two options, both bad:
+
+- **Swap per turn.** Review § 4.2: keeping a model resident is the difference between a **~4.9 s** first
+  turn and a **~0.9 s** one. On a phone call, a language switch would cost the caller five seconds of
+  silence. This is the option that makes routing a voice-quality regression.
+- **Let one spill.** Review § 4.1 measured what that costs: three of the five candidates spilled, and
+  every latency figure for them describes the spill. Note which two did **not** spill — precisely
+  `qwen2.5:7b-instruct` and `aya-expanse:8b`, at 100.0% GPU each. Routing would take the only two
+  models that fitted and make at least one of them not fit.
+
+**Therefore: routing needs a bigger card, and that is a hardware decision, not an engineering one.** On
+a 12 GiB card both fit resident with headroom and the whole cost argument evaporates.
+
+**Cost 2 — it multiplies the claim gate's regeneration cost.** A regeneration is one additional full
+provider round trip. On a model with weaker instruction-following, regenerations are more frequent, and
+on a swapped-out model each one may also pay a cold load.
+
+**Risk 1 — the mid-conversation language switch, and the committed transcripts show it really happens.**
+This is the risk that decides the design. The corpus has an entire `mixed` language category because
+Israeli business calls code-switch **inside a sentence**: *"היי, כן. תשמע, אני ב-back-to-back כל
+הבוקר"*. A router keyed on a per-conversation field answers one language for the whole call, which is
+**wrong for the commonest real shape**. A router keyed per turn would swap models mid-call and pay
+Cost 1 repeatedly. Neither is good, and the honest reading is that **a code-switched call wants one
+genuinely bilingual model, not two monolingual ones.** Routing helps the Hebrew-only and English-only
+calls and actively hurts the mixed ones.
+
+**Risk 2 — the conversation is rebuilt from database rows each iteration**, so a second model inherits a
+transcript the first one wrote, including its tool calls and its phrasing. Nothing in the port forbids
+this and nothing in the harness has measured whether a model handles another model's transcript well. It
+is an untested behaviour, and it would be introduced by a change whose entire justification is a
+measurement.
+
+**Risk 3 — it doubles what the benchmark has to hold.** Every corpus scenario would need running under
+the routed provider as well as each model alone, or the fair-comparison discipline of § 9 is lost.
+
+### 12.6 WHAT EVIDENCE WOULD JUSTIFY TURNING IT ON
+
+Thresholds, against the Mission 2D re-benchmark (`EVAL_HARNESS.md` § 9.7). **All six. Not a majority.**
+
+| # | Threshold | Why this one |
+| --- | --- | --- |
+| **1** | A Hebrew candidate **passes the fabricated-timestamp gate outright — 0 turns, not a low rate.** | `aya-expanse:8b` is recorded at 2/65 (3.1%) and the Mission 2D aya task recomputed it at **8/65 (12.3%)** once the unwrapped arguments become visible to the detector — **four times worse than recorded**. A failed gate is not a points deduction. |
+| **2** | That candidate's **`unsupportedClaimLeak` count is ZERO** over the full 26-scenario corpus, including all five adversarial-claim scenarios. | Its recorded Hebrew behaviour is the reason the measure exists: it told a contact *"the meeting was successfully scheduled"* with no dispatched call, and promised a confirmation email it has no tool to send. A non-zero attempts number is expected and fine; a leak is not. |
+| **3** | `argumentValidity` **above 90%**, and the three non-wrapper defects fixed or absent. | The aya task recomputed 14.6% → **61.0–65.9%**, not ~100%. The residue is free-text enums and a missing `contact_id` — real model defects the wrapper was hiding. A model getting a third of its arguments wrong is refused a third of the time, and a refused call is a turn the contact hears nothing useful in. |
+| **4** | A **native Hebrew speaker** reads a sample of that candidate's Hebrew transcripts and signs off. | Review § 9.3 point 3: no human evaluation was performed, and § 6.2's reading is this repository's own. A 7–8B judge's opinion of Hebrew register is a weak prior, explicitly. **This threshold cannot be met by any run.** |
+| **5** | The host can hold **both** models resident at `num_ctx` 16384 with headroom — or the mid-conversation swap latency is measured and accepted. | 10.90 GiB against a 7.5 GiB budget (§ 12.5). Until this is true, routing trades a correctness gain for a latency regression nobody has costed. |
+| **6** | The **mixed** scenarios are measured under the routed provider and are **no worse** than under the best single model. | Routing is expected to hurt the code-switched case (§ 12.5 Risk 1), which is the commonest real shape. If it does, routing is the wrong answer to this problem and a bilingual model is the right one. |
+
+**What is NOT evidence for turning it on:** a higher Hebrew *composite* (it is 55% judged, and the
+review's § 6.2 shows the top Hebrew composite belongs to a model that answered in English); a higher
+*language-match* score (it measures the alphabet, not the words — the best score in the set belongs to a
+model that describes itself as "a tool used for calling functions"); or the wrapper fix alone (necessary,
+and § 12.6 threshold 1 is why it is not sufficient).
+
+**If thresholds 1–4 are met but 5 is not**, the correct decision is to keep a single model and revisit on
+larger hardware — not to ship a swap that costs the caller five seconds.
+
+---
+
+## 13. Integrating the four Mission 2D branches
+
+Four branches were merged into one tree: `…-AUTO-AYA-TOOL-SHAPE` (the `aya-expanse:8b`
+tool-argument shape), `…-AUTO-CLAIM-GATE` (§ 11), `…-AUTO-CLAIM-ASSURANCE` (INV-18 and
+the claim-gate assurance suite) and `…-AUTO-EVAL-AND-ROUTING` (the two-number claim
+measure, five adversarial scenarios, and § 12). Three merged cleanly. The fourth did
+not, and one seam between two of them was wrong in a way neither branch could have
+seen alone. Both are recorded here, because § 10 set the precedent that an integration
+is itself a thing with decisions in it.
+
+### 13.1 Two branches both wrote `## 11`, and the design-only one moved
+
+**The conflict.** `…-AUTO-CLAIM-GATE` and `…-AUTO-EVAL-AND-ROUTING` each appended a
+new top-level section to this file, each numbered `## 11`, each at the same line.
+`docs/MISSION_2D_EVAL_AND_ROUTING.md` § 7 shows the routing task had anticipated
+exactly this and answered it in its own mailbox: *"their § goes after mine if they
+arrive later"*. They did not arrive later; they arrived at the same time.
+
+**The decision.** The claim gate keeps § 11 and the routing note became § 12, with its
+subsections renumbered 12.1–12.6 and its three internal cross-references moved with
+them. **Nothing else in this file was renumbered**, and no existing section's number
+changed — so every citation of § 1–§ 10 anywhere in the repository is still correct.
+
+**Why that way round, and not the way the mailbox proposed.** Three reasons, in
+order of weight:
+
+1. **§ 11 is built and § 12 is not.** The claim gate is code, enabled by default, with
+   an invariant over it; the routing note opens by saying *"Nothing in this section is
+   built"*. A reader scanning section numbers should reach the thing that ships first.
+2. **`docs/MISSION_2D_CLAIM_GATE.md` cites § 11.1 and § 11.4 by number**, in prose that
+   summarises them. Renumbering the gate would have required editing a sibling's report
+   to keep two pointers valid, which is a wider edit for a worse result.
+3. **The routing note cites nothing by number from outside itself** except § 10.2, which
+   did not move.
+
+The two-line note about the move is written into
+`docs/MISSION_2D_EVAL_AND_ROUTING.md` § 5 rather than left for a reader to infer from a
+mismatch between a doc that says "§ 11" and a file whose § 11 is about something else.
+
+### 13.2 The seam that was actually wrong: a gate reporting `enabled: false`
+
+**This is the one defect the merge exposed, and it existed in neither branch.**
+
+`src/eval/runner/claimGateReport.ts` reads the gate's per-turn report **structurally**,
+over `unknown`, deliberately: it was written before the gate landed, and § 12's whole
+independence argument requires it to read only `attempts[].text` and never the gate's
+verdict. That was right, and it is why `npm run typecheck` passed on the merged tree
+with no change at all. But the reader checked only the *shape* of the report, and the
+gate publishes one well-formed shape the reader had no answer for:
+
+```
+claimGate: { enabled: false, releases: [] }
+```
+
+A shape-only reader answers `observed: true` with zero texts. The harness would then
+print an **attempts column of 0 beside a non-zero leak column** — a claim that leaked
+past a gate it was never shown to, which is not a possible event. The two numbers exist
+precisely so that a reader can tell "the gate corrected nothing" from "there was no
+gate", and this is the case that collapses them the wrong way.
+
+**The fix, in one line of behaviour.** `enabled === false` is checked before the shape
+of `releases` and yields the absent-report answer — `observed: false`, no
+`malformedReason`, because nothing is malformed and nothing lied. A gate that says it
+was off is reporting the same fact as a gate that is not there. The independence
+property is untouched: `enabled` is not a verdict about a claim, it is the answer to
+"was anything standing between the model and the caller".
+
+**Why fix it when it is unreachable.** It *is* unreachable through
+`buildAgentRuntime`, which always constructs the gate, and INV-18 treats
+`enabled === false` as a sweep **violation** rather than as inapplicable — so the
+production path cannot reach it silently and the sweep would catch it if it did. The
+only way in is `AgentTurnServiceOptions.claimGate: null`, a test-only seam. It is fixed
+anyway because the cost is one comparison and the failure mode is a benchmark that
+reports a **false zero** on its must-be-zero number. A measurement that is silently
+wrong in the safe direction is worse than one that refuses to answer, and this
+repository has that argument written down in four other places.
+
+`tests/eval/unsupportedClaimMeasure.test.ts` pins it, including the case where
+`enabled: false` arrives alongside a populated `releases` array — the gate's own
+statement wins, because it is the gate being asked.
+
+### 13.3 The other three seams held, and were checked rather than assumed
+
+| Seam | How it was checked | Result |
+| --- | --- | --- |
+| The gate's report shape vs. what `src/eval` reads out of it — `releases[].attempts[].text`, and the `enabled` field | Read both sides against each other: `AgentTurnService` builds `{ enabled, releases }` at `src/agent/agentTurnService.ts`, `ClaimGateRelease`/`ClaimGateAttempt` declare the rest | Field-for-field identical. The gate's `src/agent/claimGate/index.ts` names this as a contract two siblings compile against, and it was honoured |
+| The unwrapped `aya-expanse` tool arguments vs. the harness's fabricated-timestamp detector | `…-AUTO-AYA-TOOL-SHAPE` removes the `{tool_name, parameters}` wrapper, so arguments arrive at the top level — which is the level the detector reads. § 12.6 thresholds 1 and 3 are stated against the recomputed numbers | Consistent. Making the detector walk arbitrary nesting stays a named follow-up in `EVAL_HARNESS.md` § 9.7.6, not a silent gap |
+| INV-18 and family M (assurance) vs. the gate they measure | The sweep itself: 887 scenarios, INV-18 at 1,818 applicable checks, 0 failures, 0 scenarios without a gate | Held |
+
+### 13.4 Why the four mission reports quote four different totals, and all four are right
+
+Each branch measured itself, on its own tree, against the Mission 2C baseline of
+`1,020 / 2` tests and `823 / 4,624` sweep — which is what a branch report should do, and
+what makes "nothing else regressed" a checkable statement rather than a hope. The
+consequence is that no single one of those four numbers is the integrated total:
+
+| Record | `npm test` | `npm run qa:sweep` |
+| --- | --- | --- |
+| Mission 2C baseline (`docs/FOUNDER_REVIEW…` § 7) | 1,020 / 2, 50 files | 823 · 4,624 applicable (12,472 evaluated) |
+| `…-AUTO-EVAL-AND-ROUTING` alone | 1,080 / 2, 53 files | 823 · 4,624 (12,472) — unchanged, it adds nothing the sweep runs |
+| `…-AUTO-CLAIM-GATE` alone | 1,102 / 2, 56 files | 823 · 4,624 (12,472) — unchanged |
+| `…-AUTO-CLAIM-ASSURANCE` (on top of the gate) | 1,110 / 2, 58 files | **887 · 6,938 (15,294)** — INV-18 plus family M |
+| **This integrated tree** | **1,223 / 2, 62 files** | **887 · 6,938 (15,294)** |
+
+`EVAL_HARNESS.md` § 0 carries the integrated pair as the current figure and says which
+narrower figures it supersedes. The per-branch tables in the four Mission 2D reports are
+left exactly as their authors measured them: they are each labelled with the tree they
+were run on, and rewriting them would destroy the only evidence that each branch was
+individually green.
+
+**The invariant that did not move through any of it:** `npm run qa:sweep` reports **0
+violations and 0 network attempts**, and `--determinism` is byte-identical, with the
+benchmark, the claim gate and the assurance suite all in the same source tree.

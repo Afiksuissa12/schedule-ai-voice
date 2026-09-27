@@ -39,6 +39,8 @@ import {
   RUBRIC_CATEGORIES,
   RUBRIC_VERSION,
   TIMESTAMP_FABRICATION_GATE,
+  UNSUPPORTED_CLAIM_ATTEMPTS_MEASURE,
+  UNSUPPORTED_CLAIM_GATE,
   WRONG_DAY_RESOLUTION_GATE,
 } from '../rubric/rubric.js';
 import { scoreModel, scoreScenario, type ModelScore } from '../rubric/score.js';
@@ -76,10 +78,11 @@ export function buildReport(input: ReportInput): Report {
   }
 
   // The ranking rule, applied here and stated in the markdown: a model whose run
-  // tripped EITHER gate is ranked BELOW every model whose run tripped neither,
+  // tripped ANY gate is ranked BELOW every model whose run tripped none,
   // regardless of composite. A charming model that invents timestamps is not a
-  // better product than a duller one that does not, and neither is one whose
-  // conversations ended in a booking on the wrong day.
+  // better product than a duller one that does not; neither is one whose
+  // conversations ended in a booking on the wrong day; and neither is one whose
+  // conversations ended with the contact told a meeting existed when none did.
   const ranked = [...scores].sort((a, b) => {
     if (a.passedAllGates !== b.passedAllGates) return a.passedAllGates ? -1 : 1;
     return (b.composite ?? -1) - (a.composite ?? -1);
@@ -94,11 +97,13 @@ export function buildReport(input: ReportInput): Report {
   );
 
   const json = {
-    // BUMPED FROM @1. results@2 is a strict SUPERSET: every key results@1
-    // carried is still here, unmoved and unrenamed, and the only change is the
-    // added `environment` block. A reader written against @1 keeps working; the
-    // identifier moves because the shape grew, not because it was restructured.
-    schema: 'schedule-ai-voice/eval-results@2',
+    // BUMPED FROM @2, on the same rule that produced @2 from @1: results@3 is a
+    // strict SUPERSET. Every key @1 and @2 carried is still here, unmoved and
+    // unrenamed. What @3 adds is `unsupportedClaimAttemptsMeasure` at the top
+    // level, a third entry in `gates`, and `models[].unsupportedClaims`. A reader
+    // written against @1 or @2 keeps working; the identifier moves because the
+    // shape grew, not because it was restructured.
+    schema: 'schedule-ai-voice/eval-results@3',
     generatedAtIso: input.generatedAtIso,
     harnessVersion: HARNESS_VERSION,
     corpusVersion: corpus.corpusVersion,
@@ -109,6 +114,16 @@ export function buildReport(input: ReportInput): Report {
     /** Kept for readers written against results@1; `gates` is the full list. */
     gate: TIMESTAMP_FABRICATION_GATE,
     gates: GATES,
+    /**
+     * ADDED IN results@3. The definition of the unweighted attempts diagnostic,
+     * as data, so a reader gets the rule next to the number rather than having to
+     * trust that prose somewhere else still matches the code.
+     *
+     * It is NOT in `gates`, deliberately: it gates nothing, and putting it there
+     * would tell every existing reader of `gates` that a model with a non-zero
+     * attempts count had failed something. It has not.
+     */
+    unsupportedClaimAttemptsMeasure: UNSUPPORTED_CLAIM_ATTEMPTS_MEASURE,
     rubric: RUBRIC_CATEGORIES.map((category) => ({
       key: category.key,
       label: category.label,
@@ -146,6 +161,10 @@ export function buildReport(input: ReportInput): Report {
         gateFailedTurns: score.gate.failedTurns,
         wrongDayFailedTurns: score.wrongDayGate.failedTurns,
         wrongDayFindings: score.wrongDayGate.findings,
+        /** ADDED IN results@3. The leak count MUST be zero; attempts need not be. */
+        unsupportedClaimLeakTurns: score.unsupportedClaimGate.leakTurns,
+        unsupportedClaimLeakFindings: score.unsupportedClaimGate.findings,
+        unsupportedClaimAttemptTurns: score.unsupportedClaimGate.attemptTurns,
         judgeDisagreement: score.judgeDisagreement,
         judgesOk: score.judgesOk,
         turns: run.turns.length,
@@ -295,6 +314,9 @@ function renderMarkdown(
   }
   p();
 
+  // ---- the third gate, and the number beside it ---------------------------
+  renderUnsupportedClaims(p, ranked);
+
   // ---- ranking ------------------------------------------------------------
   p('## 2. Composite ranking');
   p();
@@ -302,21 +324,25 @@ function renderMarkdown(
     'Weights: ' +
       RUBRIC_CATEGORIES.map((c) => `${c.label} ${(c.weight * 100).toFixed(0)}%`).join(', ') +
       '. Conversation quality dominates by design - a technically correct model that sounds robotic must ' +
-      'not win. **A model failing either gate is ranked below every model that passes both, whatever its ' +
-      'score.**',
+      'not win. **A model failing ANY of the three gates is ranked below every model that passes all three, ' +
+      'whatever its score.**',
   );
   p();
-  p('| # | Model | Composite | Conversation | Tool/structural | Language | Fabrication gate | Wrong-day gate |');
-  p('| ---: | --- | ---: | ---: | ---: | ---: | --- | --- |');
+  p(
+    '| # | Model | Composite | Conversation | Tool/structural | Language | Fabrication gate | Wrong-day gate | Claim-leak gate |',
+  );
+  p('| ---: | --- | ---: | ---: | ---: | ---: | --- | --- | --- |');
   ranked.forEach((score, index) => {
     const wrongDay = score.wrongDayResolution;
+    const claims = score.unsupportedClaims;
     p(
       `| ${index + 1} | \`${score.modelId}\` | ${pct(score.composite)} | ` +
         `${pct(score.categories['conversationQuality']?.score ?? null)} | ` +
         `${pct(score.categories['toolAndStructural']?.score ?? null)} | ` +
         `${pct(score.categories['languageQuality']?.score ?? null)} | ` +
         `${score.timestampFabrication.passedGate ? 'pass' : '**FAIL**'} | ` +
-        `${wrongDay.applicableTurns === 0 ? 'n/a' : wrongDay.passedGate ? 'pass' : '**FAIL**'} |`,
+        `${wrongDay.applicableTurns === 0 ? 'n/a' : wrongDay.passedGate ? 'pass' : '**FAIL**'} | ` +
+        `${claims.applicableTurns === 0 ? 'not checked' : claims.passedGate ? 'pass' : '**FAIL**'} |`,
     );
   });
   p();
@@ -485,13 +511,152 @@ function renderMarkdown(
   return `${out.join('\n')}\n`;
 }
 
+type Emit = (line?: string) => void;
+
+// ---------------------------------------------------------------------------
+// The third gate, and the unweighted number printed beside it.
+//
+// TWO NUMBERS, NEVER ONE, AND THEY ARE LABELLED DIFFERENTLY ON PURPOSE. The
+// leak count is a property of the SYSTEM and must be zero. The attempts count is
+// a property of the MODEL and is expected not to be. A report that printed one
+// figure, or printed both under one heading, would invite a reader to congratulate
+// a model for a low attempts number or to condemn it for a high one - and neither
+// reading is available from these numbers.
+// ---------------------------------------------------------------------------
+
+function renderUnsupportedClaims(p: Emit, ranked: readonly ModelScore[]): void {
+  p('### 1.3 Unsupported material claims - ATTEMPTED by the model vs LEAKED to the contact');
+  p();
+  p(`> ${UNSUPPORTED_CLAIM_GATE.rule}`);
+  p();
+  p(`> **Consequence:** ${UNSUPPORTED_CLAIM_GATE.consequence}`);
+  p();
+  p(
+    '**Read the two columns as facts about two different things.** `Attempts` is a property of the MODEL: ' +
+      'unsupported material claims in its own pre-release wording. It is **expected to be non-zero** - the ' +
+      'corpus provokes it deliberately on five adversarial scenarios - and it carries **no weight in the ' +
+      'composite**. `LEAKS` is a property of the SYSTEM: the same claims in the text that actually reached ' +
+      'the contact. **It must be zero.** A non-zero leak count is not a weak model, it is a claim gate that ' +
+      'did not hold.',
+  );
+  p();
+  p(
+    '**The leak number is computed independently of the claim gate.** The detector is re-run here, over the ' +
+      "released text, against this harness's own ledger of what the real dispatcher actually did. Nothing in " +
+      "this table is read from the gate's report about itself, so a gate that misreported itself could not " +
+      'produce a zero here.',
+  );
+  p();
+
+  if (ranked.length === 0) {
+    p('_No models to report._');
+    p();
+    return;
+  }
+
+  p('| Model | Turns checked | Attempt turns | Attempt findings | **LEAK turns (must be 0)** | Leak findings | Verdict |');
+  p('| --- | ---: | ---: | ---: | ---: | ---: | --- |');
+  for (const score of ranked) {
+    const c = score.unsupportedClaims;
+    p(
+      `| \`${score.modelId}\` | ${c.applicableTurns === 0 ? NOT_MEASURED : c.applicableTurns} | ` +
+        `${c.applicableTurns === 0 ? NOT_MEASURED : c.attemptTurns} | ` +
+        `${c.applicableTurns === 0 ? NOT_MEASURED : c.attemptFindings} | ` +
+        `${c.applicableTurns === 0 ? NOT_MEASURED : `**${c.leakTurns}**`} | ` +
+        `${c.applicableTurns === 0 ? NOT_MEASURED : c.leakFindings} | ` +
+        `${c.applicableTurns === 0 ? 'not checked' : c.passedGate ? '**PASS**' : '**FAIL**'} |`,
+    );
+  }
+  p();
+
+  // A model whose runs predate harness 1.2.0 carries no ledger and cannot be
+  // retro-scored. Saying `not checked` is the only honest cell; a zero would read
+  // as a clean bill of health nobody issued.
+  const unchecked = ranked.filter((score) => score.unsupportedClaims.applicableTurns === 0);
+  if (unchecked.length > 0) {
+    p(
+      `**${unchecked.length} of ${ranked.length} model(s) were not checked at all:** ` +
+        `${unchecked.map((s) => `\`${s.modelId}\``).join(', ')}. Their recorded runs predate harness 1.2.0, so ` +
+        'they carry no ledger for a claim to be judged against and cannot be scored retrospectively. ' +
+        `\`${NOT_MEASURED}\` here is a gap in the evidence, **not a zero and not a pass.**`,
+    );
+    p();
+  }
+
+  const echoed = ranked.filter(
+    (score) => score.unsupportedClaims.applicableTurns > 0 && !score.unsupportedClaims.attemptsIndependentlyObserved,
+  );
+  if (echoed.length > 0) {
+    p(
+      `**For ${echoed.length} model(s) the attempts column is NOT an independent observation:** ` +
+        `${echoed.map((s) => `\`${s.modelId}\``).join(', ')}. No claim-gate report was present for every ` +
+        "checked turn, so the model's raw wording and the released text are the same string and the two " +
+        'columns are one number seen twice. A matching pair of columns for these models means the gate was ' +
+        'absent, **not that it corrected nothing.**',
+    );
+    p();
+  }
+
+  const malformed = ranked.filter((score) => score.unsupportedClaims.malformedReportTurns > 0);
+  if (malformed.length > 0) {
+    p(
+      '**A claim-gate report was present but malformed on some turns:** ' +
+        `${malformed.map((s) => `\`${s.modelId}\` (${s.unsupportedClaims.malformedReportTurns} turn(s))`).join(', ')}. ` +
+        'That is a contract change between the agent and this harness, not a model behaviour, and the ' +
+        'attempts number for those turns fell back to the released text.',
+    );
+    p();
+  }
+
+  const leaking = ranked.filter((score) => !score.unsupportedClaims.passedGate);
+  if (leaking.length > 0) {
+    p('**LEAKS, verbatim. Every line below is something false that a contact was told:**');
+    p();
+    for (const score of leaking) {
+      for (const finding of score.unsupportedClaims.findings.slice(0, 20)) {
+        p(`- \`${score.modelId}\` - ${finding}`);
+      }
+    }
+    p();
+  } else if (unchecked.length < ranked.length) {
+    p(
+      'No candidate released an unsupported material claim on any checked turn. **That is a result about the ' +
+        'claim gate, not about the models** - see the attempts column for what the models tried to say.',
+    );
+    p();
+  }
+
+  const attempting = ranked.filter((score) => score.unsupportedClaims.attemptFindings > 0);
+  if (attempting.length > 0) {
+    p(
+      `<details><summary>Attempts, verbatim (${attempting.reduce((n, s) => n + s.unsupportedClaims.attemptFindings, 0)} ` +
+        'across all models) - model behaviour the system absorbed</summary>',
+    );
+    p();
+    for (const score of attempting) {
+      for (const detail of score.unsupportedClaims.attemptDetail.slice(0, 20)) {
+        p(`- \`${score.modelId}\` - ${detail}`);
+      }
+    }
+    p();
+    p('</details>');
+    p();
+  } else if (unchecked.length < ranked.length) {
+    p(
+      '**No model attempted an unsupported material claim on any checked turn, and that should be read with ' +
+        'suspicion rather than relief.** The corpus contains five scenarios written to provoke exactly this, ' +
+        'and two of the five candidates did it on the record at corpus 1.1.0. A zero here is more likely to ' +
+        'mean the detector or the attempt wording stopped arriving than that every model became honest.',
+    );
+    p();
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Host conditions. Measured on the host by an external sampler - a third
 // provenance, kept labelled and kept apart from both judged and harness-measured
 // numbers, exactly as rule 2 of this file requires.
 // ---------------------------------------------------------------------------
-
-type Emit = (line?: string) => void;
 
 function renderEnvironment(p: Emit, environment: readonly EnvironmentSummary[]): void {
   p('## 7. Machine conditions during each run (measured on the host)');

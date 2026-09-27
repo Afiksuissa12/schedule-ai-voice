@@ -84,6 +84,48 @@ export interface TurnChecks {
     readonly observedLocalDates: readonly string[];
     readonly detail: string;
   };
+  /**
+   * Unsupported material claims, as TWO independent counts.
+   *
+   * `attempts` is a property of the MODEL and is expected to be non-zero.
+   * `leaks` is a property of the SYSTEM and MUST be empty. Both are computed by
+   * this harness's own detector against this harness's own ledger of real
+   * dispatcher outcomes - never read from the claim gate's self-report - so the
+   * measure cannot be satisfied by a gate that misreports itself.
+   *
+   * Optional on the type for the same reason `resolvedDay` is: results files
+   * written before harness 1.2.0 do not carry it, and an older file must stay
+   * readable rather than exploding. Absent means the check never ran, which is
+   * "not applicable" - never "passed" and never "zero leaks".
+   */
+  readonly unsupportedClaims?: {
+    /**
+     * Was a well-formed claim-gate report present, making `attempts` an
+     * INDEPENDENT observation rather than a second reading of `leaks`?
+     *
+     * False does not mean there were no attempts. It means the model's raw
+     * wording and the released text are the same string, because nothing stood
+     * between them.
+     */
+    readonly attemptsIndependentlyObserved: boolean;
+    /** Pre-release attempt texts the detector was run over. */
+    readonly attemptTextsInspected: number;
+    readonly attempts: ReadonlyArray<{
+      readonly kind: string;
+      readonly matched: string;
+      readonly detail: string;
+    }>;
+    /** MUST be empty. Anything here reached the contact. */
+    readonly leaks: ReadonlyArray<{
+      readonly kind: string;
+      readonly matched: string;
+      readonly detail: string;
+    }>;
+    /** What the real dispatcher had actually succeeded at when the text went out. */
+    readonly ledgerSucceededTools: readonly string[];
+    /** Set when a claim-gate report was present but the wrong shape. */
+    readonly reportMalformedReason: string | null;
+  };
   readonly text: {
     readonly applicable: boolean;
     readonly passed: boolean;

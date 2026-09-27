@@ -360,7 +360,12 @@ describe('the offload-split section', () => {
 describe('results.json stays backward-readable', () => {
   it('bumps the schema identifier because the shape grew', () => {
     const { json } = build([['qwen2.5:7b-instruct', [fixtureRun('qwen2.5:7b-instruct')]]]);
-    expect(json.schema).toBe('schedule-ai-voice/eval-results@2');
+    // MOVED @2 -> @3 BY MISSION 2D, for the same reason @1 became @2: the shape
+    // GREW. results@3 adds `unsupportedClaimAttemptsMeasure` at the top level, a
+    // third entry in `gates`, `models[].unsupportedClaims` and three
+    // `perScenario[]` keys. The superset property is what actually matters and it
+    // is asserted by the next test rather than by this literal.
+    expect(json.schema).toBe('schedule-ai-voice/eval-results@3');
   });
 
   it('keeps every key a results@1 reader depends on, unmoved and unrenamed', () => {
@@ -387,12 +392,18 @@ describe('results.json stays backward-readable', () => {
       'models',
       'perScenario',
     ]) {
-      expect(asRecord, `results@2 must still carry "${key}"`).toHaveProperty(key);
+      expect(asRecord, `results@3 must still carry "${key}"`).toHaveProperty(key);
     }
 
     // results@2 adds exactly one thing beyond what @1 and the wrong-day work
     // already carried.
     expect(asRecord).toHaveProperty('environment');
+
+    // results@3 adds the claim measure's definition, and it is at the TOP LEVEL
+    // rather than inside `gates` on purpose: it gates nothing, and an existing
+    // reader that treats every entry of `gates` as pass/fail would otherwise
+    // report a model with a non-zero attempts count as having failed something.
+    expect(asRecord).toHaveProperty('unsupportedClaimAttemptsMeasure');
   });
 
   it('documents the environment directory and the not-measured convention in the file itself', () => {

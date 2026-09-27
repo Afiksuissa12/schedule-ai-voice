@@ -30,6 +30,7 @@ import { CORPUS_VERSION } from '../corpus/index.js';
 import { JUDGE_PROMPT_VERSION } from '../rubric/judgePrompt.js';
 import { RUBRIC_VERSION } from '../rubric/rubric.js';
 import {
+  buildClaimLedger,
   checkLanguage,
   checkPassthrough,
   checkRepetition,
@@ -39,13 +40,25 @@ import {
   checkToolCall,
   checkToolSelection,
   detectFabricatedTimestamps,
+  detectUnsupportedClaims,
+  EMPTY_CLAIM_LEDGER,
+  type ClaimLedger,
 } from '../rubric/programmatic.js';
 import type { RecordedToolCall, RecordedToolOutcome, ScenarioRun, TurnChecks, TurnRecord } from '../types.js';
+import { readClaimGateAttemptTexts, NO_CLAIM_GATE_REPORT, type ClaimGateAttemptTexts } from './claimGateReport.js';
 import { foldTurnMetrics, MetricsCapturingProvider } from './metricsCapturingProvider.js';
 import { prepareWorld } from './world.js';
 
-/** Bump when the harness's own behaviour changes in a way that affects results. */
-export const HARNESS_VERSION = '1.1.0';
+/**
+ * Bump when the harness's own behaviour changes in a way that affects results.
+ *
+ * 1.2.0 computes a per-turn check that 1.1.0 did not (`checks.unsupportedClaims`,
+ * the two-number claim measure), so a results file written now carries a field a
+ * 1.1.0 file does not. Reading an older file is unaffected - the field is optional
+ * and its absence is treated as "not applicable" - but a 1.1.0 file cannot be
+ * scored on the new gate, and the report says so rather than printing a zero.
+ */
+export const HARNESS_VERSION = '1.2.0';
 
 export interface RunScenarioOptions {
   readonly runtime: AgentRuntime;
@@ -78,6 +91,13 @@ export async function runScenario(options: RunScenarioOptions): Promise<Scenario
   ];
   const earlierAssistantTexts: string[] = [];
   let sawError = false;
+  /**
+   * What the REAL dispatcher has actually succeeded at so far in this
+   * conversation. This is the harness's OWN view of persisted state, and it is
+   * what a material claim is judged against - never the claim gate's report and
+   * never the model's own account of itself.
+   */
+  let claimLedger: ClaimLedger = EMPTY_CLAIM_LEDGER;
 
   for (const [index, turn] of scenario.turns.entries()) {
     contactUtterances.push(turn.utterance);
@@ -91,12 +111,19 @@ export async function runScenario(options: RunScenarioOptions): Promise<Scenario
     let iterations = 0;
     let stopReason = 'ERROR';
     let error: string | null = null;
+    let claimGateAttempts: ClaimGateAttemptTexts = NO_CLAIM_GATE_REPORT;
 
     try {
       const result = await runtime.agent.handleTurn({
         conversationId: prepared.conversationId,
         utterance: turn.utterance,
       });
+
+      // The ONLY thing taken from the claim gate: the raw wording of each
+      // pre-release attempt, which exists nowhere else. Read structurally so
+      // `src/eval` compiles whether or not the gate is on this tree, and so a
+      // contract change is reported rather than silently read as "gate off".
+      claimGateAttempts = readClaimGateAttemptTexts(result);
 
       assistantMessages = result.assistantMessages;
       assistantText = result.assistantText;
@@ -154,10 +181,20 @@ export async function runScenario(options: RunScenarioOptions): Promise<Scenario
     const providerCalls = capturedCalls.length;
     const metrics = foldTurnMetrics(capturedCalls);
 
+    // THE LEDGER ADVANCES BEFORE THE CLAIM IS JUDGED, and that ordering is a
+    // deliberate, documented weakening. A turn that promises something and then
+    // delivers it inside the same turn told the contact the truth by the time the
+    // turn ended, so it is not a leak. The claim gate itself is stricter - it has
+    // to decide before dispatch - which makes every leak recorded here an
+    // unambiguous falsehood rather than a merely premature statement. See
+    // `detectUnsupportedClaims`.
+    claimLedger = buildClaimLedger(recordedOutcomes, claimLedger);
+
     const checks = buildChecks({
       turn,
       scenario,
       assistantText,
+      assistantMessages,
       recordedCalls,
       recordedOutcomes,
       contactUtterancesSoFar: contactUtterances,
@@ -165,6 +202,8 @@ export async function runScenario(options: RunScenarioOptions): Promise<Scenario
       realContactId: prepared.world.contact.id,
       knownMeetingIds,
       metrics,
+      claimLedger,
+      claimGateAttempts,
     });
 
     turns.push({
@@ -268,6 +307,8 @@ interface BuildChecksInput {
   readonly turn: BenchmarkScenario['turns'][number];
   readonly scenario: BenchmarkScenario;
   readonly assistantText: string | null;
+  /** Everything released this turn. A claim in ANY of it reached the contact. */
+  readonly assistantMessages: readonly string[];
   readonly recordedCalls: readonly RecordedToolCall[];
   readonly recordedOutcomes: readonly RecordedToolOutcome[];
   readonly contactUtterancesSoFar: readonly string[];
@@ -275,6 +316,9 @@ interface BuildChecksInput {
   readonly realContactId: string;
   readonly knownMeetingIds: ReadonlySet<string>;
   readonly metrics: LlmTurnMetrics | null;
+  /** The harness's own view of what really happened. Not the gate's. */
+  readonly claimLedger: ClaimLedger;
+  readonly claimGateAttempts: ClaimGateAttemptTexts;
 }
 
 function buildChecks(input: BuildChecksInput): TurnChecks {
@@ -302,6 +346,7 @@ function buildChecks(input: BuildChecksInput): TurnChecks {
     ),
     passthrough: checkPassthrough(input.turn, calls),
     resolvedDay: checkResolvedDay(input.turn, input.recordedOutcomes),
+    unsupportedClaims: buildUnsupportedClaims(input),
     text: checkText(input.turn, input.assistantText, input.contactUtterancesSoFar),
     repetition: checkRepetition(input.assistantText, input.earlierAssistantTexts),
     language: checkLanguage(input.assistantText, input.turn.replyLanguage ?? input.scenario.language),
@@ -312,6 +357,73 @@ function buildChecks(input: BuildChecksInput): TurnChecks {
       codes: failedOutcomes.map((o) => o.code ?? '(no code)'),
     },
   };
+}
+
+/**
+ * THE TWO CLAIM NUMBERS, both computed here, both from the same detector.
+ *
+ * LEAKS come from the text the system RELEASED - every message of it, not only
+ * the last, because a claim in an earlier message of the same turn reached the
+ * contact just as surely. Judged against `input.claimLedger`, which this harness
+ * built from the REAL dispatcher's outcomes.
+ *
+ * ATTEMPTS come from the raw pre-release wording in the claim gate's report, run
+ * through the SAME detector against the SAME ledger. The gate's own verdict on
+ * that wording is never read - that is what makes this an independent measure
+ * rather than a restatement of the gate's opinion of itself.
+ *
+ * WHEN NO REPORT IS PRESENT the model's raw wording IS the released text, so the
+ * attempts set is the leak set and `attemptsIndependentlyObserved` is false. The
+ * two numbers are then the same number seen twice, and the report says so instead
+ * of printing them as two measurements.
+ */
+function buildUnsupportedClaims(input: BuildChecksInput): NonNullable<TurnChecks['unsupportedClaims']> {
+  const releasedTexts =
+    input.assistantMessages.length > 0
+      ? input.assistantMessages
+      : input.assistantText === null
+        ? []
+        : [input.assistantText];
+
+  const leaks = dedupeClaims(releasedTexts.flatMap((text) => detectUnsupportedClaims(text, input.claimLedger)));
+
+  const attempts = input.claimGateAttempts.observed
+    ? dedupeClaims(
+        input.claimGateAttempts.texts.flatMap((text) => detectUnsupportedClaims(text, input.claimLedger)),
+      )
+    : leaks;
+
+  return {
+    attemptsIndependentlyObserved: input.claimGateAttempts.observed,
+    attemptTextsInspected: input.claimGateAttempts.observed
+      ? input.claimGateAttempts.texts.length
+      : releasedTexts.length,
+    attempts,
+    leaks,
+    ledgerSucceededTools: input.claimLedger.succeededTools,
+    reportMalformedReason: input.claimGateAttempts.malformedReason,
+  };
+}
+
+/**
+ * One finding per (kind, phrase).
+ *
+ * A model that says "it's booked" twice in one turn made one false claim twice,
+ * not two false claims, and counting it twice would make the headline number a
+ * function of how repetitive the model is.
+ */
+function dedupeClaims(
+  findings: ReadonlyArray<{ kind: string; matched: string; detail: string }>,
+): Array<{ kind: string; matched: string; detail: string }> {
+  const seen = new Set<string>();
+  const out: Array<{ kind: string; matched: string; detail: string }> = [];
+  for (const finding of findings) {
+    const key = `${finding.kind}:${finding.matched.toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ kind: finding.kind, matched: finding.matched, detail: finding.detail });
+  }
+  return out;
 }
 
 export { isStreamingLlmProvider };

@@ -18,6 +18,8 @@ import {
   PROGRAMMATIC_DIMENSIONS,
   RUBRIC_CATEGORIES,
   TIMESTAMP_FABRICATION_GATE,
+  UNSUPPORTED_CLAIM_ATTEMPTS_MEASURE,
+  UNSUPPORTED_CLAIM_GATE,
   WRONG_DAY_RESOLUTION_GATE,
 } from './rubric.js';
 
@@ -111,9 +113,27 @@ export function turnResolvedWrongDay(turn: TurnRecord): boolean {
   return resolved !== undefined && resolved.applicable && !resolved.passed;
 }
 
-/** Either gate. This is what zeroes the technical category. */
+/**
+ * Did this turn RELEASE an unsupported material claim?
+ *
+ * `unsupportedClaims` is optional on `TurnChecks` so a results file written by
+ * harness 1.1.0 still loads. Absent means the check never ran, which is "not
+ * applicable" - never "zero leaks", and never a pass. A 1.1.0 file cannot be
+ * retro-scored on this gate, because the ledger it would need was never recorded.
+ */
+export function turnLeakedUnsupportedClaim(turn: TurnRecord): boolean {
+  const claims = turn.checks.unsupportedClaims;
+  return claims !== undefined && claims.leaks.length > 0;
+}
+
+/** Was the claim check run on this turn at all? The gate's denominator. */
+export function turnClaimCheckApplicable(turn: TurnRecord): boolean {
+  return turn.checks.unsupportedClaims !== undefined;
+}
+
+/** Any gate. This is what zeroes the technical category. */
 export function turnFailedAnyGate(turn: TurnRecord): boolean {
-  return turnFailedGate(turn) || turnResolvedWrongDay(turn);
+  return turnFailedGate(turn) || turnResolvedWrongDay(turn) || turnLeakedUnsupportedClaim(turn);
 }
 
 // ---------------------------------------------------------------------------
@@ -195,6 +215,20 @@ export interface ScenarioScore {
     readonly totalTurns: number;
     readonly findings: readonly string[];
   };
+  /**
+   * The two claim numbers. `leakTurns` MUST be zero; `attemptTurns` is expected
+   * not to be.
+   */
+  readonly unsupportedClaimGate: {
+    readonly leakTurns: number;
+    readonly leakFindings: number;
+    readonly attemptTurns: number;
+    readonly attemptFindings: number;
+    readonly applicableTurns: number;
+    readonly totalTurns: number;
+    readonly findings: readonly string[];
+    readonly attemptDetail: readonly string[];
+  };
   /** Mean absolute difference between the two judges, when both succeeded. */
   readonly judgeDisagreement: number | null;
   readonly judgesOk: number;
@@ -241,6 +275,26 @@ export function scoreScenario(run: ScenarioRun): ScenarioScore {
     (turn) => `${run.scenarioId} turn ${turn.index + 1}: ${turn.checks.resolvedDay?.detail ?? '(no detail)'}`,
   );
 
+  // ---- the claim measure ---------------------------------------------------
+  // Both numbers are collected here, from the same recorded field. The leak list
+  // is what the gate bites on; the attempt list is reported beside it and bites
+  // on nothing.
+  const claimApplicableTurns = run.turns.filter(turnClaimCheckApplicable);
+  const leakTurns = run.turns.filter(turnLeakedUnsupportedClaim);
+  const attemptTurns = claimApplicableTurns.filter(
+    (turn) => (turn.checks.unsupportedClaims?.attempts.length ?? 0) > 0,
+  );
+  const leakFindings = leakTurns.flatMap((turn) =>
+    (turn.checks.unsupportedClaims?.leaks ?? []).map(
+      (claim) => `${run.scenarioId} turn ${turn.index + 1}: RELEASED ${claim.kind} "${claim.matched}" - ${claim.detail}`,
+    ),
+  );
+  const attemptDetail = attemptTurns.flatMap((turn) =>
+    (turn.checks.unsupportedClaims?.attempts ?? []).map(
+      (claim) => `${run.scenarioId} turn ${turn.index + 1}: attempted ${claim.kind} "${claim.matched}"`,
+    ),
+  );
+
   // ---- categories ----------------------------------------------------------
   const categories: Record<string, Aggregate> = {};
   for (const category of RUBRIC_CATEGORIES) {
@@ -262,10 +316,11 @@ export function scoreScenario(run: ScenarioRun): ScenarioScore {
       weightUsed === 0 ? { score: null, n: 0 } : { score: weighted / weightUsed, n: observations };
   }
 
-  // THE GATES BITE HERE. A scenario in which a timestamp was manufactured, or in
-  // which a booking landed on the wrong calendar day, scores zero on the
-  // technical category no matter what else it got right.
-  if (failedTurns.length > 0 || wrongDayTurns.length > 0) {
+  // THE GATES BITE HERE. A scenario in which a timestamp was manufactured, in
+  // which a booking landed on the wrong calendar day, or in which an unsupported
+  // material claim reached the contact, scores zero on the technical category no
+  // matter what else it got right.
+  if (failedTurns.length > 0 || wrongDayTurns.length > 0 || leakTurns.length > 0) {
     const technical = categories['toolAndStructural'];
     categories['toolAndStructural'] = { score: 0, n: technical?.n ?? run.turns.length };
   }
@@ -297,6 +352,16 @@ export function scoreScenario(run: ScenarioRun): ScenarioScore {
       failedTurns: wrongDayTurns.length,
       totalTurns: run.turns.length,
       findings: wrongDayFindings,
+    },
+    unsupportedClaimGate: {
+      leakTurns: leakTurns.length,
+      leakFindings: leakFindings.length,
+      attemptTurns: attemptTurns.length,
+      attemptFindings: attemptDetail.length,
+      applicableTurns: claimApplicableTurns.length,
+      totalTurns: run.turns.length,
+      findings: leakFindings,
+      attemptDetail,
     },
     judgeDisagreement,
     judgesOk: verdicts.length,
@@ -352,7 +417,47 @@ export interface ModelScore {
     readonly passedGate: boolean;
   };
 
-  /** True only when NEITHER gate was tripped. This is what ranking uses. */
+  /**
+   * THE THIRD HEADLINE, AND IT IS TWO NUMBERS.
+   *
+   * `leakTurns` / `leakFindings` are a property of the SYSTEM and **MUST BE
+   * ZERO**: they count unsupported material claims in the text that actually
+   * reached the contact, judged against this harness's own ledger of real
+   * dispatcher outcomes rather than against the claim gate's self-report.
+   *
+   * `attemptTurns` / `attemptFindings` are a property of the MODEL and are
+   * EXPECTED TO BE NON-ZERO: the same detector over the model's pre-release
+   * wording. On a corpus that provokes this on five scenarios, zero attempts is
+   * evidence the measure broke rather than evidence of an honest model. They carry
+   * no weight in the composite and gate nothing.
+   *
+   * `attemptsIndependentlyObserved` says whether the two numbers are two
+   * observations or one seen twice. Without a claim-gate report the model's raw
+   * wording IS the released text, so they coincide - and that must be stated
+   * rather than left for a reader to infer from their equality.
+   *
+   * `applicableTurns` is the denominator: turns where the check ran at all. A
+   * results file written before harness 1.2.0 carries none, so it reports `n/a`
+   * rather than a flattering zero.
+   */
+  readonly unsupportedClaims: {
+    readonly leakTurns: number;
+    readonly leakFindings: number;
+    readonly leakRate: number | null;
+    readonly attemptTurns: number;
+    readonly attemptFindings: number;
+    readonly attemptRate: number | null;
+    readonly attemptsIndependentlyObserved: boolean;
+    readonly applicableTurns: number;
+    readonly totalTurns: number;
+    readonly findings: readonly string[];
+    readonly attemptDetail: readonly string[];
+    /** Claim-gate reports that were present but the wrong shape. Never hidden. */
+    readonly malformedReportTurns: number;
+    readonly passedGate: boolean;
+  };
+
+  /** True only when NO gate was tripped. This is what ranking uses. */
   readonly passedAllGates: boolean;
 
   readonly timeToFirstToken: LatencyStats;
@@ -412,6 +517,28 @@ export function scoreModel(runs: readonly ScenarioRun[]): ModelScore {
   const wrongDayApplicableTurns = allTurns.filter((t) => t.checks.resolvedDay?.applicable === true);
   const wrongDayFailedTurns = allTurns.filter(turnResolvedWrongDay);
   const wrongDayFindings = scenarioScores.flatMap((s) => s.wrongDayGate.findings);
+
+  const claimApplicable = allTurns.filter(turnClaimCheckApplicable);
+  const claimLeakTurns = allTurns.filter(turnLeakedUnsupportedClaim);
+  const claimAttemptTurns = claimApplicable.filter(
+    (t) => (t.checks.unsupportedClaims?.attempts.length ?? 0) > 0,
+  );
+  const claimLeakFindings = scenarioScores.flatMap((s) => s.unsupportedClaimGate.findings);
+  const claimAttemptDetail = scenarioScores.flatMap((s) => s.unsupportedClaimGate.attemptDetail);
+  const claimAttemptFindingCount = claimApplicable.reduce(
+    (sum, t) => sum + (t.checks.unsupportedClaims?.attempts.length ?? 0),
+    0,
+  );
+  // Independent only if EVERY applicable turn had a well-formed report. One turn
+  // without one means the attempts column is part observation and part echo of
+  // the released text, and claiming otherwise would overstate the measure.
+  const claimAttemptsIndependent =
+    claimApplicable.length > 0 &&
+    claimApplicable.every((t) => t.checks.unsupportedClaims?.attemptsIndependentlyObserved === true);
+  const claimMalformedReportTurns = claimApplicable.filter(
+    (t) => t.checks.unsupportedClaims?.reportMalformedReason !== null &&
+      t.checks.unsupportedClaims?.reportMalformedReason !== undefined,
+  ).length;
 
   const categories: Record<string, Aggregate> = {};
   for (const category of RUBRIC_CATEGORIES) {
@@ -516,7 +643,26 @@ export function scoreModel(runs: readonly ScenarioRun[]): ModelScore {
       findings: wrongDayFindings,
       passedGate: wrongDayFailedTurns.length === 0,
     },
-    passedAllGates: gateFailedTurns.length === 0 && wrongDayFailedTurns.length === 0,
+    unsupportedClaims: {
+      leakTurns: claimLeakTurns.length,
+      leakFindings: claimLeakFindings.length,
+      // Over the turns where the check RAN, not over every turn: a rate over a
+      // denominator that includes turns nobody checked would shrink as older
+      // records were mixed in and would say nothing.
+      leakRate: claimApplicable.length === 0 ? null : claimLeakTurns.length / claimApplicable.length,
+      attemptTurns: claimAttemptTurns.length,
+      attemptFindings: claimAttemptFindingCount,
+      attemptRate: claimApplicable.length === 0 ? null : claimAttemptTurns.length / claimApplicable.length,
+      attemptsIndependentlyObserved: claimAttemptsIndependent,
+      applicableTurns: claimApplicable.length,
+      totalTurns: allTurns.length,
+      findings: claimLeakFindings,
+      attemptDetail: claimAttemptDetail,
+      malformedReportTurns: claimMalformedReportTurns,
+      passedGate: claimLeakTurns.length === 0,
+    },
+    passedAllGates:
+      gateFailedTurns.length === 0 && wrongDayFailedTurns.length === 0 && claimLeakTurns.length === 0,
     timeToFirstToken: latency(metrics.map((m) => m.timeToFirstTokenMs)),
     totalLatency: latency(allTurns.map((t) => t.turnLatencyMs)),
     tokensPerSecond: numeric(metrics.map((m) => m.tokensPerSecond)),
@@ -565,4 +711,9 @@ function numericWithMax(values: ReadonlyArray<number | null>): { n: number; mean
   };
 }
 
-export { TIMESTAMP_FABRICATION_GATE, WRONG_DAY_RESOLUTION_GATE };
+export {
+  TIMESTAMP_FABRICATION_GATE,
+  UNSUPPORTED_CLAIM_ATTEMPTS_MEASURE,
+  UNSUPPORTED_CLAIM_GATE,
+  WRONG_DAY_RESOLUTION_GATE,
+};

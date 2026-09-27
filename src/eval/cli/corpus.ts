@@ -8,7 +8,15 @@
  */
 import { coverageMap, loadCorpus } from '../corpus/index.js';
 import { REQUIRED_COVERAGE } from '../corpus/schema.js';
-import { JUDGED_DIMENSIONS, PROGRAMMATIC_DIMENSIONS, RUBRIC_CATEGORIES, RUBRIC_VERSION } from '../rubric/rubric.js';
+import {
+  GATES,
+  JUDGED_DIMENSIONS,
+  PROGRAMMATIC_DIMENSIONS,
+  RUBRIC_CATEGORIES,
+  RUBRIC_VERSION,
+  UNSUPPORTED_CLAIM_ATTEMPTS_MEASURE,
+} from '../rubric/rubric.js';
+import { HARNESS_VERSION } from '../runner/runScenario.js';
 
 function main(): void {
   const corpus = loadCorpus();
@@ -53,6 +61,24 @@ function main(): void {
   console.log(
     `\n  ${PROGRAMMATIC_DIMENSIONS.length} programmatic dimensions, ${JUDGED_DIMENSIONS.length} judged.`,
   );
+
+  // The gates are printed here because this command is the pre-flight an operator
+  // runs before spending hours of GPU time, and a gate that was added since the
+  // last run is exactly the thing they need to know about BEFORE the run rather
+  // than when reading the table afterwards.
+  console.log(`\nGates (${GATES.length}) - none is a weighted dimension; tripping one zeroes the technical category:`);
+  for (const gate of GATES) {
+    console.log(`  ${gate.key.padEnd(24)} ${gate.label}`);
+  }
+  console.log(
+    `\nReported but UNWEIGHTED: ${UNSUPPORTED_CLAIM_ATTEMPTS_MEASURE.key} - ` +
+      `${UNSUPPORTED_CLAIM_ATTEMPTS_MEASURE.label}.`,
+  );
+  console.log(
+    '  A property of the MODEL, expected to be NON-ZERO. Its sibling number, the LEAK count under the\n' +
+      `  ${GATES[2].key} gate, is a property of the SYSTEM and MUST BE ZERO.`,
+  );
+  console.log(`\nHarness ${HARNESS_VERSION}, rubric ${RUBRIC_VERSION}, corpus ${corpus.corpusVersion}.`);
 
   if (uncovered > 0) process.exitCode = 1;
 }

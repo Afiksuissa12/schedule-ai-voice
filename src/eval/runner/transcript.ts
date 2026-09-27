@@ -149,6 +149,29 @@ function renderTurnChecks(turn: TurnRecord): string {
         .join(', ')}`,
     );
   }
+  // A LEAK IS THE LOUDEST THING ON THE TURN, so it is printed first and in the
+  // same shape as the other gate failures. A reader scanning a transcript for
+  // "what did this turn actually get wrong" must not have to reach the end.
+  const claims = c.unsupportedClaims;
+  if (claims && claims.leaks.length > 0) {
+    parts.push(
+      `**GATE FAILED - unsupported claim RELEASED to the contact:** ${claims.leaks
+        .map((claim) => `${claim.kind} "${claim.matched}"`)
+        .join(', ')} (the real dispatcher had succeeded at ${
+        claims.ledgerSucceededTools.length === 0 ? 'NOTHING' : claims.ledgerSucceededTools.join(', ')
+      })`,
+    );
+  }
+  // Attempts are reported even when nothing leaked, because "the model tried and
+  // the gate stopped it" is the observation that makes the gate worth having, and
+  // a transcript that only showed failures would make a working gate invisible.
+  if (claims && claims.attemptsIndependentlyObserved && claims.attempts.length > 0 && claims.leaks.length === 0) {
+    parts.push(
+      `claim gate CORRECTED an unsupported claim before release: ${claims.attempts
+        .map((claim) => `${claim.kind} "${claim.matched}"`)
+        .join(', ')}`,
+    );
+  }
   if (c.toolSelection.applicable) {
     parts.push(
       `tool selection ${c.toolSelection.assertionsPassed}/${c.toolSelection.assertionsChecked}` +
