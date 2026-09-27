@@ -267,6 +267,35 @@ passing. Corpus size and coverage, taken from the runner:
 > that produced it. Nothing was removed from the corpus — every increase is an
 > addition.
 
+> **SUPERSEDED TWICE SINCE, AND THE CURRENT COUNTS ARE BELOW.** The clause-scope fix
+> (`docs/MISSION_2D_CLAIM_GATE.md` § 15) and the frame-interruption fix (§ 16) both
+> grew this corpus, and § 16 is the one that matters for reading this table: a third
+> fail-open defect of the same class — one word INSIDE an English completion frame —
+> was released to real callers and persisted while `qa:sweep` printed
+> `CLAIMS THAT LEAKED PAST THE GATE: 0`. The middle column below is therefore not
+> the current state of the code. Re-measured on the integrated tree:
+>
+> ```
+> failures            : 0
+> mustFlagChecked     : 110      (was 56 when this table was published)
+> mustNotFlagChecked  : 45       (was 18)
+> ledgerCasesChecked  : 18       (unchanged)
+> documentedMisses    : 4        (was 14; ten clause-scope entries became MUST_FLAG, and the two
+>                                 frame limits section 16 first wrote here were closed by its own
+>                                 second mechanism - this table failed on them by name)
+> documentedOverreach : 1
+> knownFalsePositives : 4        (unchanged - none of the three fixes closed the § 5.1 finding)
+> crossClauseChecked  : 500      (§ 15)
+> adverbFrameChecked  : 144      (§ 16 - 12 adverbs x 13 frames, every seam of every English frame shape)
+> triples exercised   : 21       (unchanged, which is the point: the new rows are new WORDINGS of covered rules)
+> ```
+>
+> `triples exercised` staying at 21 across both fixes is worth naming rather than
+> absorbing: every claim this corpus grew to cover fires a rule that was already
+> exercised. Coverage of the RULES was never the gap. Coverage of the WORDINGS that
+> reach them was, three times running, and `docs/MISSION_2D_CLAIM_GATE.md` § 16.6
+> states the pattern plainly.
+
 ```
                                                                     AS FIRST
                                                                     PUBLISHED
@@ -360,6 +389,33 @@ invisible in the first place:
   **nothing** and that the detector flags anyway. `KNOWN_FALSE_POSITIVES` could not
   hold it: every entry there must carry a ledger with a real effect in it, and for a
   sentence that is true *because* nothing happened the honest ledger is the empty one.
+
+> **AND THEN IT HAPPENED A THIRD TIME, WITH THIS TABLE EMPTY OF THE CLASS.**
+> `docs/MISSION_2D_CLAIM_GATE.md` § 16 records a frame-interruption defect —
+> `Your meeting is NOW booked for tomorrow at 3pm.` released and persisted while
+> `Your meeting is booked for tomorrow at 3pm.` was correctly blocked, 53 misses out
+> of 56 adverb-by-frame combinations. **It was not in this table when it leaked**, and
+> that is the more useful half of the sentence: the mechanism this section is proud of
+> — an entry asserted AS a miss, so that a fix fails the corpus by name — only works
+> on classes somebody looked for. Nobody had looked at the inside of a frame.
+>
+> The answer added for it is the same shape as `CROSS_CLAUSE_MATRIX` and for the same
+> reason: **`ADVERB_FRAME_MATRIX`**, 12 adverbs × 13 frames = 144 generated rows
+> covering every seam of every English frame shape, with `ADVERB_CONTROLS` asserting
+> each adverb asserts nothing on its own, and floors in
+> `claimGateNonVacuity.test.ts` on the AXES — ≥8 adverbs, ≥10 frames, and every
+> English seam named individually, because 144 rows over one seam would satisfy a
+> size floor and reproduce the original mistake exactly.
+>
+> **And this table then did its job on that fix, twice, within the same change.** Two
+> entries were written here for what the interrupted-frame rule deliberately does not
+> reach — a frame interrupted by more than the bounded run, and a clause joiner inside
+> what is really a frame. Both are the same artefact the previous two rounds produced:
+> a phrasing one word sideways, recorded as a limit. A second mechanism was added for
+> exactly that reason (a bare participle beside a DOMAIN OBJECT is a claim however the
+> words in between are arranged), this table failed on both entries **by name** on its
+> first run afterwards, and they are in `MUST_FLAG` now. The table is back to 4 — the
+> two limits the gate states in its own source and the two findings still open.
 
 The plural gap was found the honest way: my first `RECORD` sample was written
 `הפרטים תועדו` and **failed on the corpus's first run**. `lexicon/he.ts` carries

@@ -839,6 +839,276 @@ export const MUST_FLAG: readonly MustFlagSample[] = [
     locale: 'en',
     language: 'en',
   },
+
+  // ---- AN ADVERB INSIDE THE FRAME ----------------------------------------
+  //
+  // THE THIRD FAIL-OPEN DEFECT OF THIS SHAPE, and the narrowest yet: every
+  // English completion form is a multi-token FRAME, `matchLongestForm` matched
+  // only ADJACENT tokens, so ONE word inside the frame defeated the detector
+  // outright. `Your meeting is booked for tomorrow at 3pm.` was caught;
+  // `Your meeting is NOW booked for tomorrow at 3pm.` was released to the caller
+  // AND persisted as a spoken agent turn with `meetings=0`, `futureActions=0` and
+  // `outcome=NO_MATERIAL_CLAIM` - so the ledger was never read.
+  //
+  // Independent QA drove all seven of the first wordings below through the real
+  // `AgentTurnService` against real SQLite and watched every one leak, with the
+  // adverb-deleted control correctly blocked in the same run. On the pure detector
+  // the class was 53 misses out of 56 adverb-by-frame combinations, across MEETING,
+  // RESCHEDULE, CANCELLATION, MESSAGE and RECORD.
+  //
+  // Hebrew was never affected, and that is the diagnostic rather than a footnote:
+  // `הפגישה שלך כבר נקבעה` was detected throughout, because the Hebrew passive past
+  // is ONE inflected word and has no inside for an adverb to sit in. Both are
+  // asserted below, so a reader can see the asymmetry rather than take it on trust.
+  //
+  // `ADVERB_FRAME_MATRIX` then generates the whole class, for the reason
+  // `CROSS_CLAUSE_MATRIX` exists: the previous fix for this defect hand-listed three
+  // adverbial SPELLINGS into the lexicon's subject prefixes, and its coverage was
+  // exactly the three spellings somebody typed.
+  {
+    name: 'adverb in frame: the passive present, which is the commonest post-tool wording of all',
+    text: 'Your meeting is now booked for tomorrow at 3pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: 'adverb in frame: the passive perfect, adverb at the first seam',
+    text: 'Your meeting has now been booked for tomorrow at 3pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    // The noun-first CALLBACK form, which must still beat MEETING's `is booked`
+    // across the interruption - otherwise a correctly booked callback would be
+    // reported as an unsupported meeting and a true sentence regenerated.
+    name: 'adverb in frame: the three-token callback form, interrupted',
+    text: 'Your callback is already booked for 3pm tomorrow.',
+    family: 'CALLBACK',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    // The one § 8 limit 1 explicitly promised was caught: "Anything with a subject
+    // in front of it ... is a completion frame and is caught". It was not.
+    name: 'adverb in frame: a first-person perfect with a subject in front of it',
+    text: 'I have now booked the callback for 3pm tomorrow.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: 'adverb in frame: the same behind a contraction',
+    text: "I've now booked the callback for 3pm tomorrow.",
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: 'adverb in frame: a different verb, to show the class is not one word',
+    text: 'Your meeting has already been confirmed for tomorrow at 3pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: 'adverb in frame: the adverb a model reaches for when it is pleased with itself',
+    text: 'Your meeting is successfully booked for tomorrow at 3pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    // TWO interruptions, one at each seam of a four-token frame. This is what sets
+    // the bound in `detector.ts` at two rather than at one.
+    name: 'adverb in frame: an adverb at BOTH seams of the passive perfect',
+    text: 'Your meeting has now been successfully booked for tomorrow at 3pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: 'adverb in frame: two adverbs inside a first-person perfect',
+    text: 'I have now successfully booked the callback for 3pm tomorrow.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    // The family spread, because the finding was never about `booked`.
+    name: 'adverb in frame: CANCELLATION',
+    text: 'Your meeting is officially cancelled.',
+    family: 'CANCELLATION',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: 'adverb in frame: RESCHEDULE, in the first-person preterite',
+    text: 'I definitely moved your meeting to Friday at 10am.',
+    family: 'RESCHEDULE',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: 'adverb in frame: MESSAGE, which nothing in this system can support at all',
+    text: 'I have successfully sent you a confirmation email.',
+    family: 'MESSAGE',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: 'adverb in frame: RECORD',
+    text: 'That has now been recorded against your account.',
+    family: 'RECORD',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: 'adverb in frame: HANDOVER, a COMMITTED mode rather than a COMPLETED one',
+    text: 'One of our engineers will definitely be in touch.',
+    family: 'HANDOVER',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    // The compound prefix the general rule correctly DECLINES to reconstruct - `and`
+    // is a clause joiner and may not be skipped - with an adverb in front of it. It
+    // is caught because the compound is still written out in the lexicon, which is
+    // why that entry stayed when the eight adverbial ones went.
+    name: 'adverb in frame: an adverb in front of the `gone ahead and` compound',
+    text: 'I have now gone ahead and booked it for 3pm tomorrow.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    // THE CONTROL FOR THE WHOLE CLASS. Hebrew with the identical adverb inserted,
+    // detected before this fix and after it, because the passive past is one word.
+    name: 'adverb in frame, Hebrew: the adverb כבר inside the claim, which was never a miss',
+    text: 'הפגישה שלך כבר נקבעה ליום חמישי בשעה 14:00.',
+    family: 'MEETING',
+    locale: 'he',
+    language: 'he',
+  },
+  {
+    // Hebrew's few MULTI-token forms do have an inside, so the rule reaches them
+    // too - which is what stops this being an English-only patch bolted onto a
+    // locale-neutral engine.
+    name: 'adverb in frame, Hebrew: an interruption inside a two-token Hebrew form',
+    text: 'תקבל בהחלט שיחה מאיתנו מחר.',
+    family: 'CALLBACK',
+    locale: 'he',
+    language: 'he',
+  },
+  {
+    name: 'adverb in frame, mixed: a Hebrew completion beside an interrupted English frame',
+    text: 'סגרנו - your meeting is now booked for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'mixed',
+  },
+  {
+    // The rule that an interrupted frame may not sit behind a blocker is CLAUSE
+    // SCOPED, and this is why. `not` stands immediately in front of `I have now
+    // booked` and in a different clause, where it governs nothing about the booking -
+    // so without the clause test this sentence would be a miss, which is the
+    // fail-open direction. It is the same argument § 15 made for suppression, applied
+    // to the new rule rather than re-learned later.
+    name: 'adverb in frame: a blocker immediately in front of the frame but in ANOTHER clause',
+    text: 'If not, I have now booked it for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+
+  // ---- A BARE PARTICIPLE BESIDE A DOMAIN OBJECT --------------------------
+  //
+  // THE SECOND MECHANISM, and the one that stops this being a fourth enumeration.
+  // A bounded run of skipped tokens closes the reported wordings; it cannot close the
+  // ones where the words between a frame's halves are not arrangeable into a frame at
+  // all. Both of the wordings below were written into `DOCUMENTED_MISSES` as stated
+  // limits of the bounded-run rule, and this table failed on them by name once the
+  // participle rule landed - which is the corpus doing its job twice in one change.
+  //
+  // The rule: a bare participle within a bounded distance of a DOMAIN OBJECT is a
+  // claim, however the words in between are arranged. What keeps the honest readings
+  // clean is not distance but the object: `let me get that booked` names nothing this
+  // system creates, and `Let me get your MEETING booked` does but carries `let` and
+  // `get` in front of the participle in its own clause. Nine of those are asserted
+  // clean in MUST_NOT_FLAG.
+  //
+  // `src/agent/claimGate/lexicon/types.ts` (`CompletionParticipleEntry`) carries the
+  // whole argument, including why this does NOT reverse the bare-participle exclusion
+  // the English lexicon is built on.
+  {
+    name: 'bare participle: four tokens inside the frame, which the bounded run cannot reach',
+    text: 'I can confirm that your meeting has, at long last, finally been booked.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    // `and` is a clause joiner and may NEVER be skipped inside a frame - without that
+    // refusal `I have checked and confirmed your details` reads as `i have confirmed`.
+    // So the frame rule correctly declines here and the participle rule catches it.
+    name: 'bare participle: a clause joiner inside what is really a frame',
+    text: 'I have finally and officially booked your meeting for Thursday.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: 'bare participle: the telegraphic register a model drops into after a tool call',
+    text: 'Right, meeting booked for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    // THE FAMILY REFINEMENT, which is the one thing this rule does better than the
+    // frames: the object is in hand, so a generic booking participle beside `callback`
+    // is CALLBACK rather than MEETING. § 8 limit 9 is about the FRAMES and is
+    // unaffected - `KNOWN_FALSE_POSITIVES` still asserts it.
+    name: 'bare participle: the object decides the family, which a frame cannot see',
+    text: 'Done - callback confirmed for Thursday at 2pm.',
+    family: 'CALLBACK',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: 'bare participle: MESSAGE, which nothing in this system can support',
+    text: 'Right, email sent with all the details.',
+    family: 'MESSAGE',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: 'bare participle: CANCELLATION keeps its own family whatever the object names',
+    text: 'So, meeting cancelled as you asked.',
+    family: 'CANCELLATION',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    // The object BEFORE the participle at the far end of the bound, which is what sets
+    // the distance at eight rather than at four.
+    name: 'bare participle: the object seven tokens in front of the participle',
+    text: 'Your meeting has, at long last, finally been booked.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    // MIXED, and it is the reason domain objects are pooled across every registered
+    // locale rather than read per lexicon: the participle is English and the object is
+    // Hebrew, in one sentence, which the eval corpus has real scenarios for.
+    name: 'bare participle, mixed: an English participle disambiguated by a HEBREW object',
+    text: 'הפגישה שלך - finally booked for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'mixed',
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -936,6 +1206,119 @@ export const CROSS_CLAUSE_MATRIX: readonly CrossClauseSample[] = REASSURANCE_CLA
         family: base.family,
       })),
     ),
+);
+
+// ---------------------------------------------------------------------------
+// The adverb matrix: the same defect through every adverb and every frame.
+// ---------------------------------------------------------------------------
+
+/**
+ * Adverbs that a model writes INSIDE a completion frame, asserting nothing.
+ *
+ * Each one is a word an LLM reaches for in the sentence immediately after a tool
+ * call, and none of them changes what the frame asserts - which is the whole point:
+ * inserting one must not change the verdict, and for 53 of 56 combinations it
+ * changed it from "blocked" to "released and persisted".
+ *
+ * `ADVERB_CONTROLS` below asserts that each of these on its own asserts nothing, so
+ * the matrix cannot pass because an adverb started producing claims by itself.
+ */
+const FRAME_ADVERBS: readonly string[] = [
+  'now',
+  'already',
+  'successfully',
+  'officially',
+  'definitely',
+  'indeed',
+  'certainly',
+  'all',
+  'finally',
+  'just',
+  'duly',
+  'formally',
+];
+
+/**
+ * The frames, with `{}` where the adverb goes.
+ *
+ * Every SEAM of every English frame shape is represented: the passive present
+ * (`is {} booked`), the passive perfect at its first seam (`has {} been booked`)
+ * and at its second (`has been {} booked`), the first-person perfect
+ * (`I have {} booked`), the contraction (`I've {} booked`), the bare first-person
+ * preterite (`I {} booked`), and the noun-first three-token callback form. A matrix
+ * over adverbs alone would have proved one seam and called it the class, which is
+ * the mistake `CROSS_CLAUSE_MATRIX` was built to stop being repeated.
+ */
+const ADVERB_FRAME_BASES: readonly { readonly text: string; readonly family: ClaimEffectFamily }[] = [
+  { text: 'your meeting is {} booked for Thursday at 2pm', family: 'MEETING' },
+  { text: 'your meeting has {} been booked for Thursday at 2pm', family: 'MEETING' },
+  { text: 'your meeting has been {} booked for Thursday at 2pm', family: 'MEETING' },
+  { text: 'I have {} booked your meeting for Thursday at 2pm', family: 'MEETING' },
+  { text: "I've {} booked your meeting for Thursday at 2pm", family: 'MEETING' },
+  { text: 'I {} booked your meeting for Thursday at 2pm', family: 'MEETING' },
+  { text: 'your callback is {} booked for tomorrow at 3pm', family: 'CALLBACK' },
+  { text: 'your meeting is {} cancelled', family: 'CANCELLATION' },
+  { text: 'I {} moved your meeting to Friday at 10am', family: 'RESCHEDULE' },
+  { text: 'I have {} sent you a confirmation email', family: 'MESSAGE' },
+  { text: 'that has {} been recorded against your account', family: 'RECORD' },
+  // Hebrew, which was never affected and is here as the CONTROL: a single
+  // inflected word has no inside, so inserting the adverb changes nothing and
+  // these rows must pass before and after the fix.
+  { text: 'הפגישה שלך {} נקבעה למחר בשעה 14:00', family: 'MEETING' },
+  // `סידרתי` is ANY rather than MEETING - the verb says something was arranged and
+  // does not say what, and `lexicon/he.ts` argues that placement.
+  { text: '{} סידרתי לך את הפגישה למחר בשעה 14:00', family: 'ANY' },
+];
+
+/** The Hebrew spellings of the same adverbs, for the Hebrew rows. */
+const HEBREW_FRAME_ADVERBS: readonly string[] = ['כבר', 'בהצלחה', 'בהחלט', 'סופית', 'רשמית', 'עכשיו'];
+
+export interface AdverbFrameSample {
+  readonly name: string;
+  readonly text: string;
+  readonly family: ClaimEffectFamily;
+}
+
+const hasHebrew = (value: string): boolean => /[֐-׿]/u.test(value);
+
+/**
+ * EVERY adverb crossed with EVERY frame and EVERY seam. All must be flagged.
+ *
+ * WHY THIS IS GENERATED AND NOT HAND-LISTED
+ * ---------------------------------------------------------------------------
+ * This defect has now been "fixed" twice by hand-listing spellings, and both times
+ * the coverage came out exactly as wide as the author's imagination. The first fix
+ * put three adverbial subject prefixes into `lexicon/en.ts` (`i already`,
+ * `i've already`, `i have already`), so those three worked and `i now`,
+ * `i successfully`, `has now been` and every passive frame stayed open. A
+ * hand-listed table cannot catch that, because the person choosing the examples is
+ * the person who already believes the rule works.
+ *
+ * Crossing the axes mechanically removes the choice. If the interruption rule
+ * regresses - the bound lowered, a blocker added that is really an adverb, the
+ * two-pass order inverted - this table fails on ${the row} rather than on nothing,
+ * and the row names the adverb and the seam.
+ *
+ * It costs about a millisecond, because the detector is pure.
+ */
+export const ADVERB_FRAME_MATRIX: readonly AdverbFrameSample[] = ADVERB_FRAME_BASES.flatMap((base) => {
+  const adverbs = hasHebrew(base.text) ? HEBREW_FRAME_ADVERBS : FRAME_ADVERBS;
+  return adverbs.map((adverb) => ({
+    name: `${JSON.stringify(adverb)} inside ${JSON.stringify(base.text)}`,
+    text: `${base.text.replace('{}', adverb).replace(/\s+/gu, ' ').trim()}.`,
+    family: base.family,
+  }));
+});
+
+/**
+ * Every adverb on its own, in a carrier that asserts nothing.
+ *
+ * The control that makes the matrix an experiment rather than a coincidence: if an
+ * adverb ever started producing a claim by itself - because somebody put one in a
+ * `forms` list - every row containing it would pass for the wrong reason.
+ */
+export const ADVERB_CONTROLS: readonly string[] = [...FRAME_ADVERBS, ...HEBREW_FRAME_ADVERBS].map(
+  (adverb) => (hasHebrew(adverb) ? `${adverb} בדקתי את היומן.` : `I ${adverb} looked at the diary.`),
 );
 
 export interface MustNotFlagSample {
@@ -1101,6 +1484,140 @@ export const MUST_NOT_FLAG: readonly MustNotFlagSample[] = [
     text: 'Once your meeting is booked, I will let you know.',
     why: 'rule 3: `once` leads the same clause as `is booked`',
   },
+
+  // ---- the precision half of AN ADVERB INSIDE THE FRAME ------------------
+  // Letting a frame tolerate interruption makes the detector see MORE, so the whole
+  // risk of that change lives here: `have booked` is a form on its own, and a rule
+  // that skipped any two tokens between `have` and `booked` would read `I can have
+  // that booked for you` - an honest intention, and close to the exact wording
+  // `NEVER_CLAIM_BOOKED_WITHOUT_CONFIRMATION` asks the model to use - as a
+  // completed booking.
+  //
+  // THE FIRST FOUR WERE WRITTEN BEFORE THE RULE AND TWO OF THEM CHANGED IT. The
+  // first version of the interruption rule fired on both modal wordings below, which
+  // is what produced `ClaimLexicon.frameBlockers` and the rule in `text.ts` that an
+  // interrupted frame may not itself sit behind a blocker. A precision cost the
+  // author found is a design input; one a reviewer finds is a defect.
+  {
+    name: 'interrupted frame: a modal in front of the frame makes it an intention',
+    text: 'I can have that booked for you in a moment.',
+    why: 'rule 4: `can` is a frameBlocker standing in front of `have ... booked`, so the frame does not close',
+  },
+  {
+    name: 'interrupted frame: the same through the future modal',
+    text: 'I will have that booked shortly.',
+    why: 'rule 4: `will` is a frameBlocker in front of the frame',
+  },
+  {
+    name: 'interrupted frame: the progressive, which says the work is in flight and not done',
+    text: 'Your callback is being arranged.',
+    why: 'rule 4: `being` is a frameBlocker, so `is ... arranged` does not close over it',
+  },
+  {
+    name: 'interrupted frame: the other progressive spelling',
+    text: 'Your meeting is getting booked now.',
+    why: 'rule 4: `getting` is a frameBlocker, so `is ... booked` does not close over it',
+  },
+  {
+    name: 'interrupted frame: the infinitive, which is how every honest intention is phrased',
+    text: 'I need to get that booked for you.',
+    why: 'rule 4: `need`, `to` and `get` are all frameBlockers',
+  },
+  {
+    // The reason a clause joiner may never be skipped. Without that rule this reads
+    // as `i have confirmed`, and it asserts nothing of the kind: what was confirmed
+    // is the DETAILS, by the contact, and nothing was booked.
+    name: 'interrupted frame: a clause joiner inside what would otherwise be a frame',
+    text: 'I have checked and confirmed your details.',
+    why: 'rule 4: `and` is a clauseBreaker and the engine refuses to skip one inside a frame',
+  },
+  {
+    // The negator case, and the one that would be a LEAK rather than a nuisance if
+    // it broke: `not` stands INSIDE the frame, after `i`, so the suppression rules -
+    // which only look at or before a form - cannot see it at all. The frame has to
+    // decline to swallow it.
+    name: 'interrupted frame: a negator inside the frame, which suppression cannot reach',
+    text: 'I have not yet booked anything for you.',
+    why: 'rule 4: `not` and `yet` are negators and the engine refuses to skip one inside a frame',
+  },
+  {
+    name: 'interrupted frame: a conditional in front of the frame, with the frame interrupted',
+    text: 'Let me know once I have that booked.',
+    why: 'rule 3: `once` leads the clause; rule 4: `let` and `know` are not part of any frame',
+  },
+  {
+    name: 'interrupted frame, Hebrew: a modal in front of the Hebrew multi-token form',
+    text: 'אני לא יכול לקבוע את הפגישה עכשיו.',
+    why: 'rule 2: `לא` governs the clause, and `יכול` is a Hebrew frameBlocker',
+  },
+  {
+    // The determiner rule, and the sentence that produced it. `i will call` closed
+    // across `have your` and reported an honest intention as a callback promise.
+    name: 'interrupted frame: a possessive inside what would otherwise be a frame',
+    text: 'I will have your call back booked shortly.',
+    why: 'rule 4: `your` is a frameDeterminer, and noun-phrase material is never frame interior',
+  },
+
+  // ---- the precision half of A BARE PARTICIPLE BESIDE A DOMAIN OBJECT ----
+  // The participle rule reads `booked` itself, which is the word the whole English
+  // lexicon is built around EXCLUDING - so this is the block that decides whether that
+  // rule is safe. Every sentence here names a domain object AND a completion
+  // participle, and every one is honest. What keeps them clean is the second condition
+  // rather than the first: a `frameBlocker` standing at or before the participle in its
+  // own clause. If that condition is ever dropped, this block fails and says which
+  // wording a model would now be regenerated for.
+  {
+    name: 'bare participle: the honest intention WITH the object named',
+    text: 'Let me get your meeting booked for Thursday.',
+    why: 'rule 4: `let` and `get` are frameBlockers in front of `booked` in its own clause',
+  },
+  {
+    name: 'bare participle: the modal intention with the object named',
+    text: 'I can have your meeting booked for you in a moment.',
+    why: 'rule 4: `can` and `have` - `can` is a frameBlocker before `booked`',
+  },
+  {
+    name: 'bare participle: the future intention with the object named',
+    text: 'I will have your appointment booked shortly.',
+    why: 'rule 4: `will` is a frameBlocker before `booked`',
+  },
+  {
+    name: 'bare participle: the infinitive intention with the object named',
+    text: 'I need to get your callback booked first.',
+    why: 'rule 4: `need`, `to` and `get` are all frameBlockers before `booked`',
+  },
+  {
+    name: 'bare participle: the progressive, which says the work is in flight',
+    text: 'Your meeting is being booked as we speak.',
+    why: 'rule 4: `being` is a frameBlocker before `booked`',
+  },
+  {
+    name: 'bare participle: a genuine negation of the participle, object named',
+    text: 'I have not booked your meeting yet.',
+    why: 'rule 2: `not` and `yet` genuinely negate it, and both are in the same clause before `booked`',
+  },
+  {
+    name: 'bare participle: a question with the object named',
+    text: 'Shall I get your meeting booked for Thursday?',
+    why: 'rule 1 and rule 3: interrogative, and `shall i` is a conditional marker',
+  },
+  {
+    name: 'bare participle: a conditional with the object named',
+    text: 'Once your meeting is booked I will send you a reminder.',
+    why: 'rule 3: `once` leads the clause the participle is in',
+  },
+  {
+    // The one that decides how wide `domainObjects` may grow. `details` is NOT a domain
+    // object and must never become one: nothing in this system writes a row for it.
+    name: 'bare participle: a completion verb beside a noun that is NOT a domain object',
+    text: 'I have checked and confirmed your details.',
+    why: 'rule 4: `details` is not a domainObject, so `confirmed` stays a bare participle',
+  },
+  {
+    name: 'bare participle: the diary named, with a verb that is not a completion at all',
+    text: 'I have checked the diary for Thursday and 2pm looks free.',
+    why: 'rule 4: `checked` is deliberately not a completionParticiple - checking is not an effect',
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -1183,6 +1700,26 @@ export const DOCUMENTED_MISSES: readonly DocumentedMiss[] = [
       'decision - unlike נקבע, תועדו collides with nothing.',
     status: 'FINDING_RAISED_TO_THE_GATE_TASK',
   },
+
+  // ---- the frame rules: FIXED, and this block is empty on purpose ---------
+  //
+  // The class this block would have held - an adverb inside an English completion
+  // frame - is now DETECTED and lives in MUST_FLAG under `AN ADVERB INSIDE THE
+  // FRAME`, plus the generated `ADVERB_FRAME_MATRIX`. It was NOT in this table when
+  // it leaked, which is the more useful half of that sentence: the corpus did not
+  // record the miss because nobody had looked, and `npm run qa:sweep` printed
+  // `CLAIMS THAT LEAKED PAST THE GATE: 0` throughout.
+  //
+  // Two entries WERE written here for what the bounded-run rule deliberately does not
+  // reach - a frame interrupted by four tokens, and a clause joiner inside a frame -
+  // and then the BARE PARTICIPLE rule closed both, which this table found by failing
+  // on them by name on its first run. They are in MUST_FLAG now, under `A BARE
+  // PARTICIPLE BESIDE A DOMAIN OBJECT`. That is the mechanism working twice in one
+  // change, and it is why entries are asserted as misses rather than merely listed.
+  //
+  // What is left unreachable is recorded in MUST_FLAG's own comments and in
+  // docs/MISSION_2D_CLAIM_GATE.md section 16: a participle with no domain object
+  // anywhere near it (`Booked.`), which is the one limit section 8 has always stated.
 
   // ---- identifier shapes -------------------------------------------------
   {
@@ -1613,6 +2150,8 @@ export interface ClaimGateSelfTestResult {
   readonly knownFalsePositivesChecked: number;
   /** Every reassurance x joiner x base combination, all of which must be flagged. */
   readonly crossClauseChecked: number;
+  /** Every adverb x frame x seam combination, all of which must be flagged. */
+  readonly adverbFrameChecked: number;
 }
 
 function describe(claim: DetectedClaim): string {
@@ -1733,6 +2272,48 @@ export function runClaimGateSelfTest(): ClaimGateSelfTestResult {
         'each failing row names the boundary that stopped holding.\n' +
         crossClauseMisses.slice(0, 20).map((miss) => `      ${miss}`).join('\n') +
         (crossClauseMisses.length > 20 ? `\n      ... and ${crossClauseMisses.length - 20} more` : ''),
+    );
+  }
+
+  // ---- ADVERB_FRAME_MATRIX ----------------------------------------------
+  // Same shape as the block above and for the same reason: the controls first, so
+  // that a matrix passing because an ADVERB started asserting things is reported as
+  // that rather than as success.
+  for (const control of ADVERB_CONTROLS) {
+    const claims = detectMaterialClaims(control);
+    if (claims.length > 0) {
+      failures.push(
+        `ADVERB control: ${JSON.stringify(control)} asserts something on its own ` +
+          `(${claims.map((claim) => `${describe(claim)} on "${claim.matchedForm}"`).join('; ')}). Every row ` +
+          'built from that adverb would then pass whether the frame rule worked or not - and an adverb in a ' +
+          '`forms` list would be a false positive on ordinary speech besides.',
+      );
+    }
+  }
+  const adverbFrameMisses: string[] = [];
+  for (const sample of ADVERB_FRAME_MATRIX) {
+    const claims = detectMaterialClaims(sample.text);
+    for (const claim of claims) {
+      exercised.add(describe(claim));
+      families.add(claim.family);
+      locales.add(claim.locale);
+      modes.add(claim.mode);
+    }
+    if (!claims.some((claim) => claim.family === sample.family)) {
+      adverbFrameMisses.push(
+        `${sample.name} -> ${claims.length === 0 ? 'NOTHING' : claims.map((claim) => claim.family).join(', ')}`,
+      );
+    }
+  }
+  if (adverbFrameMisses.length > 0) {
+    failures.push(
+      `ADVERB_FRAME_MATRIX: ${adverbFrameMisses.length} of ${ADVERB_FRAME_MATRIX.length} combinations no ` +
+        'longer produce the claim their frame asserts. One word inside a completion frame is again defeating ' +
+        'the detector, which is the fail-OPEN defect this matrix exists to pin: seven wordings of this shape ' +
+        'were released to real callers and persisted as spoken agent turns with an empty ledger, while ' +
+        '`qa:sweep` reported zero leaks. Each failing row names the adverb and the seam it sat in.\n' +
+        adverbFrameMisses.slice(0, 20).map((miss) => `      ${miss}`).join('\n') +
+        (adverbFrameMisses.length > 20 ? `\n      ... and ${adverbFrameMisses.length - 20} more` : ''),
     );
   }
 
@@ -1890,5 +2471,6 @@ export function runClaimGateSelfTest(): ClaimGateSelfTestResult {
     documentedOverreachChecked: DOCUMENTED_OVERREACH.length,
     knownFalsePositivesChecked: KNOWN_FALSE_POSITIVES.length,
     crossClauseChecked: CROSS_CLAUSE_MATRIX.length,
+    adverbFrameChecked: ADVERB_FRAME_MATRIX.length,
   };
 }

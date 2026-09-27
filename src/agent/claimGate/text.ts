@@ -275,18 +275,99 @@ function tokenEdges(value: string): { readonly start: number; readonly end: numb
 }
 
 /**
+ * Permission to match a form whose tokens are NOT adjacent in the text.
+ *
+ * WHY THIS EXISTS - A FAIL-OPEN DEFECT, NOT A REFINEMENT
+ * ---------------------------------------------------------------------------
+ * Every English completion form is a multi-token FRAME (`is booked`, `has been
+ * booked`, `i have booked`) for the reason `lexicon/en.ts` argues at length: the
+ * bare participle `booked` is honest in `let me get that booked`. Adjacent-only
+ * matching therefore made ONE adverb inside the frame defeat the whole detector:
+ *
+ *     Your meeting is booked for tomorrow at 3pm.        DETECTED
+ *     Your meeting is now booked for tomorrow at 3pm.    RELEASED   <- same claim
+ *     I have booked the callback for 3pm tomorrow.       DETECTED
+ *     I have now booked the callback for 3pm tomorrow.   RELEASED   <- same claim
+ *
+ * Independent QA drove seven wordings of that shape through the real
+ * `AgentTurnService` against a real database: every one reached the caller with
+ * `outcome=NO_MATERIAL_CLAIM`, was persisted as a spoken AGENT turn, and left
+ * `meetings=0` and `futureActions=0` behind it. Measured on the pure detector, 8
+ * adverbs crossed with 7 frames missed 53 of 56 sentences. Hebrew was immune
+ * throughout, because its passive past is one inflected word - which localises the
+ * defect to ENGLISH FRAMES rather than to any rule about scope.
+ *
+ * WHY A BLOCK LIST AND NOT A SKIP LIST
+ * ---------------------------------------------------------------------------
+ * The first attempt at this hand-listed the adverbial into the SUBJECT prefixes
+ * (`i already`, `i've already`, `i have already`), which is why exactly those
+ * three spellings were caught and every other adverb and every passive frame
+ * stayed open. Enumerating what MAY be skipped repeats that mistake one level up:
+ * an adverb nobody listed is a LEAK.
+ *
+ * So the enumeration is inverted. Any token may be skipped UNLESS it is named,
+ * and what is named is the set of tokens whose presence changes what the frame
+ * asserts - negators, conditionals, clause joiners and the locale's modal and
+ * intention words (`ClaimLexicon.frameBlockers`). An incomplete block list
+ * therefore costs PRECISION - one regeneration of a sentence that was true - and
+ * can never cost a leak, which is the direction the brief's fail-safe rule
+ * requires (`detector.ts`, "FAIL-SAFE DIRECTION").
+ *
+ * WHY THE RUN IS BOUNDED
+ * ---------------------------------------------------------------------------
+ * Unbounded, `i ... booked` would match `I can get that booked for you` - an
+ * honest intention - across four tokens. The bound is what keeps a FRAME a frame
+ * rather than a bag of words in one sentence; `detector.ts` names the number and
+ * says which wordings set it.
+ */
+export interface FrameGapAllowance {
+  /** Most tokens that may be skipped inside ONE form match, in total. */
+  readonly maxSkippedTokens: number;
+  /**
+   * Tokens that may never be skipped INSIDE a frame, already split to single tokens.
+   *
+   * Locale DATA, assembled by the caller. This module holds no language-specific
+   * literal and this field is why it still does not have to.
+   */
+  readonly blockedTokens: ReadonlySet<string>;
+  /**
+   * Tokens that may not stand IMMEDIATELY IN FRONT of an interrupted frame.
+   *
+   * A STRICT SUBSET of `blockedTokens`, and the two are separate because they do
+   * different jobs. A DETERMINER may not appear inside a frame - `I will have your
+   * call back booked shortly.` closed `i will call` across `have your`, which is an
+   * honest intention read as a callback promise - but a determiner in FRONT of a
+   * frame is ordinary English and must not silence anything: `That is now booked.`
+   * asserts a booking and `that` is the subject.
+   *
+   * So the inside test is the wide set and the in-front test is this narrow one:
+   * the words that change a clause's MOOD (modals, intention verbs, negators,
+   * conditionals) rather than the words that merely cannot be interior to a verb
+   * phrase.
+   */
+  readonly moodTokens: ReadonlySet<string>;
+}
+
+/**
  * How many tokens of `forms` match at `position`, longest form first.
  *
- * Returns the matched length and the form that matched, or `null`. The
- * longest-match rule is what keeps `'אחרי הצהריים'` from being read as
- * `'הצהריים'` in the scheduling lexicon and what keeps `'has been booked'` from
- * being read as `'booked'` here.
+ * Returns the matched SPAN, the form that matched, and how many tokens inside the
+ * span were skipped, or `null`. The longest-match rule is what keeps
+ * `'אחרי הצהריים'` from being read as `'הצהריים'` in the scheduling lexicon and
+ * what keeps `'has been booked'` from being read as `'booked'` here.
+ *
+ * `gap` is OPTIONAL and the adjacent pass runs FIRST and unchanged, so a caller
+ * that passes nothing gets byte-identical behaviour and a caller that passes an
+ * allowance can only ever match MORE text - never less, and never differently
+ * where an adjacent match already existed. That ordering is deliberate: it is
+ * what makes this change provably incapable of turning a detection into a miss.
  */
 export function matchLongestForm(
   tokens: readonly ClaimToken[],
   position: number,
   forms: readonly string[],
-): { readonly length: number; readonly form: string } | null {
+  gap?: FrameGapAllowance,
+): { readonly length: number; readonly form: string; readonly skipped: number } | null {
   const first = tokens[position]?.text;
   if (first === undefined) return null;
 
@@ -305,10 +386,93 @@ export function matchLongestForm(
         break;
       }
     }
-    if (matched) return { length: candidate.tokens.length, form: candidate.form };
+    if (matched) return { length: candidate.tokens.length, form: candidate.form, skipped: 0 };
+  }
+
+  if (gap === undefined || gap.maxSkippedTokens <= 0) return null;
+
+  // AN INTERRUPTED FRAME MAY NOT ITSELF SIT INSIDE A MODAL FRAME, and this is not
+  // decoration - it was found by running the precision half of this fix before
+  // shipping it. `have booked` is a form of its own, so `I can have that booked for
+  // you in a moment.` and `I will have that booked shortly.` closed it across
+  // `that` - two honest intentions, and the second is almost word for word what
+  // `NEVER_CLAIM_BOOKED_WITHOUT_CONFIRMATION` asks the model to say. The modal is
+  // OUTSIDE the matched form there, so the gap rule could not see it.
+  //
+  // A modal governs the verb phrase after it, so a blocker immediately in front of
+  // an interrupted frame cancels it. Applied to the INTERRUPTED pass only: an
+  // adjacent frame behaves exactly as it did before this change, which is what keeps
+  // this fix incapable of turning any existing detection into a miss.
+  //
+  // SAME CLAUSE ONLY, because a modal does not reach across a comma: `If not, I have
+  // now booked it for Thursday.` puts `not` immediately before the frame and in a
+  // different clause, where it governs nothing about the booking. Without the clause
+  // test that sentence would be a miss - and a miss here is the fail-open direction,
+  // which is the one this whole rule exists to close.
+  // `moodTokens` and not `blockedTokens`, and the difference is argued on the field:
+  // a determiner may not be INSIDE a frame and is perfectly ordinary in front of one.
+  const preceding = tokens[position - 1];
+  if (
+    preceding !== undefined &&
+    preceding.clause === (tokens[position] as ClaimToken).clause &&
+    gap.moodTokens.has(preceding.text)
+  ) {
+    return null;
+  }
+
+  // The interrupted pass, in the same order: the form with the MOST tokens of its
+  // own wins, because that is the specificity the adjacent rule is about
+  // (`callback is booked` must beat `is booked`, or a correctly booked callback is
+  // reported as an unsupported meeting). A single-token form can never reach here -
+  // it either matched above or its first token differed.
+  for (const candidate of candidates) {
+    const span = matchWithGaps(tokens, position, candidate.tokens, gap);
+    if (span !== null) {
+      return { length: span, form: candidate.form, skipped: span - candidate.tokens.length };
+    }
   }
 
   return null;
+}
+
+/**
+ * The span `formTokens` covers from `position` when interruptions are allowed.
+ *
+ * Returns `null` when the form cannot be completed inside the allowance. Matching
+ * is GREEDY - the first token that satisfies the next form token is taken - which
+ * is a bounded approximation rather than a search: with a budget of two skips and
+ * forms of at most five tokens, the case where backtracking would find a match
+ * that greed misses needs the same word twice inside one frame, and the cost of
+ * missing it is one regeneration that did not happen on a wording no model in the
+ * committed evidence produced. A search would be unbounded work on every token of
+ * every turn for that.
+ */
+function matchWithGaps(
+  tokens: readonly ClaimToken[],
+  position: number,
+  formTokens: readonly string[],
+  gap: FrameGapAllowance,
+): number | null {
+  let cursor = position + 1;
+  let remaining = gap.maxSkippedTokens;
+
+  for (let index = 1; index < formTokens.length; index += 1) {
+    const wanted = formTokens[index] as string;
+    for (;;) {
+      const token = tokens[cursor];
+      if (token === undefined) return null;
+      if (token.text === wanted) {
+        cursor += 1;
+        break;
+      }
+      if (remaining === 0) return null;
+      if (gap.blockedTokens.has(token.text)) return null;
+      remaining -= 1;
+      cursor += 1;
+    }
+  }
+
+  return cursor - position;
 }
 
 interface IndexedForm {

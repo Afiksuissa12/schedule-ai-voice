@@ -233,7 +233,7 @@ says afternoon and then judge a correct 14:00 booking to be at the wrong time. T
 day-part rule runs first and consumes its tokens, exactly as the resolver's does,
 and `tests/agent/claimGateDetector.test.ts` pins it.
 
-### 4.3 The four rules, per clause
+### 4.3 The five rules, per clause
 
 1. A completion form in the clause a **question mark** terminates asserts nothing.
    *Shall I get that booked?*
@@ -245,6 +245,19 @@ and `tests/agent/claimGateDetector.test.ts` pins it.
    names. Day, time and identifier reading stay sentence-wide, so
    `הפגישה נקבעה for Thursday, and the confirmation number is CONF998877.` still
    reads Thursday onto the claim in the clause before the comma.
+5. And in any clause rule 4 found nothing in, a bare completion **participle**
+   standing near a **domain object** produces a claim too. *Right, meeting booked for
+   Thursday at 2pm.* **Read § 16.3b before relying on rule 4's shape** — rules 1–4
+   are about FRAMES, an English frame is defeatable by rearranging the words inside
+   it, and that was a live fail-open defect twice over. Rule 5 is what stops the
+   detector depending on a frame's shape at all.
+
+**What "a completion form matches" means is itself a rule, and it was the defect.**
+Every English form is a multi-token frame, and matching frames as ADJACENT tokens
+meant one adverb inside one silenced the detector — `Your meeting is NOW booked for
+tomorrow at 3pm.` released and persisted while the same sentence without `now` was
+blocked. A frame now tolerates a bounded run of intervening tokens. § 16 is the whole
+account.
 
 **Scope is the CLAUSE, and the SENTENCE was a live fail-open defect.** See § 15 —
 this is the correction of what this section used to say, and the defect it cost is
@@ -495,12 +508,14 @@ through the mailbox.
 
 A check whose limits are undocumented reads as a guarantee it cannot give.
 
-> **Read § 14 first if you are checking this list against the code.** Independent
-> QA found in September 2026 that the English lexicon had no first-person SIMPLE
-> PAST form at all — `I booked the callback for 3pm tomorrow.` was released while
-> `I've booked the callback for 3pm tomorrow.` was caught — and that was an
-> omission, not one of the limits below. It is fixed. Limits 1, 3 and the new 9
-> are narrower than they were as a result.
+> **Read §§ 14, 15 and 16 first if you are checking this list against the code.**
+> Independent QA found three fail-open defects in September 2026 that were NOT
+> limits below: the English lexicon had no first-person SIMPLE PAST form at all
+> (§ 14.1), negation was scoped to the SENTENCE rather than the clause (§ 15.1),
+> and a completion frame matched only ADJACENT tokens, so one adverb inside it
+> defeated the detector (§ 16.1). All three are fixed. Limits 1, 3 and the new 9
+> are narrower than they were as a result, and limit 1 in particular **used to
+> claim something this list could not deliver** — see the correction inside it.
 
 1. **A bare participle as a whole turn.** `Booked.` is missed, because `booked` is
    not a completion form in the English lexicon and cannot be: it appears in
@@ -510,6 +525,22 @@ A check whose limits are undocumented reads as a guarantee it cannot give.
    front of it — `I booked`, `we just booked`, `I went ahead and booked` — is a
    completion frame and is caught (§ 14.1), because a first-person past-tense verb
    has no intention reading and so cannot swallow the honest wording.
+   > **THIS PARAGRAPH WAS FALSE WHEN IT WAS WRITTEN, AND § 16 IS WHY IT IS NOW
+   > TRUE.** `I have now booked the callback for 3pm tomorrow.` has a subject in
+   > front of it and was **released to the caller and persisted as a spoken agent
+   > turn** — because every English form is a multi-token frame and
+   > `matchLongestForm` matched only ADJACENT tokens, so the one word between
+   > `have` and `booked` defeated the match entirely. The sentence above promised a
+   > guarantee the code did not give, which is worse than an undocumented gap: a
+   > reader checking this list would have stopped looking. A frame now tolerates a
+   > bounded run of intervening tokens (§ 16.3), and a bare participle beside a
+   > **domain object** is a claim however the words in between are arranged
+   > (§ 16.3b) — so the sentence above no longer depends on the frame's shape at all.
+   > `ADVERB_FRAME_MATRIX` in `tests/claimGate/claimGateCorpus.ts` proves the claim
+   > across every adverb and every seam, and specs `r28`–`r40` prove both mechanisms
+   > through the wired path. **What is left of this limit is the bare participle with
+   > NO object beside it** — `Booked.` on its own — and § 16.6b states the rest of the
+   > residual honestly.
 2. **Hebrew forms deliberately excluded for ambiguity.** `נקבע` (masculine passive
    past) collides with the cohortative "let's schedule" and is already declared a
    CARRIER token on that reading in `src/scheduling/lexicon/he.ts`. `העברתי` means
@@ -1220,3 +1251,459 @@ things changed and each is argued where it is: the `DOCUMENTED_MISSES` floor
 (§ 15.6), the `NOT_RELEASED` escape check (§ 15.4), and the header of
 `claimGateText.test.ts`, which described sentence scope as the only scope that
 mattered.
+
+---
+
+## 16. The frame-interruption defect independent QA found after § 15, and what changed
+
+> **Read § 16.3b and § 16.6b if you are short of time.** § 16.3 closes the wordings QA
+> reported; § 16.3b is the part that stops this being a fourth round of enumerating
+> them, and § 16.6b states what the design still cannot do. § 16.3c is the
+> false-positive cost, measured on 4,511 generated and hand-written honest sentences
+> rather than asserted.
+
+**This section corrects § 8 limit 1, which stated a guarantee the code did not
+give.** Limit 1 scoped the bare-participle miss explicitly to the BARE participle
+and then said, in so many words, that *"anything with a subject in front of it —
+`I booked`, `we just booked`, `I went ahead and booked` — is a completion frame and
+is caught"*. `I have now booked the callback for 3pm tomorrow.` has a subject in
+front of it and was **not** caught: it was returned to the caller and persisted as a
+spoken AGENT turn, with `outcome=NO_MATERIAL_CLAIM` and the ledger never read.
+
+This is the third defect of the same kind in this file — § 14.1 was an English frame
+gap that released the § 6.5.4 defect one inflection sideways, § 15.1 was an English
+and Hebrew scope gap that released it one punctuation mark sideways, and this one
+releases it **one word sideways**. That pattern is itself the finding and § 16.6
+takes it seriously rather than treating this as a third unlucky wording.
+
+### 16.1 What leaked
+
+Every English completion form is a multi-token **FRAME** — `is booked`,
+`has been booked`, `i have booked` — and it has to be, for the reason § 4.2 argues:
+the bare participle `booked` appears in `let me get that booked`, which is the
+HONEST thing to say. `matchLongestForm` in `src/agent/claimGate/text.ts` matched only
+**ADJACENT** token sequences. So one word inside the frame defeated the match, and
+with it the whole detector.
+
+Independent QA drove each wording below through the real `AgentTurnService`, the real
+`ToolDispatcher`, the real gate and real SQLite (`tests/e2e/support.ts`
+`createSliceHarness`), scripted into the unsupported sentence on step 1 and an honest
+sentence on step 2, then read `turn.assistantText`, `turn.claimGate.releases[0]
+.outcome`, the persisted `ConversationTurn` AGENT rows and every domain table count.
+**Seven of seven leaked** — returned to the caller *and* persisted — with
+`meetings=0` and `futureActions=0` in every run:
+
+| text | before | after |
+|---|---|---|
+| `Your meeting is now booked for tomorrow at 3pm.` | **RELEASED** | DETECTED |
+| `Your meeting has now been booked for tomorrow at 3pm.` | **RELEASED** | DETECTED |
+| `Your callback is already booked for 3pm tomorrow.` | **RELEASED** | DETECTED |
+| `I have now booked the callback for 3pm tomorrow.` | **RELEASED** | DETECTED |
+| `I've now booked the callback for 3pm tomorrow.` | **RELEASED** | DETECTED |
+| `Your meeting has already been confirmed for tomorrow at 3pm.` | **RELEASED** | DETECTED |
+| `Your meeting is successfully booked for tomorrow at 3pm.` | **RELEASED** | DETECTED |
+| `Your meeting is booked for tomorrow at 3pm.` — **the control, adverb deleted** | DETECTED | DETECTED |
+
+**The control is the whole finding.** The gate was right on the bare frame and
+defeated by one adverb inside it.
+
+Measured on the pure detector, the class was **53 misses out of 56** — eight adverbs
+(`now`, `already`, `successfully`, `officially`, `definitely`, `indeed`, `certainly`,
+`all`) crossed with seven frames — spanning MEETING, RESCHEDULE, CANCELLATION,
+MESSAGE and RECORD. The only three that were caught were `i already booked`,
+`i've already booked` and `i have already booked`, and the reason they were caught is
+§ 16.2.
+
+`Your meeting is now booked` and `I have successfully booked` are among the most
+common phrasings a model produces immediately after a tool call, so this was an
+ordinary wording rather than an adversarial one.
+
+**Hebrew was never affected, and that is the diagnostic rather than a footnote.**
+`הפגישה שלך כבר נקבעה` — with the same adverb inserted — was detected throughout,
+because the Hebrew passive past is a single inflected word and has no inside for an
+adverb to sit in. The asymmetry localises the defect to English **frames** rather
+than to any rule about scope, and it is asserted in the corpus, in the e2e file and
+as sweep spec `r33` so the diagnosis stays checkable.
+
+### 16.2 The root cause, and why the previous fix produced exactly three spellings
+
+§ 14.1 added the first-person frames by crossing a `FIRST_PERSON_PREFIXES` list with
+a verb list. Eight of that list's eighteen entries were a subject with an adverb
+already **fused on**: `i just`, `i've just`, `i have just`, `we just`, `i already`,
+`i've already`, `i have already`, `we already`.
+
+That is an enumeration of **spellings**, and its coverage came out exactly as wide as
+the eight somebody typed. Every other adverb, and every PASSIVE frame (`is booked`,
+`has been booked` — which no prefix list touches at all), stayed open. The fix had
+generalised the *subject* axis and hand-listed the *adverbial* one.
+
+### 16.3 The fix — part one, the interrupted frame
+
+Three changes, in the engine and in the data, and the third is the one that keeps
+this from being a fourth enumeration.
+
+**1. A frame tolerates a bounded run of intervening tokens.**
+`matchLongestForm` takes an optional `FrameGapAllowance`. The **adjacent pass runs
+first and unchanged**, and the interrupted pass runs only where nothing adjacent
+matched — so every text the detector already fired on fires identically, and the only
+behaviour this change can produce is a miss becoming a detection. That was verified
+rather than asserted: all 634 committed corpus, e2e and spec texts were run through
+both detectors, and **no claim was lost and no family, mode or locale changed**. One
+`matchedForm` string moved, from the lexicon deletion below rather than from this
+rule; § 16.9 records it.
+
+**2. The enumeration is INVERTED.** Listing which words may be *skipped* would repeat
+§ 16.2 one level up — an adverb nobody listed would be a leak. So any token may be
+skipped **unless** it is named, and what is named is the set of tokens whose presence
+changes what the frame asserts:
+
+- the locale's `negators`, `conditionalMarkers` and `clauseBreakers`, which the
+  engine pools automatically from **every** registered locale;
+- a new `ClaimLexicon.frameBlockers`, carrying the locale's **modal and intention**
+  words — `will`, `can`, `to`, `being`, `getting`, `get`, `need`, `want` — which are
+  what turn a completion frame back into a plan.
+
+An incomplete block list therefore costs **precision** — one regeneration of a
+sentence that was true — and can never cost a leak. That is the direction § 4.5's
+fail-safe rule requires, and it is the only reason an enumeration is acceptable at
+all here.
+
+Blocking the negators **in the frame** rather than leaving them to suppression is
+load-bearing, not tidy: suppression only applies a blocker standing AT OR BEFORE the
+form's first token (§ 15.3), so `I have not booked anything` — where `not` sits
+*inside* the frame, after `i` — would have been read as a completed booking by a rule
+that let the frame swallow it.
+
+**3. The eight adverbial prefixes are deleted from `lexicon/en.ts`.** They are now
+redundant: `i booked` reaches `I now booked`, `I finally booked` and `I, at last,
+booked` without any of them being written down. The four `gone ahead and` compounds
+**stay**, and that is not an inconsistency — `and` is an English `clauseBreaker` and
+the engine refuses to skip one inside a frame, deliberately, because
+`I have checked and confirmed your details` asserts nothing of the sort. So the
+compound is the case where the general rule correctly declines, not the case it was
+hiding.
+
+**The bound is two skipped tokens.** One covers the whole reported class; the second
+covers an adverb at each of a frame's two seams (`has now been successfully booked`).
+Three was rejected on evidence, not taste: at three, `i booked` reaches
+`I will get that booked for you.` through the modal — the exact wording
+`NEVER_CLAIM_BOOKED_WITHOUT_CONFIRMATION` asks the model to use. `frameBlockers`
+holds those off as well, so the two defences are independent and the bound is the one
+that does not depend on a word list being complete.
+
+**One precision cost was found before shipping and it changed the design.**
+`have booked` is a completion form in its own right, so the first version of this rule
+read `I can have that booked for you in a moment.` and `I will have that booked
+shortly.` as completed bookings — two honest intentions, the second almost word for
+word what the prompt clause asks for. The modal is OUTSIDE the matched form there, so
+the gap rule could not see it. An **interrupted** frame may therefore not itself sit
+behind a blocker (adjacent frames are untouched, which preserves the guarantee in
+change 1). Both sentences are now asserted clean in `MUST_NOT_FLAG` and `r35` proves
+it through the wired path.
+
+### 16.3b The fix — part two, the bare participle beside a domain object
+
+**Part one alone would have left the same shape of residual that the two fixes before
+it left, and that is why there is a part two.** With only the bounded run, these were
+stated limits:
+
+| text | part one | part two |
+|---|---|---|
+| `I have finally and officially booked your meeting for Thursday.` | **missed** — `and` is a clause joiner and may never be skipped | DETECTED |
+| `Your meeting has, at long last, finally been booked.` | **missed** — four intervening tokens, past the bound | DETECTED |
+| `Right, meeting booked for Thursday at 2pm.` | **missed** — no auxiliary at all, so no frame to interrupt | DETECTED |
+
+Each is a phrasing one word sideways from a wording part one catches, written into
+`DOCUMENTED_MISSES` as a limit. That is precisely the artefact the previous two rounds
+produced, and the reviewer found the next phrasing each time. **Raising the bound is
+not the answer** — at three skipped tokens `i booked` reaches
+`I will get that booked for you.`, the wording the prompt clause asks the model to
+use — and **loosening the clause-joiner refusal is not either**, because
+`I have checked and confirmed your details.` would become a booking claim.
+
+So the second mechanism does not widen the frames at all. It reads what the frames
+structurally cannot see: **the object.**
+
+**The rule.** A bare completion participle (`booked`, `cancelled`, `sent`, …) within
+eight tokens of a **domain object** — a noun naming something a tool in this system
+actually writes a row for (`meeting`, `callback`, `diary`, `email`) — is a claim,
+**however the words in between are arranged**. It is a FALLBACK: it runs only in a
+clause where no completion frame matched, so it cannot double-count a claim or change
+a verdict a frame produced.
+
+**What makes it safe is the object, not the distance.** The reason `booked` cannot be
+a completion form (§ 4.2) is that `let me get that booked` is honest — and that
+sentence names nothing this system creates. The moment a sentence says
+`your MEETING`, `booked` has a subject to be true or false about. On top of that, the
+same mood test as part one applies to the whole clause: a `frameBlocker` at or before
+the participle silences it, which is what keeps
+`Let me get your meeting booked for Thursday.`,
+`I can have your meeting booked for you.`, `Your meeting is being booked.` and
+`I need to get your callback booked first.` clean — all four are asserted in
+`MUST_NOT_FLAG`, and `r40` proves the first through the wired path.
+
+**It does one thing better than the frames can.** § 8 limit 9 exists because
+`matchCompletionMarkers` reads a form from the position it starts at and cannot see the
+object that decides the family, so `I booked the callback` is read as MEETING and a
+real `CALLBACK_SCHEDULED` effect does not satisfy it. Here the object is in hand by
+construction, so `callback confirmed` is reported as CALLBACK. That does not close
+limit 9 — the frames still win wherever they match, and `KNOWN_FALSE_POSITIVES`
+asserts it is still a false positive — but it means the new rule does not inherit it.
+
+**`frameDeterminers` was added by the precision sweep, not by design.** Running 191
+honest sentences through the finished rules surfaced
+`I will have your call back booked shortly.` — an honest intention, in which the frame
+`i will call` closed across `have your`. A possessive in the middle of a verb phrase is
+the marker that the frame is spurious, so noun-phrase material may not be skipped
+inside a frame. It is a **separate list from `frameBlockers`** because a determiner in
+FRONT of a frame is ordinary English: `That is now booked.` and
+`The meeting is now booked.` must both still fire. Two tests in
+`claimGateText.test.ts` pin both halves of that distinction.
+
+### 16.3c What it costs in precision, measured on 191 honest sentences
+
+The operator's instruction was to attack the fix the way QA does, and to state the
+false-positive cost. Two generated sweeps, run on the finished rules:
+
+| sweep | result |
+|---|---|
+| **Coverage** — 97 false completions: every seam of every frame, all six affected families, the telegraphic register, first-person and passive, contractions, perfect and simple past, Hebrew, and three code-switched | **97 / 97 detected** |
+| **Precision** — 191 honest sentences: 31 intention shapes × 5 object spellings (modal, future, infinitive, progressive, negated, interrogative, conditional), plus every `MUST_NOT_FLAG` wording, the prompt clause's own honest example, the sweep's neutral text, and Hebrew | **190 / 191 clean** |
+
+The single flag is `I have no reference number to give you.`, and it is **not caused by
+this fix**: `reference number` is an identifier MARKER matched adjacently, it fired
+identically before this change, and `no` is deliberately not an English negator
+(`lexicon/en.ts` argues why — a negator list containing `no` would suppress
+`No problem - you're all set.`). It was verified against the pre-change detector rather
+than assumed.
+
+**A 4,320-row intention sweep also ran clean**: five subjects × twelve modals × three
+verbs × four objects × six completion tails, i.e. every ordinary way of saying "I will
+arrange this" — `0 / 4,320` flagged.
+
+**Two defects were found by these sweeps before shipping and both changed the design**
+— the modal-in-front rule (§ 16.3) and `frameDeterminers` (§ 16.3b). A cost the author
+finds is a design input; a cost a reviewer finds is a defect.
+
+### 16.4 Closing the assurance blindness — again, and this time the gap was the SPECS
+
+`npm run qa:sweep` passed on the tree QA tested and printed
+`CLAIMS THAT LEAKED PAST THE GATE: 0 (must be 0)` with INV-18 1,942/1,942 while the
+leak was live. `npm run test` was green at 1,337 passed. Both were honest about what
+they checked; neither checked this.
+
+§ 15.4 closed the mechanism by which the detector could *talk INV-18 out of a
+finding* — `ReleaseSpec.forbidden` now names the strings instead of filtering them
+through `detectMaterialClaims`. That fix holds and is not the reason this was
+invisible. **The reason is that no spec declared a wording of the failing shape at
+all**, so there was nothing for the escape check to keep away from the caller, and
+INV-18's oracle shares the detector with the gate. `forbidden` can stop the detector
+overruling a declaration; it cannot write the declaration.
+
+So the coverage was added on both axes that failed:
+
+- **`ADVERB_FRAME_MATRIX`** (`tests/claimGate/claimGateCorpus.ts`) — 12 adverbs
+  crossed with 13 frames, **144 rows**, covering every seam of every English frame
+  shape (`is {} booked`, `has {} been booked`, `has been {} booked`,
+  `I have {} booked`, `I've {} booked`, `I {} booked`, the noun-first callback form)
+  plus Hebrew control rows. Generated for the reason `CROSS_CLAUSE_MATRIX` is: a
+  hand-listed table is as wide as the author's imagination, and the author is the
+  person who already believes the rule works. `ADVERB_CONTROLS` asserts every adverb
+  asserts nothing on its own, so no row can pass for the wrong reason.
+- **Sweep specs `r28`–`r40`**, crossed with four zones, so INV-18 can see both
+  mechanisms: five `NOT_RELEASED` wordings of the interrupted-frame shape (three seams,
+  both-seams, and a MESSAGE family that nothing can support), the Hebrew control `r33`,
+  four `NOT_RELEASED` wordings of the bare-participle shape (`r36`–`r39`: clause joiner,
+  past the bound, telegraphic, and the object picking the family), and **three precision
+  specs** — `r34` (the interrupted wording, true, must be released byte-identical),
+  `r35` (the modal-frame intention) and `r40` (the intention that names its object,
+  which is the riskiest honest sentence in this gate).
+- **`tests/e2e/claimGate.test.ts`** — QA's seven wordings plus seven, driven through
+  the real service, each asserted on all three halves of the finding: not returned,
+  not persisted as an AGENT row, and `meetings` 0 / `futureActions` 0 — plus four
+  precision tests, two of which script only ONE completion so a regeneration fails the
+  run outright rather than quietly consuming an attempt.
+
+What is still **not** closed is what § 15.4 already printed next to the number:
+INV-18's oracle shares `detectMaterialClaims` with the gate, so a detector miss is
+invisible to the leak count by construction, and the corpus is the only thing that
+can prove the detector sees a class at all. Closing that needs a second,
+independently written detector. It is not claimed here, and this defect is the second
+piece of evidence that it matters.
+
+### 16.5 What now fails if this regresses
+
+| Where | What it pins |
+|---|---|
+| `tests/agent/claimGateText.test.ts` | the MATCHER directly, eleven assertions: no match without an allowance (the behaviour that leaked), the span and skip count reported for one skip and for one at each seam, the bound, a blocked token inside the frame refused, a DETERMINER inside the frame refused, a mood blocker in front of the frame refused, a determiner in front of the frame ALLOWED, the same mood blocker in ANOTHER clause allowed, an adjacent match byte-identical with and without an allowance, and the form with more of its OWN tokens winning |
+| `tests/agent/claimGateDetector.test.ts` | both rules in a SYNTHETIC third locale: an unlisted token is skipped inside that locale's own frame, its own `frameBlockers` entry is not, its own negator inside a frame is refused, its own bare participle fires beside its own domain object, and is silent both with no object and behind its own mood word — so neither rule is English |
+| `tests/claimGate/claimGateCorpus.ts` | QA's seven wordings plus 12 more as `MUST_FLAG` for the interrupted frame and 8 for the bare participle, including both-seams, all six affected families, the family refinement, a Hebrew object disambiguating an English participle, and the Hebrew control; `ADVERB_FRAME_MATRIX`, 144 rows, with `ADVERB_CONTROLS` first; 20 `MUST_NOT_FLAG` entries for the precision direction — the modal frames, both progressives, the infinitive, the clause joiner, the negator inside a frame, the possessive inside a frame, and the nine object-naming intentions |
+| `tests/claimGate/claimGateNonVacuity.test.ts` | floors on the matrix AXES, not its size — ≥8 adverbs, ≥10 frames, ≥10 Hebrew rows, and **every English frame seam named individually**, because 144 rows over one seam would satisfy a size floor and reproduce § 16.2 exactly |
+| `tests/e2e/claimGate.test.ts` | fourteen wordings through the real service, plus two TRUE claims (one interrupted, one bare-participle) released byte-identical in two provider calls, plus two honest intentions released with `NO_MATERIAL_CLAIM` in ONE call — so a regeneration fails the run outright rather than quietly consuming an attempt |
+| `tests/invariants/dimensions.ts` | specs `r28`–`r40` across four zones. `r33` is the Hebrew control that localises the cause; `r34`, `r35` and `r40` are the precision half; `r31` is what fails first if the bound is lowered; `r36`–`r39` are the four wordings the bounded run provably cannot reach |
+| `src/agent/claimGate/lexicon/types.ts` | `frameBlockers`, `frameDeterminers`, `completionParticiples` and `domainObjects` are all REQUIRED fields, so a new locale cannot forget one — `tsc` names the missing key, which is how the synthetic test lexicon was caught twice |
+
+### 16.6 The pattern across §§ 14, 15 and 16, stated plainly
+
+Three fail-open defects in this gate, all found by independent QA after the section
+above declared merge-readiness, all in the same place:
+
+| § | What released the § 6.5.4 defect | The generalisation that was missing |
+|---|---|---|
+| 14.1 | one **inflection** sideways (`I booked` vs `I've booked`) | the English lexicon had a tense the Hebrew one always had |
+| 15.1 | one **punctuation mark** sideways (`, ` vs `! `) | suppression scope was the sentence, not the clause |
+| 16.1 | one **word** sideways (`is now booked` vs `is booked`) | a frame was a fixed adjacent sequence, not a frame |
+
+The common shape is not "English keeps needing more strings". It is that **each fix
+generalised one axis and hand-listed the next one**, and the hand-listed axis was
+then exactly as wide as its author's imagination. § 14 generalised the subject and
+listed the adverbial; part one of this fix generalises the adverbial — and **left three
+stated limits that are the same artefact one more time**, which is why part two
+(§ 16.3b) stops depending on the frame's SHAPE at all and reads the object instead.
+
+The axes this fix still hand-lists are `frameBlockers`, `frameDeterminers` and
+`domainObjects`, and the first two are **deliberately inverted** so that their
+incompleteness costs precision and not a leak — the first time in this sequence an
+enumeration has been on the safe side of the fail-safe rule. `domainObjects` is the one
+that is not inverted: a noun nobody listed is a miss. It is short and checkable for
+that reason, and § 16.6b states honestly what it leaves open.
+
+### 16.6b The residual limits of this design, stated rather than discovered
+
+Both mechanisms, and what each still cannot do:
+
+1. **A participle with no domain object anywhere near it.** `Booked.` as a whole turn
+   is still missed, and `Sorted, all done.` with no noun is still missed. This is § 8
+   limit 1 and it is now the *only* part of it that stands: the rule needs something
+   this system creates to be named, because that is exactly what distinguishes the
+   claim from `let me get that booked`. Closing it would mean firing on the bare
+   participle, which § 4.2 argues would get the gate switched off.
+2. **A domain object nobody listed.** `domainObjects` is enumerated and an
+   unlisted noun is a miss — `Your slot with the engineer is confirmed` works,
+   a locale-specific idiom for a meeting might not. This is the one list here whose
+   incompleteness is fail-OPEN, which is why it is short enough for a reader to audit
+   and why `details`, `options`, `time` and `price` are named as deliberate exclusions
+   rather than left out silently.
+3. **A mood word nobody listed is a false POSITIVE**, costing one regeneration on a
+   truthful turn. Measured rather than assumed: `0 / 4,320` on a generated intention
+   sweep and `190 / 191` on hand-written honest wording (§ 16.3c), with the single flag
+   shown to predate this change.
+4. **Everything in § 8 that is not about frames** is untouched: an unlisted identifier
+   shape, a language with no lexicon, a false claim that is not an EFFECT, a real
+   internal id read aloud, and limit 9 — the frames still commit to a family before the
+   object arrives, and `KNOWN_FALSE_POSITIVES` still asserts that a truthful callback
+   confirmation phrased verb-first is rejected.
+5. **The gate still cannot make a model honest.** A model that produces a false
+   sentence on every attempt produces silence and a handover.
+
+Nothing here is a claim that the class is now closed for all time. What is claimed is
+narrower and checkable: the two mechanisms are **general over the arrangement of words
+inside a completion frame**, the enumerations that remain are on the fail-safe side
+except `domainObjects`, and the matrices are what would make the next reviewer's
+finding fail a test instead of reaching a customer.
+
+The assurance layer reported zero leaks all three times, and the reason was different
+each time: fixtures one punctuation mark wide (§ 15.2), an escape check filtered
+through the detector it was policing (§ 15.2), and now specs that simply did not name
+a wording of the failing shape (§ 16.4). The generated matrices are the answer to all
+three — `CROSS_CLAUSE_MATRIX` and now `ADVERB_FRAME_MATRIX` — because a mechanically
+crossed table removes the author's choice of examples. **The honest statement of
+where this gate stands is in § 8 and § 16.4, and a reader who needs a guarantee
+should read those before this section's table.**
+
+### 16.7 Cost, measured rather than assumed — and it is the largest move of the three fixes
+
+**This one is NOT inside the run-to-run spread, unlike § 15.7's, and it is published as
+what it is.** Two new passes account for it: the interrupted pass runs at every position
+where the adjacent pass found nothing, which on a claim-dense turn is most positions
+that have a candidate bucket at all, and the participle rule adds one scan for domain
+objects per sentence plus a per-position participle lookup. Deleting the eight adverbial
+prefixes removed 8/18 of the generated English first-person forms, which cuts the other
+way, and the three do not cancel.
+
+**Before and after were measured interleaved, A/B/A/B, in one process**, on the
+committed `TEXT_SAMPLES`, 600 timed runs each after 200 warm-up calls, against the
+pre-change detector checked out beside the new one. Differencing against § 15.7's
+published figures would have been wrong: the same host's `db.audit.record()` insert
+measured 15.2 ms in that session, 34.3 ms mid-afternoon today and 15.2 ms again by the
+end, so subtracting across sessions attributes the host's load to the change.
+
+| | before | after | move |
+|---|---:|---:|---:|
+| detector p50, 7,402-char worst case (116 claims) | 3.909 / 3.873 ms | **5.026 / 4.950 ms** | +28% |
+| detector p50, realistic 162-char reply (2 claims) | 0.085 / 0.083 ms | **0.106 / 0.108 ms** | +27% |
+
+The pair of figures in each cell is the two interleaved passes, so a reader can see the
+within-run repeatability — about 1% — that makes a 28% move a real one and not noise.
+
+**Why it is still the right trade, in absolute terms rather than relative ones.** The
+number that matters is the second row: a realistic reply costs **0.107 ms**, and the one
+durable audit row the gate writes on the same turn costs **15.2 ms** on this host. The
+detector is still roughly a hundred and forty times cheaper than the insert that follows
+it, so § 7.1's conclusion is unchanged — the gate's cost on an ordinary turn is one
+audit row, not one detector pass. And the worst case is a *synthetic* 7,402-character
+claim-dense turn, longer than the worst real turn in the committed benchmark and far
+denser; 5.0 ms on that is still under the 6.1 ms the pre-`FORM_INDEX` full scan cost
+before any of this work began.
+
+`npm run qa:claim-gate-latency -- --runs 600` on the integrated tree reports **4.987 ms**
+p50 on the worst case and **0.107 ms** on the realistic reply — the same measurement
+through the committed harness rather than an ad-hoc one, and it agrees with the table to
+within the harness's own overhead. `.tmp/qa/claim-gate-latency.txt` from that run
+carries the whole table including the 15.181 ms audit insert quoted above.
+
+**If this ever needs to come down**, the cheap win is not in either new rule: it is that
+the interrupted pass is retried for every lexicon at every position, and a per-position
+memo of "no bucket in any lexicon" would skip both passes at once. It was not done here,
+because a 0.02 ms move on an ordinary turn is not worth a cache whose invalidation nobody
+would check.
+
+### 16.8 Validation for this fix, run sequentially on this tree
+
+| Command | Result |
+|---|---|
+| `npm run typecheck` | exit 0, no diagnostics |
+| `npm run test` | **62 passed, 1 skipped (63 files); 1,403 passed, 2 skipped (1,405)** — 256.5s, exit 0 |
+| `npm run qa:sweep` | **RESULT: PASS** — 983 scenarios, 8,086 applicable checks (17,098 evaluated), **0 violations**, 0 network attempts, 158.5s, INV-18 **2,094/2,094** |
+| `npm run check:anti-scripting` | **PASS**, allowance list unchanged at one entry |
+| `npm run context:prove` | **9/9** |
+| `npm run qa:claim-gate-latency -- --runs 600` | exit 0, figures in § 16.7 |
+
+The sweep's own claim-gate summary from that run: 1,962 pieces of text released, **148**
+of which asserted something (was 132 before this fix and 104 before § 15's), 4 withheld,
+120 raw unsupported attempts, 124 regenerations, **0 claims leaked**. The counts rise for
+the reason § 15.8 gives — family M grew, and the detector now sees classes it used to
+miss — and the *asserted* count rising with no new violations is the measurable form of
+"more detection, no precision loss".
+
+Against the § 15.8 baseline: tests **1,337 → 1,403** (+66, nothing removed), scenarios
+**931 → 983** (+52, thirteen new family-M specs × four zones), INV-18 applicable
+**1,942 → 2,094**.
+
+### 16.9 What changed that a reader might otherwise notice and wonder about
+
+**One `matchedForm` string moved, and no verdict did.** `I just booked it.` used to
+report `matchedForm: 'i just booked'` and now reports `'i booked'`, because the
+`i just` prefix was deleted and the adverb is skipped instead. Same family, same
+mode, same locale, same verdict; the string appears only in an audit detail. That is
+the single difference across all 634 committed texts, and it was measured by running
+both detectors over every one of them rather than reasoned about.
+
+**Family M grew by thirteen specs across four zones**, so the sweep's scenario count and
+INV-18's applicable-check count both rise. The claim-gate summary counts rise too, for
+the same reason § 15.8 gives: the detector now sees classes it used to miss.
+
+**`DOCUMENTED_MISSES` went 14 → 6 → 4 inside this one change**, which looks like churn
+and is the corpus working. Two entries were written into it for what part one of the fix
+deliberately could not reach; part two then closed both, the corpus failed on them **by
+name** on its first run afterwards, and they moved to `MUST_FLAG`. § 15.6 argues why a
+falling floor here is not a weakening — the number should only rise again because
+somebody found a new miss.
+
+**Four lexicon fields were added and all four are REQUIRED**
+(`frameBlockers`, `frameDeterminers`, `completionParticiples`, `domainObjects`), so
+adding a locale means answering for each. Two of them can honestly be empty, and Hebrew
+declares them so: `completionParticiples` is empty because `נקבעה` is already a
+completion marker and one token, and `ordinalSuffixes` was already empty for the
+matching reason. `tsc` named the missing key on the synthetic test lexicon twice while
+this was being built, which is the mechanism doing its job.

@@ -1,13 +1,16 @@
 /**
- * The claim gate's text engine: sentences and tokens.
+ * The claim gate's text engine: sentences, tokens, and how a form is matched.
  *
- * These are the three properties everything else in the gate rests on. If SENTENCE
- * scope is wrong, a negation in one sentence silences a false claim in the next -
- * which is EXACTLY the shape of the real `aya-expanse:8b` defect. If CLAUSE scope is
- * wrong, a negation in a leading reassurance silences a false claim after the comma -
- * which is the same defect one punctuation mark narrower, and it was reachable,
- * released and persisted (`docs/MISSION_2D_CLAIM_GATE.md` § 15). If tokenisation is
- * wrong for one script, that language has no gate at all.
+ * These are the properties everything else in the gate rests on, and every one of
+ * them has been a live fail-open defect at some point. If SENTENCE scope is wrong, a
+ * negation in one sentence silences a false claim in the next - which is EXACTLY the
+ * shape of the real `aya-expanse:8b` defect. If CLAUSE scope is wrong, a negation in
+ * a leading reassurance silences a false claim after the comma - the same defect one
+ * punctuation mark narrower, and it was reachable, released and persisted
+ * (`docs/MISSION_2D_CLAIM_GATE.md` § 15). If FORM MATCHING requires adjacency, one
+ * adverb inside a frame silences the claim entirely - the same defect one word
+ * narrower, also released and persisted (§ 16). If tokenisation is wrong for one
+ * script, that language has no gate at all.
  *
  * The CRLF case is here rather than implied. A regex that could not consume a
  * `\r` once made `npm run check:anti-scripting` pass or fail depending on how
@@ -82,6 +85,110 @@ describe('the claim gate text engine', () => {
   it('matches whole tokens only, never substrings', () => {
     const tokens = readTokens('overbooked capacity');
     expect(matchLongestForm(tokens, 0, ['booked'])).toBeNull();
+  });
+});
+
+/**
+ * THE INTERRUPTED FRAME.
+ *
+ * `matchLongestForm` matched only ADJACENT tokens, and because every English
+ * completion form is a multi-token frame, one word inside a frame defeated the whole
+ * detector: `Your meeting is NOW booked for tomorrow at 3pm.` was released to a real
+ * caller and persisted with an empty ledger while the same sentence without `now` was
+ * blocked (`docs/MISSION_2D_CLAIM_GATE.md` § 16).
+ *
+ * Asserted HERE, directly on the matcher, and not only through the detector, for the
+ * reason the clause block below gives: a detector verdict cannot tell a wrong matcher
+ * from a wrong lexicon, and this is the matcher.
+ */
+describe('a form whose tokens are not adjacent', () => {
+  // `your` is in `blockedTokens` and NOT in `moodTokens`, which is the split the two
+  // fields exist for: a determiner may not be interior to a frame and is ordinary in
+  // front of one.
+  const ALLOWANCE = {
+    maxSkippedTokens: 2,
+    blockedTokens: new Set(['not', 'can', 'and', 'your', 'the']),
+    moodTokens: new Set(['not', 'can']),
+  };
+
+  it('does not match at all without an allowance, which is the behaviour that leaked', () => {
+    const tokens = readTokens('your meeting is now booked');
+    expect(matchLongestForm(tokens, 2, ['is booked'])).toBeNull();
+  });
+
+  it('matches across one skipped token, and reports the span and the skip', () => {
+    const tokens = readTokens('your meeting is now booked');
+    const hit = matchLongestForm(tokens, 2, ['is booked'], ALLOWANCE);
+    // The SPAN is 3 - `is now booked` - because the caller advances its cursor by it.
+    // The FORM is still `is booked`, because that is what the lexicon declared.
+    expect(hit).toEqual({ length: 3, form: 'is booked', skipped: 1 });
+  });
+
+  it('matches across a skip at EACH seam of a three-token frame', () => {
+    const tokens = readTokens('your meeting has now been successfully booked');
+    const hit = matchLongestForm(tokens, 2, ['has been booked'], ALLOWANCE);
+    expect(hit).toEqual({ length: 5, form: 'has been booked', skipped: 2 });
+  });
+
+  it('stops at the bound, so a frame stays a frame', () => {
+    const tokens = readTokens('i have a slot free and booked');
+    expect(matchLongestForm(tokens, 0, ['i have booked'], ALLOWANCE)).toBeNull();
+  });
+
+  it('refuses to skip a blocked token, which is how a negator inside a frame is kept out', () => {
+    // `not` stands AFTER the form's first token, where the detector's suppression
+    // rules cannot see it, so the MATCHER has to decline.
+    const tokens = readTokens('i have not booked anything');
+    expect(matchLongestForm(tokens, 0, ['i have booked'], ALLOWANCE)).toBeNull();
+  });
+
+  it('refuses when a blocked token stands immediately in front of the frame', () => {
+    // `have booked` is a form of its own, so without this rule `I can have that
+    // booked for you` - an honest intention - reads as a completed booking.
+    const tokens = readTokens('i can have that booked for you');
+    expect(matchLongestForm(tokens, 2, ['have booked'], ALLOWANCE)).toBeNull();
+  });
+
+  it('but only when that blocker is in the SAME clause, because a modal stops at a comma', () => {
+    const tokens = readTokens('if not, i have now booked it');
+    // `not` is token 1 and clause 0; the frame starts at token 2 in clause 1.
+    expect(tokens[1]?.clause).toBe(0);
+    expect(tokens[2]?.clause).toBe(1);
+    expect(matchLongestForm(tokens, 2, ['i have booked'], ALLOWANCE)?.form).toBe('i have booked');
+  });
+
+  it('leaves an ADJACENT match byte-identical, allowance or not', () => {
+    // The property that makes this change incapable of turning a detection into a
+    // miss: the adjacent pass runs first and is untouched.
+    const tokens = readTokens('your meeting is booked');
+    const without = matchLongestForm(tokens, 2, ['is booked', 'booked']);
+    const with_ = matchLongestForm(tokens, 2, ['is booked', 'booked'], ALLOWANCE);
+    expect(with_).toEqual(without);
+    expect(with_).toEqual({ length: 2, form: 'is booked', skipped: 0 });
+  });
+
+  it('refuses to skip a DETERMINER, because noun-phrase material is not frame interior', () => {
+    // `I will have your call back booked shortly.` - an honest intention - closed the
+    // frame `i will call` across `have your` and reported a callback promise.
+    const tokens = readTokens('i will have your call back booked shortly');
+    expect(matchLongestForm(tokens, 0, ['i will call'], ALLOWANCE)).toBeNull();
+  });
+
+  it('but a determiner in FRONT of a frame silences nothing, which is why the sets differ', () => {
+    // `the` is in `blockedTokens` and not in `moodTokens`. `The meeting is now booked.`
+    // is a claim and the article is just the subject's article.
+    const tokens = readTokens('the meeting is now booked');
+    expect(matchLongestForm(tokens, 2, ['is booked'], ALLOWANCE)?.form).toBe('is booked');
+  });
+
+  it('prefers the form with MORE OF ITS OWN TOKENS, not the one that covers more text', () => {
+    // `callback is booked` must beat `is booked` across an interruption too, or a
+    // correctly booked callback is reported as an unsupported meeting.
+    const tokens = readTokens('your callback is already booked');
+    const hit = matchLongestForm(tokens, 2, ['is booked'], ALLOWANCE);
+    expect(hit?.form).toBe('is booked');
+    const longer = matchLongestForm(tokens, 1, ['callback is booked', 'callback is arranged'], ALLOWANCE);
+    expect(longer).toEqual({ length: 4, form: 'callback is booked', skipped: 1 });
   });
 });
 

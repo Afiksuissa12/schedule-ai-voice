@@ -100,9 +100,15 @@ export const KNOWN_COVERAGE_GAPS: readonly string[] = [
     'leaks while eight unsupported claims reached real callers. A missed wording now fails as an ESCAPE, ' +
     'and the failure says whether the gate failed to stop a claim it saw or never saw one. What is still ' +
     'open: a detector rule that stopped firing on wording no spec declares unsupportable would make INV-18 ' +
-    'quietly find fewer claims. That remaining gap is closed by tests/claimGate/claimGateCorpus.ts, a ' +
-    'corpus with the answers written down in which every detector rule must fire, every known-good sample ' +
-    'must stay clean, and a 400-row cross-clause matrix must stay fully detected.',
+    'quietly find fewer claims - and that is not hypothetical. It happened: an adverb inside an English ' +
+    'completion frame (`Your meeting is NOW booked`) was released and persisted while this report printed ' +
+    'zero leaks, because no spec named a wording of that shape, so `ReleaseSpec.forbidden` had nothing to ' +
+    'keep away from the caller. Naming the strings stops the detector overruling a declaration; it cannot ' +
+    'write the declaration. r28-r40 are that class - the interrupted frame and the bare participle beside a ' +
+    'domain object - and the remaining gap is closed by ' +
+    'tests/claimGate/claimGateCorpus.ts, a corpus with the answers written down in which every detector ' +
+    'rule must fire, every known-good sample must stay clean, and a 500-row cross-clause matrix and a ' +
+    '144-row adverb-by-frame matrix must stay fully detected.',
   'BOUNDED DELIBERATELY: family M crosses its claim texts with FOUR zones (America/New_York, Europe/London, ' +
     'Asia/Jerusalem, Asia/Kolkata) at ONE `now` instant, under ONE policy and one free diary. Australia/Sydney ' +
     'is deliberately excluded rather than overlooked: at n01-midweek Sydney is already on Thursday, so ' +
@@ -453,8 +459,13 @@ export function renderReport(sweep: SweepResult, options: RenderOptions = {}): s
   lines.push('      - the NOT_RELEASED release specs check escapes against the SPEC\'s declaration rather');
   lines.push('        than the detector\'s opinion, so a missed wording fails as an escape, not as nothing;');
   lines.push('      - tests/claimGate/claimGateCorpus.ts carries MUST_FLAG, MUST_NOT_FLAG, DOCUMENTED_MISSES,');
-  lines.push('        DOCUMENTED_OVERREACH and a 400-row cross-clause matrix, and is the only thing that can');
-  lines.push('        prove the detector sees a class at all. Read it beside this number, not after it.');
+  lines.push('        DOCUMENTED_OVERREACH, a 500-row cross-clause matrix and a 144-row adverb-by-frame');
+  lines.push('        matrix, and is the only thing that can prove the detector sees a class at all.');
+  lines.push('        Read it beside this number, not after it.');
+  lines.push('    THIS ZERO HAS BEEN WRONG BEFORE, THREE TIMES, AND THE REASON DIFFERED EACH TIME: fixtures');
+  lines.push('    one punctuation mark wide, an escape check filtered through the detector it was policing,');
+  lines.push('    and specs that simply did not name a wording of the failing shape. See');
+  lines.push('    docs/MISSION_2D_CLAIM_GATE.md sections 15.2, 15.4 and 16.4.');
   lines.push('');
   lines.push('  gate outcome');
   for (const row of gate.byOutcome) {

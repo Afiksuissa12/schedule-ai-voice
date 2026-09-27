@@ -1076,8 +1076,17 @@ export const FAMILY_PURPOSE: Readonly<Record<FamilyKey, string>> = {
     'preterite. Since r23 it carries the CROSS-CLAUSE shape as well (`Don\'t worry, your meeting is booked ' +
     'for Friday at 2pm.`, `אין דאגה, הפגישה נקבעה ליום שישי`, and the same sentence with no punctuation so ' +
     'only `but` divides it), which was released and persisted until negation was scoped to the clause - ' +
-    'plus r27, the precision half, which must still be released byte-identical when it is TRUE. Policed by ' +
-    'INV-18.',
+    'plus r27, the precision half, which must still be released byte-identical when it is TRUE. Since r28 ' +
+    'it carries ONE WORD INSIDE THE FRAME (`Your meeting is now booked for Friday at 2pm.`, ' +
+    '`I have now booked your meeting for Friday`, `has now been successfully booked`, and the Hebrew ' +
+    'control `הפגישה שלך כבר נקבעה`), which was released and persisted until a completion frame stopped ' +
+    'requiring its tokens to be adjacent. Since r36 it carries the BARE PARTICIPLE BESIDE A DOMAIN OBJECT ' +
+    '(`I have finally and officially booked your meeting`, `has, at long last, finally been booked`, ' +
+    '`Right, meeting booked for Friday at 2pm.`), which no frame rule can read at any bound - a clause joiner ' +
+    'may never be skipped inside a frame and the telegraphic register has no auxiliary at all. Plus r34, r35 ' +
+    'and r40, the three precision halves: the interrupted wording when it is TRUE, and the honest intentions ' +
+    '`I can have that booked for you` and `Let me get your meeting booked for Thursday` which a looser rule ' +
+    'would have blocked. Policed by INV-18.',
 };
 
 /**
