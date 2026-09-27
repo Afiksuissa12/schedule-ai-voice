@@ -54,8 +54,9 @@ has been merged.** Baseline V1 on `master` is untouched.
    after integration.** `tests/invariants/founderReviewReferences.test.ts`
    asserts that this file exists at `docs/`, that no copy reappears at the root,
    that nothing in the repository cites the old root-level path, and that all 27
-   `Source:` lines in § 6.2 and § 6.5 name a transcript that is actually on disk,
-   inside the committed `eval-output-fair-20260927/transcripts/`. Adding it
+   `Source:` lines in this document — 26 in § 6.2 and § 6.5, plus one in § 8.6 —
+   name a transcript that is actually on disk, inside the committed
+   `eval-output-fair-20260927/transcripts/`. Adding it
    is why the recorded suite total is **1,020 / 50 files** rather than the
    1,017 / 49 an earlier revision carried; every figure in § 7, § 8.3.6 and § 13
    comes from a re-run on the integrated tree. Deliberately, that guard does
@@ -1246,9 +1247,10 @@ buy and offers examples including `פיצוחי עיסוי` — a non-phrase, ro
 nuts". Its Hebrew is also studded with invented or wrong words that a native
 speaker would stop at: `מצטען` for `מצטער`, `נסחם`, `דיינרים`, `בסודרי`, and a
 recurring sign-off `טכנאי טוב לב!` ("good-hearted technician!") that belongs to no
-register at all. On the mixed scenarios it leaves **unfilled template
-placeholders in the spoken text**, in Hebrew, four turns running:
-`המפגש שלך עם [Contact Name] מקבוצת [Company Name]`.
+register at all. In `mixed-hebrew-english` it leaves **unfilled template
+placeholders in the spoken text**, in Hebrew, on four of the five turns — turns
+1, 2, 4 and 5, so not consecutively — three of them carrying the string
+verbatim: `המפגש שלך עם [Contact Name] מקבוצת [Company Name]`.
 
 **A high language-match score means the letters were the right alphabet. It does
 not mean the words were words, and it does not mean the content was true.**
