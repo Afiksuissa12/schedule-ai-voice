@@ -10,7 +10,7 @@
  *   מחר, ב-15:00, יום חמישי, אחרי הצהריים, בשתיים, שבוע הבא
  *                                    - src/eval/corpus/scenarios.he.ts,
  *                                      tests/e2e/hebrewDigitClockTime.test.ts,
- *                                      FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md
+ *                                      docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md
  *                                      §§ 6.2 and 8.3
  *   היום, הבוקר, תתקשר, אליי, בוא, נגיד, נקבע, נדבר, אולי, תודה, אז,
  *   אוקיי, סבבה, מעולה

@@ -42,7 +42,7 @@
  * passing: a validated, persisted, audit-trailed booking one calendar day
  * early, with no warning anywhere. Arabic, Russian and French phrases carrying
  * a digit clock time did the same thing. Reproduced in
- * `FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 8.3.
+ * `docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 8.3.
  *
  * So the rule is now: **a phrase may resolve only if EVERY non-whitespace
  * token was consumed by a rule.** Anything left over refuses, in every

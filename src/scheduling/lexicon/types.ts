@@ -12,7 +12,7 @@
  *  2. A word the grammar did not know was SILENTLY DISCARDED. A Hebrew phrase
  *     whose clock time was written in digits therefore lost its day word, kept
  *     its digits, and resolved to TODAY with `ok: true` - a validated booking
- *     one calendar day early. See `FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md`
+ *     one calendar day early. See `docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md`
  *     § 8.3 and `docs/DECISIONS.md` § 9.
  *
  * The fix for (1) is this file: a locale is DATA, not control flow. A lexicon

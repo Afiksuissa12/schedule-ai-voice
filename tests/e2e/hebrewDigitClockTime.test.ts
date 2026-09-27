@@ -27,7 +27,7 @@
  * against synthetic recorded runs. That file was deliberately left sharp.
  *
  * The full finding, its two reproductions and the fix are
- * `FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 8.3 and `docs/DECISIONS.md` § 9.
+ * `docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 8.3 and `docs/DECISIONS.md` § 9.
  */
 import { afterAll, describe, expect, it } from 'vitest';
 

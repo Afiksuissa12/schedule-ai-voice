@@ -42,7 +42,7 @@
  * out, with no warning anywhere, and it is the worse of the two failures by a
  * long way. It was added in rubric 1.1.0 after exactly that was measured for
  * Hebrew and mixed-language input; see
- * `FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 8.3.
+ * `docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 8.3.
  */
 
 /** Bump on any change to a dimension, a weight, or a gate rule. */

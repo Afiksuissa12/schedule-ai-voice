@@ -8,7 +8,7 @@
  * resolves to the instant a human worked out by hand, at ONE pinned `now` in
  * ONE zone. That is the right shape for a grammar test and it is not enough for
  * a regression net, because the defect being guarded against
- * (`FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 8.3) was not "Hebrew resolves to
+ * (`docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 8.3) was not "Hebrew resolves to
  * a slightly wrong hour". It was "Hebrew and English, meaning the same thing,
  * resolved to DIFFERENT DAYS, and only the English one was ever checked".
  *
