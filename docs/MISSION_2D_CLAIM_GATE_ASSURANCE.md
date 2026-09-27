@@ -42,7 +42,7 @@ four were raised to the gate task through the coordination mailbox:
 | # | Finding | Severity | Kind |
 |---|---|---|---|
 | 5.1 | Verb-first callback wording — *"I've booked the callback for Thursday at 2pm"* — is classified `MEETING`, so a **truthful** callback confirmation is rejected, and on repeat the turn is **withheld and escalated to a human** | **Highest** | False **positive** |
-| 5.2 | Negation and conditionality are **sentence**-scoped, so one word in a different clause suppresses a false claim entirely. Ten reachable spellings, worse in Hebrew | High | False negative |
+| 5.2 | Negation and conditionality are **sentence**-scoped, so one word in a different clause suppresses a false claim entirely. Ten reachable spellings, worse in Hebrew — **FIXED, see § 5.2** | High | False negative |
 | 5.3 | `buildStateInstruction` hands the invented identifier back to the model | Low | Convergence hazard |
 | 5.4 | `renderChainAnswers` prints attempt *reasons* but not attempt *text* | Low | Nicety |
 
@@ -64,7 +64,7 @@ it unilaterally. The exact replacement text is in § 7 and was sent to them mark
 | `tests/invariants/runner.ts` | Observes `claimGate`, `assistantMessages`, `toolOutcomes` and `tasks`; scripts a spec's text when a scenario carries one |
 | `tests/invariants/sweep.ts` | Folds the gate's decisions into the determinism classification |
 | `tests/qa/report.ts` | `claimGateSummary` and the printed `INV-18` section; four new coverage gaps |
-| `tests/claimGate/claimGateCorpus.ts` | The non-vacuity corpus: 35 must-flag, 14 must-not-flag, 14 ledger cases, 14 documented misses, 3 known false positives |
+| `tests/claimGate/claimGateCorpus.ts` | The non-vacuity corpus: 35 must-flag, 14 must-not-flag, 14 ledger cases, 14 documented misses, 3 known false positives **as first delivered**. Since grown by later fixes; § 3.4 records the one table that was re-counted rather than added to, and `runClaimGateSelfTest` returns the live figures |
 | `tests/claimGate/claimGateNonVacuity.test.ts` | The gate that fails the build when a rule stops firing |
 | `tests/claimGate/claimGateLatency.ts` + `tests/qa/claimGateLatencyCli.ts` | The measurement harness, behind `npm run qa:claim-gate-latency` |
 | `tests/claimGate/claimGateLatency.test.ts` | Guards the harness's *inputs*, not its timings |
@@ -149,6 +149,27 @@ INV-18 quietly find *fewer* claims and stay green. That is precisely the gap
 `tests/claimGate/claimGateCorpus.ts` exists to close, and it is why the corpus is
 a deliverable and not a nicety. Both halves are recorded in
 `KNOWN_COVERAGE_GAPS`, so `npm run qa:sweep` prints the limitation itself.
+
+> **One part of that gap turned out to be closable, and it had to be closed: the
+> consequence above was not hypothetical.** § 5.2's clause-scope defect meant eight
+> unsupported claims reached real callers while this invariant reported zero leaks.
+> The `NOT_RELEASED` release check was making it worse than the paragraph above
+> admits — it filtered candidate wordings through `detectMaterialClaims` before
+> comparing them to what the caller received, so a missed wording was dropped from
+> `forbidden` and could not be reported as escaped **even though the scenario spec
+> had declared it unsupportable by hand**. That declaration is independent of the
+> detector, so the escape check now runs on it. A detector miss on a
+> declared-unsupportable wording fails INV-18, and the failure message says
+> *invisible to `detectMaterialClaims`* so the reader can tell a gate gap from a
+> detector gap.
+>
+> What remains is what this section correctly describes: for text the specs do NOT
+> declare — anything the sweep releases in the ordinary course — INV-18 still sees
+> only what the detector sees. The sweep report now prints that bound directly under
+> the leak count (`WHAT THIS ZERO IS BOUNDED BY`) rather than leaving it in this
+> document. Closing it properly needs a second, independently written detector;
+> nobody has written one and nothing here pretends otherwise.
+> `docs/MISSION_2D_CLAIM_GATE.md` § 15.4 has the detail.
 
 ### 2.3 The exhaustion split, asserted precisely
 
@@ -312,12 +333,33 @@ only on CRLF. It passes: `src/agent/claimGate/text.ts` names `\r` in
 ### 3.4 The documented misses — the load-bearing half
 
 A corpus that only lists what a checker catches cannot tell you when the checker
-got better or worse. So 14 entries are asserted **as misses**, each naming the
-token or rule responsible. Two are the gate's own stated limits (`Booked.` as a
-bare participle; Hebrew masculine נקבע); eleven are § 5.2's clause-scope finding;
-one is a plural inflection gap (`תועדו`). If any starts firing, the corpus fails
-**by name** and tells whoever fixed it to move the entry and republish these
-numbers.
+got better or worse. So entries are asserted **as misses**, each naming the token or
+rule responsible. If any starts firing, the corpus fails **by name** and tells
+whoever fixed it to move the entry and republish these numbers.
+
+**That is exactly what happened, and it is the only part of this document that has
+been re-counted.** The table held **14** entries: two the gate's own stated limits
+(`Booked.` as a bare participle; Hebrew masculine נקבע), **ten** § 5.2's clause-scope
+finding, one a plural inflection gap (`תועדו`), one a bare digit run with no marker
+phrase. The ten clause-scope entries are now DETECTED and have moved to `MUST_FLAG`,
+so the table holds **4**, and the floor in `claimGateNonVacuity.test.ts` moved from
+10 to 4 with the reason recorded beside it. The mechanism worked as designed — the
+corpus failed by name and said which lines had changed — and
+`docs/MISSION_2D_CLAIM_GATE.md` § 15.6 explains why a lowered floor is not a
+weakening here.
+
+Two things were added alongside them, both aimed at the reason this class was
+invisible in the first place:
+
+- **`CROSS_CLAUSE_MATRIX`** — 10 reassurance clauses × 10 joiners × 5 base claims =
+  500 generated rows, all of which must be flagged. Every delivered fixture of this
+  shape had used `!` as the joiner, so the coverage was one punctuation mark wide; a
+  generated cross removes the author's choice of examples. The reassurances are
+  checked alone first, so a row cannot pass for the wrong reason.
+- **`DOCUMENTED_OVERREACH`** — the mirror of this table, for text that asserts
+  **nothing** and that the detector flags anyway. `KNOWN_FALSE_POSITIVES` could not
+  hold it: every entry there must carry a ledger with a real effect in it, and for a
+  sentence that is true *because* nothing happened the honest ledger is the empty one.
 
 The plural gap was found the honest way: my first `RECORD` sample was written
 `הפרטים תועדו` and **failed on the corpus's first run**. `lexicon/he.ts` carries
@@ -650,7 +692,26 @@ passive-framed, so the active `"i've arranged"` matches nothing in any family.
 
 ### 5.2 HIGH — negation and conditionality are sentence-scoped, so one word in a different clause suppresses a false claim
 
-**`src/agent/claimGate/detector.ts:153–155`**; vocabulary at
+> **RESOLVED. The finding below is preserved as written; this note records what
+> happened to it.** A later, independent QA pass reproduced the same defect through
+> `handleTurn` against a real database and escalated it as BLOCKER 1: eight of these
+> wordings were **released to the caller and persisted as spoken agent turns** with
+> `meetings` 0 and `futureActions` 0, while the sweep printed
+> `CLAIMS THAT LEAKED PAST THE GATE: 0`.
+>
+> The fix is essentially the one suggested at the end of this section — rules 2 and 3
+> scoped to the clause — plus one narrowing this section did not name, which the two
+> lines with **no clause boundary at all** (`without any issue`, `בלי שום בעיה`)
+> needed: a negator reaches only the forms standing **at or after** it, because
+> negation is pre-verbal in both registered languages. Rule 1 was narrowed with them.
+>
+> All ten lines in the table below now produce a claim, and all ten have moved from
+> `DOCUMENTED_MISSES` to `MUST_FLAG`. `docs/MISSION_2D_CLAIM_GATE.md` § 15 is the
+> write-up, including what was done about the assurance blindness that let the sweep
+> report this as zero leaks, and the one precision cost the fix prices in.
+
+**`src/agent/claimGate/detector.ts:153–155`** *(line numbers as they were at the time
+of this finding; the code has since changed)*; vocabulary at
 `lexicon/en.ts:228–251` and `lexicon/he.ts:97–99`.
 
 Rules 2 and 3 scope to the **sentence**, then ask "does any negator appear

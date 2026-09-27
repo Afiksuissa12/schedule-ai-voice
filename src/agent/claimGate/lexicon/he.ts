@@ -108,6 +108,17 @@ export const HE_CLAIM_LEXICON: ClaimLexicon = {
 
   conditionalMarkers: ['אם', 'כאשר', 'ברגע', 'האם', 'אולי', 'במידה'],
 
+  // Hebrew's standalone clause-joiners, coordinating (אבל, אך, אז) and
+  // subordinating (כי). The coordinating ו is a PREFIX - it attaches to the word it
+  // introduces and never stands as its own token - so only the words that do stand
+  // alone are here, plus ולכן, which is that prefix already fused into a word a
+  // model writes whole.
+  //
+  // אלא ("but rather") is absent on purpose: it appears almost only after a
+  // negation it belongs to (`לא X אלא Y`), so breaking the clause there would be
+  // separating a negator from the thing it really negates.
+  clauseBreakers: ['אבל', 'אך', 'אז', 'לכן', 'ולכן', 'כי'],
+
   months: [
     { forms: ['ינואר'], month: 1 },
     { forms: ['פברואר'], month: 2 },

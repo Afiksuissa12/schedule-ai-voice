@@ -92,12 +92,17 @@ export const KNOWN_COVERAGE_GAPS: readonly string[] = [
     'and writing a second one inside the harness would be the reimplementation this design forbids (the same ' +
     'argument INV-16 makes). The consequence is precise: a bug in buildActionLedger or verifyClaims is ' +
     'caught here, and a bug in the DETECTOR is caught only for the family M specs that declare ' +
-    'NOT_RELEASED - those FAIL when the detector finds no material claim in any of their texts, which is ' +
-    'what makes the six simple-past and fabricated-reference specs (r17-r21) a regression guard on the ' +
-    'lexicon and not only on the ledger. A detector rule that stopped firing on wording no spec declares ' +
-    'unsupportable would still make INV-18 quietly find fewer claims. That remaining gap is closed by ' +
-    'tests/claimGate/claimGateCorpus.ts, a corpus with the answers written down in which every detector ' +
-    'rule must fire and every known-good sample must stay clean.',
+    'NOT_RELEASED - which is what makes the simple-past, fabricated-reference and cross-clause specs ' +
+    '(r17-r21, r23-r27) a regression guard on the lexicon and not only on the ledger. Those specs now NAME ' +
+    'the wording they forbid in ReleaseSpec.forbidden rather than having it inferred by running the ' +
+    'detector over their texts, and that change was not cosmetic: the old form dropped a wording the ' +
+    'detector MISSED out of the forbidden list, so a live fail-open detector gap was reported here as zero ' +
+    'leaks while eight unsupported claims reached real callers. A missed wording now fails as an ESCAPE, ' +
+    'and the failure says whether the gate failed to stop a claim it saw or never saw one. What is still ' +
+    'open: a detector rule that stopped firing on wording no spec declares unsupportable would make INV-18 ' +
+    'quietly find fewer claims. That remaining gap is closed by tests/claimGate/claimGateCorpus.ts, a ' +
+    'corpus with the answers written down in which every detector rule must fire, every known-good sample ' +
+    'must stay clean, and a 400-row cross-clause matrix must stay fully detected.',
   'BOUNDED DELIBERATELY: family M crosses its claim texts with FOUR zones (America/New_York, Europe/London, ' +
     'Asia/Jerusalem, Asia/Kolkata) at ONE `now` instant, under ONE policy and one free diary. Australia/Sydney ' +
     'is deliberately excluded rather than overlooked: at n01-midweek Sydney is already on Thursday, so ' +
@@ -429,6 +434,27 @@ export function renderReport(sweep: SweepResult, options: RenderOptions = {}): s
     `  CLAIMS THAT LEAKED PAST THE GATE    : ${gate.leakedClaims}` +
       (gate.leakedClaims === 0 ? '   (must be 0)' : '   <- MUST BE 0. A customer was told something false.'),
   );
+  lines.push('');
+  // WHAT THAT ZERO IS WORTH, STATED WHERE IT IS PRINTED.
+  //
+  // INV-18's independent oracle reads the released text with the SAME
+  // `detectMaterialClaims` the gate reads it with, so a claim the DETECTOR cannot
+  // see is a claim this line cannot count. That is not hypothetical: independent
+  // QA released eight unsupported claims end to end, against an empty ledger,
+  // while this line printed 0 - a negator in a leading clause suppressed the whole
+  // sentence and the detector returned nothing to judge. The gap is closed
+  // (`src/agent/claimGate/detector.ts` scopes negation to the clause) and the
+  // bound is printed anyway, because the next detector gap will be invisible here
+  // in exactly the same way and a reader is entitled to know that before quoting
+  // the zero.
+  lines.push('  WHAT THIS ZERO IS BOUNDED BY');
+  lines.push('    INV-18 reads released text with the gate\'s own detector, so it counts claims the detector');
+  lines.push('    CAN see. A detector miss is invisible here by construction. Two things bound that:');
+  lines.push('      - the NOT_RELEASED release specs check escapes against the SPEC\'s declaration rather');
+  lines.push('        than the detector\'s opinion, so a missed wording fails as an escape, not as nothing;');
+  lines.push('      - tests/claimGate/claimGateCorpus.ts carries MUST_FLAG, MUST_NOT_FLAG, DOCUMENTED_MISSES,');
+  lines.push('        DOCUMENTED_OVERREACH and a 400-row cross-clause matrix, and is the only thing that can');
+  lines.push('        prove the detector sees a class at all. Read it beside this number, not after it.');
   lines.push('');
   lines.push('  gate outcome');
   for (const row of gate.byOutcome) {

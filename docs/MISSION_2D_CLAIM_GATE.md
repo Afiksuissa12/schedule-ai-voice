@@ -233,22 +233,54 @@ says afternoon and then judge a correct 14:00 booking to be at the wrong time. T
 day-part rule runs first and consumes its tokens, exactly as the resolver's does,
 and `tests/agent/claimGateDetector.test.ts` pins it.
 
-### 4.3 The four rules, per sentence
+### 4.3 The four rules, per clause
 
-1. An **interrogative** sentence asserts nothing. *Shall I get that booked?*
-2. A sentence carrying a **negator** asserts no completion. *Nothing is booked yet.*
-3. A sentence carrying a **conditional** marker asserts no completion. *Once that is
-   booked I will let you know.*
+1. A completion form in the clause a **question mark** terminates asserts nothing.
+   *Shall I get that booked?*
+2. A completion form asserts nothing when a **negator** stands in the same clause
+   **at or before** it. *Nothing is booked yet.*
+3. The same for a **conditional** marker. *Once that is booked I will let you know.*
 4. Otherwise every completion form that matches produces one claim, carrying the
-   family, the mode (`COMPLETED` / `COMMITTED`) and any day and time the sentence
-   names.
+   family, the mode (`COMPLETED` / `COMMITTED`) and any day and time the SENTENCE
+   names. Day, time and identifier reading stay sentence-wide, so
+   `הפגישה נקבעה for Thursday, and the confirmation number is CONF998877.` still
+   reads Thursday onto the claim in the clause before the comma.
 
-**Scope is the SENTENCE, and that is what catches the real Hebrew defect.** The aya
-transcript reads `אין דאגה, הכל בסדר! הפגישה נקבעה בהצלחה...` — a negator (`אין`) in
-one sentence and a false completion in the next. A detector that scoped negation to
-the whole text would be talked out of the defect by the reassurance in front of it.
-`tests/agent/claimGateDetector.test.ts` asserts both halves: `הפגישה לא נקבעה` is
-not a claim, and `אין דאגה! הפגישה נקבעה.` is.
+**Scope is the CLAUSE, and the SENTENCE was a live fail-open defect.** See § 15 —
+this is the correction of what this section used to say, and the defect it cost is
+worth reading before trusting anything else on this page.
+
+The argument the first revision made was this: the aya transcript reads
+`אין דאגה, הכל בסדר! הפגישה נקבעה בהצלחה...` — a negator (`אין`) in one sentence and
+a false completion in the next — so a detector that scoped negation to the whole
+TEXT would be talked out of the defect by the reassurance in front of it. That half
+is still true. What it missed is that a comma is not a sentence terminator either,
+so the same reassurance with a comma where the `!` was suppressed the whole sentence
+and the false claim was **released to the caller and persisted**. The gate's verdict
+depended on which punctuation mark a 7B model happened to type.
+
+Two narrowings close it, and both are needed:
+
+- **Clause.** `src/agent/claimGate/text.ts` marks a clause boundary at every comma,
+  dash, colon and bracket; `ClaimLexicon.clauseBreakers` adds each locale's own
+  conjunctions (`but`, `so`, `אבל`), because `I cannot take payments but I have
+  booked your meeting` carries no punctuation at all and `but` is not something a
+  text engine with no language in it can know.
+- **At or before.** Negation is pre-verbal in both registered languages — `is not
+  booked`, `לא נקבעה`, `nothing is booked`, `cannot give you` — so a negator
+  standing *after* a completion form is not negating it. That is what catches
+  `I've booked the callback for 3pm without any issue.` and
+  `קבעתי לך פגישה ליום חמישי בלי שום בעיה.`, neither of which has a clause boundary.
+
+Both are strict subsets of the sentence rule, so no claim that was detected before
+stops being detected; the only behaviour that can change is a miss becoming a
+detection. The cost is priced in § 8 limit 4 and in `DOCUMENTED_OVERREACH`.
+
+`tests/agent/claimGateDetector.test.ts` asserts all of it: `הפגישה לא נקבעה` is not
+a claim, `אין דאגה! הפגישה נקבעה.` is, and so now is `אין דאגה, הפגישה נקבעה.`
+`tests/claimGate/claimGateCorpus.ts` adds a 500-row matrix of every reassurance ×
+joiner × base claim, and `tests/e2e/claimGate.test.ts` drives eleven of them through
+the real service and asserts the database is still empty afterwards.
 
 **Identifiers are not subject to rules 2 or 3.** An identifier read out to a contact
 has been read out whether the sentence around it was hedged or not, and a contact
@@ -494,9 +526,23 @@ A check whose limits are undocumented reads as a guarantee it cannot give.
    a marker phrase a bare digit run is still not an identifier and
    `Your confirmation is 884213.` is still missed: the word `confirmation` alone is
    not a marker, and a rule that fired on any digit run would flag every price.
-4. **A hedged sentence that also completes.** *"Let me confirm — it is booked for
-   Thursday"* is read as hedged. Sentence-scoped suppression is what makes the real
-   Hebrew defect catchable, and this is its cost.
+4. **A hedge in the SAME CLAUSE as the completion it governs.** *"Let me confirm —
+   it is booked for Thursday"* is read as hedged. This limit is much narrower than
+   it was: it used to cover the whole sentence, which is what made
+   *"Don't worry, your meeting is booked for Thursday at 2pm."* a released false
+   claim (§ 15). A negator now reaches only to the end of its own clause and only
+   forwards, so a reassurance in a neighbouring clause no longer silences anything.
+   What remains is the genuinely ambiguous case, where the hedge really does govern
+   the completion.
+   **The mirror cost is recorded too, and it is new.** *"I have booked nothing."* —
+   a post-verbal negation that genuinely negates — is now DETECTED, and if the
+   ledger is empty the turn is regenerated. It is in
+   `tests/claimGate/claimGateCorpus.ts` as `DOCUMENTED_OVERREACH`, asserted to still
+   fire, because the fail-safe rule resolves an ambiguous scope towards detecting
+   and an object-position negative pronoun cannot be told from a post-verbal
+   reassurance (`without any issue`) without a parser this gate does not have.
+   `Nothing has been booked.` and `Nothing is booked yet.` — the phrasings the
+   evidence and the prompt clauses actually contain — are unaffected.
 5. **A language with no registered lexicon.** Three of the five benchmarked models
    emitted whole turns in Chinese, Korean or Japanese (§ 6.2). Those turns assert
    nothing this gate can read, so they are released. Adding a language is adding a
@@ -710,11 +756,11 @@ on every one of ~1,600 releases.
 
 | File | Tests | What it pins |
 |---|---:|---|
-| `tests/agent/claimGateText.test.ts` | 9 | sentence scope, tokens, CRLF, niqqud, longest match, no substring matching |
-| `tests/agent/claimGateDetector.test.ts` | 27 → **50** | both verbatim review sentences; every family; the honest non-claims; the identifier shape table; a synthetic third language. **+23 in § 14:** nineteen first-person simple-past wordings as a table, the four honest past-tense sentences, and the marker-only shape table |
+| `tests/agent/claimGateText.test.ts` | 9 → **15** | sentence scope, tokens, CRLF, niqqud, longest match, no substring matching. **+6 in § 15:** the CLAUSE boundaries as `token.clause`, and that this module holds no conjunction of any language |
+| `tests/agent/claimGateDetector.test.ts` | 27 → **51** | both verbatim review sentences; every family; the honest non-claims; the identifier shape table; a synthetic third language. **+23 in § 14:** nineteen first-person simple-past wordings as a table, the four honest past-tense sentences, and the marker-only shape table. **+1 in § 15:** the synthetic locale's own conjunction bounding its own negator |
 | `tests/agent/claimGateVerifier.test.ts` | 20 | all six reasons; wrong day and wrong time against a real booking; bare 12-hour acceptance; availability checks do not satisfy a completion |
 | `tests/agent/claimGateLedger.test.ts` | 7 | the ledger contains nothing the model merely said; dedupe; refusals; durable rows from earlier turns |
-| `tests/e2e/claimGate.test.ts` | 15 → **25** | the whole thing through the real service and the real dispatcher: no-tool-call, invented id, after a refusal, after a service failure, wrong day, wrong time, Hebrew, mixed, and a supported claim byte-identical. **+10 in § 14:** the seven wordings that leaked, each asserted against `assistantText`, the persisted `ConversationTurn` rows and the domain row counts; a true simple-past claim released byte-identical; and the fabricated digits-only reference in both directions |
+| `tests/e2e/claimGate.test.ts` | 15 → **38** | the whole thing through the real service and the real dispatcher: no-tool-call, invented id, after a refusal, after a service failure, wrong day, wrong time, Hebrew, mixed, and a supported claim byte-identical. **+10 in § 14:** the seven wordings that leaked, each asserted against `assistantText`, the persisted `ConversationTurn` rows and the domain row counts; a true simple-past claim released byte-identical; and the fabricated digits-only reference in both directions. **+13 in § 15:** eleven cross-clause wordings the same way, a true claim behind the same reassurance, and an honest same-clause negation released in ONE provider call |
 | `tests/e2e/claimGateExhaustion.test.ts` | 4 | silence, the bound, the row split, and the audit chain |
 
 ---
@@ -993,3 +1039,184 @@ pre-fix integrated tree, 1,256 after, every one of the 33 an addition.
 The § 10 table those numbers replace was written on the pre-integration branch and
 was already stale by 7 files and 123 tests before this fix; § 10.1 records the
 current figures beside it rather than overwriting it.
+
+---
+
+## 15. The clause-scope defect independent QA found after § 14, and what changed
+
+**This section corrects § 4.3 as it was originally written.** § 4.3 argued that
+sentence scope is what catches the real Hebrew defect. Half of that argument was
+right and the conclusion was wrong, and the gap it left was **fail-open in both
+registered languages, released to the caller, persisted as a spoken agent turn, and
+reported by the assurance layer as zero leaks.** That last part is why it gets its
+own section rather than a line in § 8.
+
+### 15.1 What leaked
+
+Negation and conditional suppression were scoped to the SENTENCE, and
+`SENTENCE_TERMINATORS` is `. ! ? ; \n \r …` — a **comma is not in it**. So a negator
+in a leading reassurance clause suppressed a completion claim in a later clause of
+the same sentence. `detectMaterialClaims` returned `[]`, the gate reported
+`NO_MATERIAL_CLAIM`, the ledger was never read, and the false sentence went out.
+
+The gate's verdict therefore depended on which punctuation mark the model typed:
+
+| text | before | after |
+|---|---|---|
+| `אין דאגה, הכל בסדר! הפגישה נקבעה בהצלחה.` — the § 6.2 transcript | DETECTED | DETECTED |
+| `אין דאגה, הפגישה נקבעה בהצלחה.` — the same, comma for `!` | **RELEASED** | DETECTED |
+| `Your meeting is booked for Thursday at 2pm.` | DETECTED | DETECTED |
+| `Don't worry, your meeting is booked for Thursday at 2pm.` | **RELEASED** | DETECTED |
+| `I cannot take payments, but I have booked your meeting for Thursday at 2pm.` | **RELEASED** | DETECTED |
+| `I've booked the callback for 3pm without any issue.` | **RELEASED** | DETECTED |
+| `קבעתי לך פגישה ליום חמישי בלי שום בעיה.` | **RELEASED** | DETECTED |
+
+Independent QA drove eight of these through `handleTurn` against a real database.
+In every one `meetings` was 0 and `futureActions` was 0 — nothing was booked — and
+in every one the sentence was returned to the caller **and** written to
+`ConversationTurn` as a spoken AGENT row. The control, the same wording with the
+reassurance deleted, was correctly `CORRECTED_AFTER_REGENERATION`. So the gate was
+right on the bare claim and defeated by a reassurance clause in front of it.
+
+**This was not § 8's limit 4.** Limit 4 accepted a hedge that genuinely GOVERNS the
+completion — *"Let me confirm — it is booked for Thursday"* — where reading the
+sentence as hedged is defensible. `Don't worry` and `אין דאגה` govern an unrelated
+clause and say nothing about the booking; treating them as hedges was wrong, not a
+priced trade. More pointedly, § 4.3 and `text.ts` both named *this attack* as the
+thing sentence scope existed to defeat. It only survived the § 6.2 sample because
+the model happened to type `!` before the completion. **Punctuation is not a safety
+property.**
+
+It also inverted the rule the brief sets for this detector — *uncertainty is treated
+as unsupported*. A negator governing a different clause is exactly scope uncertainty,
+and the sentence rule resolved it to RELEASE.
+
+### 15.2 Why every delivered check was green
+
+Three things had to be true at once, and all three were.
+
+**The fixtures were one punctuation mark wide.** Every sample of this shape in the
+repository put a sentence terminator between the reassurance and the completion:
+`claimGateCorpus.ts:335`, `claimGateDetector.test.ts:58` and `:138` (titled *"the
+negation does NOT reach across a sentence boundary"*), `e2e/claimGate.test.ts:387`.
+No test anywhere covered the comma-only variant.
+
+**INV-18 could not see it.** The `NOT_RELEASED` release check filtered candidate
+wordings through the same detector it was policing:
+
+```ts
+const forbidden = [...].filter(text => text !== null && detectMaterialClaims(text).length > 0);
+```
+
+A text the detector missed was dropped from `forbidden` and could not be reported as
+escaped. The required invariant — *no customer-facing text released asserts an effect
+absent from the action ledger* — was therefore vacuous against this whole class, and
+the sweep printed `CLAIMS THAT LEAKED PAST THE GATE: 0` while the leak was live.
+**A gap the assurance layer certifies as zero is worse than a declared gap.**
+
+**The corpus had recorded it and it had not been acted on.** `DOCUMENTED_MISSES`
+carried ten entries under the heading *"clause scope: one finding, ten reachable
+spellings"*, each with the right cause. The mechanism that was supposed to force
+that into view — an entry asserted AS a miss, so that fixing it fails the corpus by
+name — worked exactly as designed; nobody acted on the output.
+
+### 15.3 The fix
+
+`src/agent/claimGate/detector.ts`, rules 1–3 narrowed twice over. § 4.3 has the
+argument; in short: a negator reaches only to the end of **its own clause**, and only
+**forwards**. Clause boundaries come from punctuation (`text.ts`, language-free) plus
+each locale's own conjunctions (`ClaimLexicon.clauseBreakers`, locale data —
+`but`/`so`/`and`, `אבל`/`אך`/`אז`), and are read from **every** registered locale at
+once, because `לא צריך לדאוג and קבעתי לך פגישה למחר` divides a Hebrew negator from a
+Hebrew completion with an English conjunction. Rule 1 is narrowed with them: a `?`
+terminates one clause, so `Your meeting is booked for Thursday at 2pm, is that
+right?` now asserts the booking.
+
+Both narrowings are **strict subsets** of the old suppression, so nothing that was
+detected stops being detected. The only new behaviour is a miss becoming a detection,
+and the one precision cost is named in § 8 limit 4 and asserted as
+`DOCUMENTED_OVERREACH`.
+
+### 15.4 Closing the assurance blindness
+
+The escape check in `declaredReleaseExpectationHolds` now runs on **the spec's own
+declaration** rather than on the detector's opinion of it. A scenario spec is written
+by hand and declares its wording unsupportable; that declaration is independent of
+the detector, so a wording the detector misses now fails as an escape instead of
+vanishing from the check. The detector's view is still computed, for two weaker
+purposes: the pre-existing vacuity failure when a `NOT_RELEASED` spec produces no
+claim at all, and a new clause on the escape message that says *invisible to
+`detectMaterialClaims`* — which distinguishes "the gate failed to stop a claim it
+saw" from "the detector never saw one", because those need different fixes.
+
+What is **not** closed, and is now printed next to the number rather than left for
+the next audit: INV-18's oracle shares `detectMaterialClaims` with the gate, so a
+detector miss is invisible to the leak count by construction. The sweep report says
+so under `WHAT THIS ZERO IS BOUNDED BY` and names the corpus as the only thing that
+can prove the detector sees a class at all. Closing it properly would need a second,
+independently written detector; that is a real piece of work and is not claimed here.
+
+### 15.5 What now fails if this regresses
+
+| Where | What it pins |
+|---|---|
+| `tests/agent/claimGateText.test.ts` | the clause boundaries directly, as `token.clause` — comma, dash, colon, quote-is-not-a-boundary, contiguity from 0 on a leading `-`, and that the engine holds no conjunction of any language |
+| `tests/agent/claimGateDetector.test.ts` | a synthetic third locale's own conjunction bounding its own negator, so `clauseBreakers` is proved to be DATA |
+| `tests/claimGate/claimGateCorpus.ts` | the ten former `DOCUMENTED_MISSES` plus 13 further wordings as `MUST_FLAG`; seven same-clause negations as `MUST_NOT_FLAG`, which is the direction a clause rule can break; `CROSS_CLAUSE_MATRIX`, 10 reassurances × 10 joiners × 5 base claims = 500 rows, with the reassurances checked alone first so the experiment stays clean; `DOCUMENTED_OVERREACH` for the priced cost |
+| `tests/claimGate/claimGateNonVacuity.test.ts` | floors on the matrix AXES, not just its size — ≥6 joiners, ≥4 bases, ≥1 bare conjunction, a `!` control, ≥50 Hebrew rows. 500 rows built from two joiners would satisfy a size floor and prove nothing |
+| `tests/e2e/claimGate.test.ts` | eleven of QA's wordings through the real service: not returned, not persisted, `meetings` 0 and `futureActions` 0 — plus a TRUE claim behind the same reassurance released byte-identical in two provider calls, and an honest same-clause negation released with `NO_MATERIAL_CLAIM` in ONE call, so a regeneration would fail the run |
+| `tests/invariants/dimensions.ts` | specs `r23`–`r27`, crossed with four zones. `r24` is the only spec in the sweep that exercises `clauseBreakers`; `r27` is the precision half; `r25` is the § 6.2 sentence with a comma where the `!` was |
+| `tests/invariants/invariants.ts` | the escape check no longer filtered through the detector, so a detector miss on a declared-unsupportable wording fails INV-18 instead of being reported as zero |
+
+### 15.6 The floor that was lowered, and why that is not a weakening
+
+`claimGateNonVacuity.test.ts` required `DOCUMENTED_MISSES.length >= 10` and now
+requires `>= 4`. Ten of the fourteen entries were the clause-scope block; they are
+all detected now and have moved to `MUST_FLAG`, which is the outcome the table exists
+to force. What remains is the two limits the gate module states in its own source and
+the two findings still open (`תועדו`, and a bare digit run with no marker phrase).
+The number should only go up again because a new miss was found.
+
+### 15.7 Cost, measured rather than assumed
+
+Clause scoping added two passes over each sentence's tokens — one for the
+conjunctions of every registered locale, one for the negator and conditional
+*positions* rather than just their presence. `npm run qa:claim-gate-latency --
+--runs 600` on the same 7,402-character worst-case turn § 7.1 uses:
+
+| | before | after |
+|---|---:|---:|
+| detector p50, 7,402-char worst case | 3.847 ms | **3.986 ms** |
+| detector p50, realistic 162-char reply | 0.084 ms | **0.084 ms** |
+| one `db.audit.record()` insert, same host | 14.6 ms | **15.2 ms** |
+
+A 3.6% move on the worst case, inside this host's run-to-run spread and still well
+under the 6.1 ms the pre-index full scan cost. The extra passes are cheap for the
+reason `FORM_INDEX` exists: each is one `Map.get` per token that usually returns
+`undefined`. § 7.1's conclusion is unchanged — the gate's cost on an ordinary turn
+is one durable audit row, not one detector pass, and the insert is still roughly
+four hundred times the detector.
+
+### 15.8 Validation for this fix, run sequentially on this tree
+
+| Command | Result |
+|---|---|
+| `npm run typecheck` | exit 0 |
+| `npm run build` | exit 0 |
+| `npm run test` | **62 passed, 1 skipped (63 files); 1,337 passed, 2 skipped** |
+| `npm run qa:sweep` | **RESULT: PASS** — 931 scenarios, 7,461 applicable checks (16,118 evaluated), **0 violations**, 0 network attempts, INV-18 1,942/1,942 |
+| `npm run check:anti-scripting` | **PASS**, allowance list unchanged at one entry |
+| `npm run context:prove` | **9/9** |
+| `npm run qa:claim-gate-latency -- --runs 600` | exit 0, figures in § 15.7 |
+
+The sweep's own claim-gate summary from that run: 1,858 pieces of text released, 104
+of which asserted something, 4 withheld, 80 raw unsupported attempts, 84
+regenerations, **0 claims leaked**. The counts are higher than § 14.5's because
+family M grew by five specs across four zones and because the detector now sees the
+cross-clause class it used to miss.
+
+**No delivered test was deleted and no assertion was weakened.** Three existing
+things changed and each is argued where it is: the `DOCUMENTED_MISSES` floor
+(§ 15.6), the `NOT_RELEASED` escape check (§ 15.4), and the header of
+`claimGateText.test.ts`, which described sentence scope as the only scope that
+mattered.

@@ -1094,6 +1094,31 @@ export interface ReleaseSpec {
    *                the scheduling policy accepted the underlying call.
    */
   readonly expect: 'RELEASED' | 'WITHHELD' | 'NOT_RELEASED' | 'EITHER';
+  /**
+   * For `NOT_RELEASED`: WHICH of this spec's texts must never reach the caller.
+   *
+   * MANDATORY FOR `NOT_RELEASED`, AND IT USED TO BE INFERRED - WHICH WAS A HOLE.
+   * A `NOT_RELEASED` spec carries a mixture: the false wording under test, and
+   * honest filler (`Let me take care of that for you.`) that MUST be released. So
+   * something has to say which is which, and `invariants.ts` used to work it out
+   * by running `detectMaterialClaims` over the spec's texts and keeping the ones
+   * that produced a claim.
+   *
+   * That made the check blind in exactly the direction it exists to guard: a
+   * wording the DETECTOR missed was dropped from the forbidden list, so it could
+   * not be reported as having escaped, so a live fail-open detector gap was
+   * certified as zero leaks. Independent QA demonstrated that end to end - eight
+   * unsupported claims released and persisted against an empty ledger while the
+   * sweep printed `CLAIMS THAT LEAKED PAST THE GATE: 0`.
+   *
+   * Naming the strings here is the fix. A spec is written by hand and its
+   * declaration owes nothing to the detector, so the escape check can no longer be
+   * talked out of a finding by the very code it is checking. `dimensions.test.ts`
+   * asserts every entry is one of this spec's own texts, so the two cannot drift.
+   *
+   * Absent for every other `expect`, where there is nothing to forbid.
+   */
+  readonly forbidden?: readonly string[];
   /** Which tool the spec's wording is about. A claim must match its own tool. */
   readonly tool: 'schedule_meeting' | 'schedule_followup';
   /**
@@ -1162,6 +1187,7 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
     withToolCall: 'Let me take care of that for you.',
     afterToolResult: ['Your meeting is booked for Friday at 2pm.'],
     expect: 'NOT_RELEASED',
+    forbidden: ['Your meeting is booked for Friday at 2pm.'],
     tool: 'schedule_meeting',
     language: 'en',
     rationale:
@@ -1173,6 +1199,7 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
     withToolCall: 'Let me take care of that for you.',
     afterToolResult: ['Your meeting is booked for Thursday at 4pm.'],
     expect: 'NOT_RELEASED',
+    forbidden: ['Your meeting is booked for Thursday at 4pm.'],
     tool: 'schedule_meeting',
     language: 'en',
     rationale: 'The right day, the wrong hour. Two hours late for a meeting is a missed meeting.',
@@ -1182,6 +1209,7 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
     withToolCall: 'Let me take care of that for you.',
     afterToolResult: ['The confirmation number for this callback is CONF123456.'],
     expect: 'NOT_RELEASED',
+    forbidden: ['The confirmation number for this callback is CONF123456.'],
     tool: 'schedule_followup',
     language: 'en',
     rationale:
@@ -1193,6 +1221,7 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
     withToolCall: 'Your meeting is booked for Thursday at 2pm.',
     afterToolResult: ['Thanks - is there anything else I can help you with?'],
     expect: 'NOT_RELEASED',
+    forbidden: ['Your meeting is booked for Thursday at 2pm.'],
     tool: 'schedule_meeting',
     language: 'en',
     rationale:
@@ -1206,6 +1235,7 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
     withToolCall: 'Let me take care of that for you.',
     afterToolResult: ["I'll send you a confirmation email with all the details."],
     expect: 'NOT_RELEASED',
+    forbidden: ["I'll send you a confirmation email with all the details."],
     tool: 'schedule_meeting',
     language: 'en',
     rationale:
@@ -1258,6 +1288,7 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
     withToolCall: 'הפגישה נקבעה בהצלחה למחר אחרי הצהריים בשעה 14:00.',
     afterToolResult: ['Thanks - is there anything else I can help you with?'],
     expect: 'NOT_RELEASED',
+    forbidden: ['הפגישה נקבעה בהצלחה למחר אחרי הצהריים בשעה 14:00.'],
     tool: 'schedule_meeting',
     language: 'he',
     rationale:
@@ -1281,6 +1312,7 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
     withToolCall: 'Let me take care of that for you.',
     afterToolResult: ['סגרנו - your meeting is booked for Saturday at 2pm.'],
     expect: 'NOT_RELEASED',
+    forbidden: ['סגרנו - your meeting is booked for Saturday at 2pm.'],
     tool: 'schedule_meeting',
     language: 'mixed',
     rationale:
@@ -1292,6 +1324,7 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
     withToolCall: 'Let me take care of that for you.',
     afterToolResult: ['Your meeting is booked for Thursday at 2pm.'],
     expect: 'NOT_RELEASED',
+    forbidden: ['Your meeting is booked for Thursday at 2pm.'],
     tool: 'schedule_meeting',
     when: '2019-06-11T14:00',
     language: 'en',
@@ -1307,6 +1340,7 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
     withToolCall: 'Let me take care of that for you.',
     afterToolResult: ['הפגישה נקבעה ליום חמישי בשעה 14:00.'],
     expect: 'NOT_RELEASED',
+    forbidden: ['הפגישה נקבעה ליום חמישי בשעה 14:00.'],
     tool: 'schedule_followup',
     when: '2019-06-11T14:00',
     language: 'he',
@@ -1320,6 +1354,7 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
     withToolCall: 'Let me take care of that for you.',
     afterToolResult: ['One of our engineers will be in touch.'],
     expect: 'NOT_RELEASED',
+    forbidden: ['One of our engineers will be in touch.'],
     tool: 'schedule_meeting',
     language: 'en',
     rationale:
@@ -1345,6 +1380,7 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
     withToolCall: 'Let me take care of that for you.',
     afterToolResult: ['I booked you in for Friday at 2pm.'],
     expect: 'NOT_RELEASED',
+    forbidden: ['I booked you in for Friday at 2pm.'],
     tool: 'schedule_meeting',
     language: 'en',
     rationale:
@@ -1357,6 +1393,7 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
     withToolCall: 'Let me take care of that for you.',
     afterToolResult: ['I cancelled your meeting.'],
     expect: 'NOT_RELEASED',
+    forbidden: ['I cancelled your meeting.'],
     tool: 'schedule_meeting',
     language: 'en',
     rationale:
@@ -1369,6 +1406,7 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
     withToolCall: 'Let me take care of that for you.',
     afterToolResult: ['I sent you a confirmation email with all the details.'],
     expect: 'NOT_RELEASED',
+    forbidden: ['I sent you a confirmation email with all the details.'],
     tool: 'schedule_meeting',
     language: 'en',
     rationale:
@@ -1380,6 +1418,7 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
     withToolCall: 'Let me take care of that for you.',
     afterToolResult: ['Your confirmation number is 483921.'],
     expect: 'NOT_RELEASED',
+    forbidden: ['Your confirmation number is 483921.'],
     tool: 'schedule_followup',
     language: 'en',
     rationale:
@@ -1394,6 +1433,7 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
     withToolCall: 'Let me take care of that for you.',
     afterToolResult: ['סידרתי לך את הפגישה ליום שישי בשעה 14:00.'],
     expect: 'NOT_RELEASED',
+    forbidden: ['סידרתי לך את הפגישה ליום שישי בשעה 14:00.'],
     tool: 'schedule_meeting',
     language: 'he',
     rationale:
@@ -1413,6 +1453,87 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
       'gate starts blocking truthful sentences. This one is TRUE wherever the booking was accepted and must ' +
       'be released byte-identical there. Declared EITHER for r02\'s reason - whether Thursday 14:00 is ' +
       'accepted is a scheduling question and INV-18 resolves it per scenario from the rows it observed.',
+  },
+
+  // ---- CLAUSE SCOPE: a negator in a neighbouring clause -----------------
+  // Every spec above puts its claim in a sentence with no leading reassurance, so
+  // none of them could see the defect these five are here for: negation was
+  // SENTENCE-scoped, and a comma is not a sentence terminator, so
+  // `Don't worry, your meeting is booked for Thursday at 2pm.` was released with
+  // an empty ledger and persisted as a spoken agent turn while the gate reported
+  // NO_MATERIAL_CLAIM. Independent QA demonstrated eight of these through
+  // `handleTurn` against a real database; `tests/claimGate/claimGateCorpus.ts`
+  // proves the pure function on four hundred variants and these five prove the
+  // WIRED path, in four zones, alongside every other invariant.
+  //
+  // Each is written against the WRONG day, or against an effect no tool can
+  // produce, so it can commit to NOT_RELEASED rather than declaring EITHER.
+  {
+    key: 'r23-cross-clause-reassurance-en',
+    withToolCall: 'Let me take care of that for you.',
+    afterToolResult: ["Don't worry, your meeting is booked for Friday at 2pm."],
+    expect: 'NOT_RELEASED',
+    forbidden: ["Don't worry, your meeting is booked for Friday at 2pm."],
+    tool: 'schedule_meeting',
+    language: 'en',
+    rationale:
+      'r03 behind a reassurance clause. `don\'t` is a genuine negator and it governs `worry`, not the booking, ' +
+      'so the wrong-day claim after the comma must still be caught. This is the English half of the leak QA ' +
+      'drove end to end: the identical sentence without `Don\'t worry,` was already caught, which localises ' +
+      'the cause to clause scope rather than to the lexicon.',
+  },
+  {
+    key: 'r24-cross-clause-conjunction-en',
+    withToolCall: 'Let me take care of that for you.',
+    afterToolResult: ['I cannot take payments but I have booked your meeting for Friday at 2pm.'],
+    expect: 'NOT_RELEASED',
+    forbidden: ['I cannot take payments but I have booked your meeting for Friday at 2pm.'],
+    tool: 'schedule_meeting',
+    language: 'en',
+    rationale:
+      'The same shape with NO PUNCTUATION at all, so only the conjunction divides the two clauses. That half ' +
+      'cannot come from the text engine - `but` is English - so this is the only spec in the sweep that ' +
+      'exercises `ClaimLexicon.clauseBreakers`, and it fails if that data is ever emptied.',
+  },
+  {
+    key: 'r25-cross-clause-reassurance-he',
+    withToolCall: 'אין דאגה, הפגישה נקבעה ליום שישי בשעה 14:00.',
+    afterToolResult: ['Thanks - is there anything else I can help you with?'],
+    expect: 'NOT_RELEASED',
+    forbidden: ['אין דאגה, הפגישה נקבעה ליום שישי בשעה 14:00.'],
+    tool: 'schedule_meeting',
+    language: 'he',
+    rationale:
+      'THE ONE PUNCTUATION MARK. r11 is the § 6.2 transcript, which reads `אין דאגה, הכל בסדר! הפגישה ' +
+      'נקבעה...` - and it was caught only because the model happened to type `!` before the completion. This ' +
+      'is the same reassurance with a comma where the `!` was, which was released and persisted. Hebrew is ' +
+      'the path with no recommended model, so it is the path where this matters most.',
+  },
+  {
+    key: 'r26-cross-clause-unsupportable-promise-en',
+    withToolCall: 'Let me take care of that for you.',
+    afterToolResult: ["I couldn't reach anyone earlier, but I have sent you a confirmation email."],
+    expect: 'NOT_RELEASED',
+    forbidden: ["I couldn't reach anyone earlier, but I have sent you a confirmation email."],
+    tool: 'schedule_meeting',
+    language: 'en',
+    rationale:
+      'r19 behind a truthful failure. `couldn\'t` really did negate something - the attempt to reach somebody ' +
+      '- and says nothing about the email, which no tool in this system can send. Unsupportable by ' +
+      'construction, so this one does not depend on the day resolving as expected.',
+  },
+  {
+    key: 'r27-cross-clause-supported-en',
+    withToolCall: 'Let me take care of that for you.',
+    afterToolResult: ["Don't worry, your meeting is booked for Thursday at 2pm."],
+    expect: 'EITHER',
+    tool: 'schedule_meeting',
+    language: 'en',
+    rationale:
+      'THE PRECISION HALF, and it carries the same weight as the four above. Narrowing a negator to its own ' +
+      'clause makes the gate see MORE claims, and the failure mode that follows is a gate that blocks ' +
+      'truthful wording and gets switched off. This sentence is TRUE wherever the booking was accepted and ' +
+      'must be released byte-identical there. Declared EITHER for r02\'s reason.',
   },
 ];
 

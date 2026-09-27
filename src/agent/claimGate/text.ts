@@ -11,11 +11,23 @@
  *     in every script. This is the same conclusion Mission 2B reached for the
  *     scheduling grammar (`src/scheduling/lexicon/types.ts`), and it is reached
  *     again here rather than assumed.
- *  2. SENTENCES, because that is the scope a negation actually has. The real
+ *  2. SENTENCES, because that is the widest scope a negation can have. The real
  *     `aya-expanse:8b` defect reads `אין דאגה, הכל בסדר! הפגישה נקבעה בהצלחה...`
  *     - a negator (`אין`) in one sentence and a false completion in the next. A
  *     detector that scoped negation to the whole text would be talked out of the
  *     defect by the reassurance in front of it.
+ *  3. CLAUSES, because the sentence is not narrow enough either, and that was a
+ *     live fail-open defect rather than a theory. `אין דאגה, הכל בסדר! הפגישה
+ *     נקבעה בהצלחה.` is caught only because the model happened to type `!`
+ *     before the completion; `אין דאגה, הפגישה נקבעה בהצלחה.` - the identical
+ *     reassurance with a comma - was RELEASED and persisted, as were
+ *     `Don't worry, your meeting is booked for Thursday at 2pm.` and
+ *     `I cannot take payments, but I have booked your meeting...`. Independent QA
+ *     drove eight such turns through the real `AgentTurnService` against a real
+ *     database: the ledger held nothing, and every one reached the caller with
+ *     `outcome=NO_MATERIAL_CLAIM`. Punctuation is not a safety property, so the
+ *     boundary a negator may not cross is the CLAUSE (`readTokens` marks one on
+ *     every token) and not one character class wider.
  *
  * CRLF
  * ---------------------------------------------------------------------------
@@ -36,6 +48,16 @@ export interface ClaimToken {
   readonly text: string;
   /** Offset of this token in the sentence's own text. */
   readonly offset: number;
+  /**
+   * 0-based PUNCTUATION clause this token sits in, within its sentence.
+   *
+   * Contiguous and monotonically non-decreasing: the first token of a sentence
+   * is always clause 0. A language's own coordinating conjunctions break clauses
+   * too, but those are locale DATA (`ClaimLexicon.clauseBreakers`) and this
+   * module holds no language-specific literal, so the detector layers them on
+   * top of this index rather than this module guessing at them.
+   */
+  readonly clause: number;
 }
 
 /** One sentence of the reviewed text, with its tokens. */
@@ -47,6 +69,8 @@ export interface ClaimSentence {
   readonly tokens: readonly ClaimToken[];
   /** True when the sentence ends in a question mark. */
   readonly interrogative: boolean;
+  /** How many punctuation clauses the sentence has. 0 for a sentence with no tokens. */
+  readonly clauseCount: number;
 }
 
 /**
@@ -60,6 +84,40 @@ export interface ClaimSentence {
  * `normalizeScript` has already mapped them to a space by the time this runs.
  */
 const SENTENCE_TERMINATORS = new Set(['.', '!', '?', ';', '\n', '\r', '…']);
+
+/**
+ * Characters that end a CLAUSE without ending the sentence.
+ *
+ * WHY THIS SET EXISTS AT ALL
+ * ---------------------------------------------------------------------------
+ * A negator governs its own clause, not everything the model typed before the
+ * next full stop. With only `SENTENCE_TERMINATORS` to go on, `אין דאגה, הכל
+ * בסדר! הפגישה נקבעה בהצלחה.` is detected and `אין דאגה, הפגישה נקבעה בהצלחה.`
+ * is not - the same reassurance, the same false completion, one punctuation mark
+ * apart. That was reachable in English and Hebrew, released to the caller and
+ * persisted (see the header). So a comma has to bound a negation the way a full
+ * stop does.
+ *
+ * WHY THE DASH AND THE COLON ARE HERE TOO
+ * ---------------------------------------------------------------------------
+ * `No need to worry, I haven't had any trouble - your meeting is booked for
+ * Thursday at 2pm.` puts a genuine negation (`haven't`, about the trouble) and a
+ * false completion on opposite sides of a DASH. The comma alone would leave that
+ * leak open, so every mark a model actually uses to join clauses is listed: the
+ * ASCII hyphen, the en and em dashes, the colon, and the brackets a parenthetical
+ * sits in.
+ *
+ * `-` and `:` are also `TOKEN_INNER_CHARACTERS` - they have to be, or `ב-15:00`
+ * and `15:00` come apart - so they break a clause only where they are NOT inside
+ * a token. `readTokens` resolves that by asking whether the character survived
+ * `trimTokenEdges`: an interior `-` is part of the token and separates nothing,
+ * an edge or standalone one is punctuation and separates.
+ *
+ * `"` is deliberately ABSENT. A model quoting the contact - `you said "nothing
+ * yet"` - is not changing clause, and `"CONF123456"` must stay one token's worth
+ * of one clause.
+ */
+const CLAUSE_SEPARATORS = new Set([',', '-', '–', '—', ':', '(', ')', '[', ']']);
 
 /**
  * Characters that may sit INSIDE a token.
@@ -94,11 +152,13 @@ export function readSentences(text: string): readonly ClaimSentence[] {
   const flush = (): void => {
     const raw = current.trim();
     if (raw.length > 0) {
+      const tokens = readTokens(raw);
       sentences.push({
         index: sentences.length,
         raw,
-        tokens: readTokens(raw),
+        tokens,
         interrogative: terminator === '?',
+        clauseCount: (tokens.at(-1)?.clause ?? -1) + 1,
       });
     }
     current = '';
@@ -132,16 +192,44 @@ function isDigit(character: string | undefined): boolean {
   return character !== undefined && /\p{N}/u.test(character);
 }
 
-/** Tokenise one sentence. Exported for the tests that pin the token rules. */
+/**
+ * Tokenise one sentence, marking each token's CLAUSE.
+ *
+ * Exported for the tests that pin the token rules and the clause rule. The
+ * clause counter only ever advances when a token is actually pushed, so the
+ * indices are contiguous from 0 and a sentence that opens with punctuation -
+ * `- nothing is booked yet`, the bullet shape a model answers in - does not
+ * start at clause 1 with nothing in clause 0.
+ */
 export function readTokens(sentence: string): readonly ClaimToken[] {
   const normalized = normalizeScript(sentence).text;
   const tokens: ClaimToken[] = [];
   let buffer = '';
   let start = 0;
+  let clause = 0;
+  let pendingBreak = false;
 
   const flush = (): void => {
-    const trimmed = trimTokenEdges(buffer);
-    if (trimmed.length > 0) tokens.push({ text: trimmed.toLowerCase(), offset: start });
+    if (buffer.length === 0) return;
+    const edges = tokenEdges(buffer);
+    const text = buffer.slice(edges.start, edges.end);
+
+    if (text.length === 0) {
+      // The whole run was punctuation the token rules would have eaten - ` - `,
+      // ` -- `, ` : `. It is a separator and nothing else.
+      if (hasClauseSeparator(buffer)) pendingBreak = true;
+      buffer = '';
+      return;
+    }
+
+    // An edge separator belongs to the gap, not to the token: `Details:` ends a
+    // clause and `15:00` does not.
+    if (hasClauseSeparator(buffer.slice(0, edges.start))) pendingBreak = true;
+    if (pendingBreak && tokens.length > 0) clause += 1;
+    pendingBreak = false;
+    tokens.push({ text: text.toLowerCase(), offset: start, clause });
+    if (hasClauseSeparator(buffer.slice(edges.end))) pendingBreak = true;
+
     buffer = '';
   };
 
@@ -153,24 +241,37 @@ export function readTokens(sentence: string): readonly ClaimToken[] {
       continue;
     }
     flush();
+    if (CLAUSE_SEPARATORS.has(character)) pendingBreak = true;
   }
   flush();
 
   return tokens;
 }
 
+function hasClauseSeparator(value: string): boolean {
+  for (const character of value) {
+    if (CLAUSE_SEPARATORS.has(character)) return true;
+  }
+  return false;
+}
+
 /**
- * Strip inner-characters that ended up on an edge.
+ * Where the token really starts and ends inside a run of token characters.
  *
  * `(booked)` arrives as `booked`; `"CONF123456".` arrives with a trailing dot;
  * `-15:00` keeps its digits. Only the EDGES are touched, so `ב-15:00` and
  * `you're` survive intact.
+ *
+ * Returns the bounds rather than the trimmed string because the CALLER needs the
+ * offcuts: a `-` or a `:` that was trimmed off an edge is punctuation between
+ * two clauses, and the identical character left inside the token is not.
  */
-function trimTokenEdges(value: string): string {
-  let out = value;
-  while (out.length > 0 && TOKEN_INNER_CHARACTERS.has(out[0] as string)) out = out.slice(1);
-  while (out.length > 0 && TOKEN_INNER_CHARACTERS.has(out.at(-1) as string)) out = out.slice(0, -1);
-  return out;
+function tokenEdges(value: string): { readonly start: number; readonly end: number } {
+  let start = 0;
+  let end = value.length;
+  while (start < end && TOKEN_INNER_CHARACTERS.has(value[start] as string)) start += 1;
+  while (end > start && TOKEN_INNER_CHARACTERS.has(value[end - 1] as string)) end -= 1;
+  return { start, end };
 }
 
 /**
@@ -239,6 +340,14 @@ interface IndexedForm {
  * A lexicon is free to grow. `npm run qa:claim-gate-latency -- --runs 600` reports
  * 3.847 ms p50 on the same sample; the four figures above were taken back to back
  * in one session, which is what makes them comparable to each other.
+ *
+ * Clause scoping later added two more passes over each sentence's tokens - one for
+ * the conjunctions of every registered locale, one for the negator and conditional
+ * POSITIONS rather than just their presence. The same command on the same sample
+ * reports 3.986 ms p50 after it: a 3.6% move, inside this host's run-to-run spread
+ * and still well under the 6.1 ms the full scan cost. A realistic 162-character
+ * reply is 0.084 ms. The extra passes are cheap for the reason this index exists -
+ * each is one `Map.get` per token that usually returns `undefined`.
  *
  * Keyed by array IDENTITY in a `WeakMap`, because every forms array in a lexicon
  * module is a frozen literal built once at import, and a test that passes an
