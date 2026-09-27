@@ -53,6 +53,28 @@ export const AUDIT_EVENT_TYPES = [
   'VALIDATION_REJECTED',
   /** The agent handed off to a human. */
   'HUMAN_TRANSFER_REQUESTED',
+
+  // -------------------------------------------------------------------------
+  // MISSION 2D - the effect and claim consistency gate.
+  //
+  // The chokepoint governs ACTIONS. These four govern SENTENCES, and they exist
+  // so an auditor can explain any blocked or corrected turn from the chain
+  // alone: what the text asserted, what the records actually said, what was
+  // asked of the model, and what reached the contact.
+  //
+  // `AuditEvent.type` is a String column, so adding them needs no schema
+  // migration - but they ARE validated by `AuditEventTypeSchema` on write and
+  // re-checked by `src/db/mappers.ts` on read, so this list is the contract.
+  // -------------------------------------------------------------------------
+
+  /** Customer-facing text was checked against the ledger and released unchanged. */
+  'CLAIM_GATE_CLAIM_VERIFIED',
+  /** Text asserted something the ledger does not support. It was NOT released. */
+  'CLAIM_GATE_CLAIM_REJECTED',
+  /** The model was handed the authoritative state and asked for the turn again. */
+  'CLAIM_GATE_REGENERATION_REQUESTED',
+  /** Every bounded attempt failed. Nothing was released; a person was asked for. */
+  'CLAIM_GATE_TEXT_WITHHELD',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
@@ -73,6 +95,10 @@ export const AuditEventType = {
   FUTURE_ACTION_FAILED: 'FUTURE_ACTION_FAILED',
   VALIDATION_REJECTED: 'VALIDATION_REJECTED',
   HUMAN_TRANSFER_REQUESTED: 'HUMAN_TRANSFER_REQUESTED',
+  CLAIM_GATE_CLAIM_VERIFIED: 'CLAIM_GATE_CLAIM_VERIFIED',
+  CLAIM_GATE_CLAIM_REJECTED: 'CLAIM_GATE_CLAIM_REJECTED',
+  CLAIM_GATE_REGENERATION_REQUESTED: 'CLAIM_GATE_REGENERATION_REQUESTED',
+  CLAIM_GATE_TEXT_WITHHELD: 'CLAIM_GATE_TEXT_WITHHELD',
 } as const satisfies Record<AuditEventType, AuditEventType>;
 
 /** The kind of domain row an event is about. */

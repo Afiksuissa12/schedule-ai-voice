@@ -41,6 +41,7 @@ import type {
   TransferToHumanArgsSchema,
   UpdateQualificationArgsSchema,
 } from './definitions.js';
+import { createHandoverTask } from './handoverTask.js';
 import { explainScoring, scoreQualification } from './qualificationRubric.js';
 import { toolRejection, toolSuccess, type ToolOutcome } from './results.js';
 
@@ -627,51 +628,28 @@ const transferToHuman: ToolHandler = async (input) => {
 
   const urgency = args.urgency ?? 'ROUTINE';
 
-  const task = await db.withTransaction(async (tx) => {
-    const row = await tx.tasks.create({
-      organizationId: input.ctx.organizationId,
-      contactId: input.subject.contact.id,
-      conversationId: input.ctx.conversationId,
-      title: `[${urgency}] Human handover: ${input.subject.contact.fullName}`,
-      description: [args.reason, args.summary].filter(Boolean).join('\n\n'),
-      status: 'OPEN',
-      // An urgent handover is due now; a routine one still has a deadline, so
-      // it cannot sit in a queue indefinitely with nobody accountable.
-      dueAtUtc:
-        urgency === 'URGENT'
-          ? input.ctx.nowUtc
-          : new Date(Date.parse(input.ctx.nowUtc) + 24 * 60 * 60 * 1000).toISOString(),
-    });
-
-    await tx.audit.record({
-      type: 'HUMAN_TRANSFER_REQUESTED',
-      organizationId: input.ctx.organizationId,
-      correlationId: input.ctx.correlationId,
-      conversationId: input.ctx.conversationId,
-      contactId: input.subject.contact.id,
-      toolCallId: input.toolCallId,
-      subjectType: 'TASK',
-      subjectId: row.id,
-      summary: `Handover to a human requested (${urgency}): ${args.reason}`,
-      detailJson: { urgency, reason: args.reason, summary: args.summary ?? null, taskId: row.id },
-      occurredAt: input.ctx.nowUtc,
-    });
-
-    await tx.audit.record({
-      type: 'ENTITY_PERSISTED',
-      organizationId: input.ctx.organizationId,
-      correlationId: input.ctx.correlationId,
-      conversationId: input.ctx.conversationId,
-      contactId: input.subject.contact.id,
-      toolCallId: input.toolCallId,
-      subjectType: 'TASK',
-      subjectId: row.id,
-      summary: `Handover task ${row.id} created`,
-      detailJson: { taskId: row.id, status: row.status, dueAtUtc: row.dueAtUtc },
-      occurredAt: input.ctx.nowUtc,
-    });
-
-    return row;
+  // The row, the transaction and the two audit events live in
+  // `./handoverTask.ts`, shared with the claim gate's exhaustion path. Every
+  // string this path used to build is still built here, so the summaries and the
+  // detail payloads are unchanged.
+  const task = await createHandoverTask({
+    db,
+    organizationId: input.ctx.organizationId,
+    correlationId: input.ctx.correlationId,
+    conversationId: input.ctx.conversationId,
+    contactId: input.subject.contact.id,
+    toolCallId: input.toolCallId,
+    title: `[${urgency}] Human handover: ${input.subject.contact.fullName}`,
+    description: [args.reason, args.summary].filter(Boolean).join('\n\n'),
+    // An urgent handover is due now; a routine one still has a deadline, so
+    // it cannot sit in a queue indefinitely with nobody accountable.
+    dueAtUtc:
+      urgency === 'URGENT'
+        ? input.ctx.nowUtc
+        : (new Date(Date.parse(input.ctx.nowUtc) + 24 * 60 * 60 * 1000).toISOString() as typeof input.ctx.nowUtc),
+    nowUtc: input.ctx.nowUtc,
+    requestedSummary: `Handover to a human requested (${urgency}): ${args.reason}`,
+    requestedDetail: { urgency, reason: args.reason, summary: args.summary ?? null },
   });
 
   return toolSuccess({
