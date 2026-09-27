@@ -26,6 +26,7 @@
     "slice:demo": "tsx src/app/sliceDemo.ts",
     "demo:local": "tsx src/app/localBrainDemo.ts",
     "qa:sweep": "tsx tests/qa/sweepCli.ts",
+    "qa:claim-gate-latency": "tsx tests/qa/claimGateLatencyCli.ts",
     "eval:pull": "tsx src/eval/cli/pull.ts",
     "eval:models": "tsx src/eval/cli/models.ts",
     "eval:run": "tsx src/eval/cli/run.ts",

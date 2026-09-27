@@ -40,6 +40,9 @@ import {
   OVERRIDE_PROBE_EXPRESSION,
   POLICIES,
   REJECTED_EXPRESSIONS,
+  RELEASE_PROBE_EXPRESSION,
+  RELEASE_SPECS,
+  RELEASE_ZONES,
   seededRandom,
   SWEEP_SEED,
   TIMEZONE_OVERRIDE_CASES,
@@ -51,6 +54,7 @@ import {
   type LocaleParityPair,
   type NowDimension,
   type PolicyDimension,
+  type ReleaseSpec,
   type TimezoneDimension,
 } from './dimensions.js';
 
@@ -90,7 +94,8 @@ export type FamilyKey =
   | 'I-qualification-cap'
   | 'J-timezone-override'
   | 'K-lead-time-boundary'
-  | 'L-locale-parity';
+  | 'L-locale-parity'
+  | 'M-claim-release';
 
 /**
  * The other half of a translated pair, carried on the scenario so that a
@@ -129,6 +134,17 @@ export interface Scenario {
   readonly direction: Direction;
   /** Set only by family L: the translated counterpart of this scenario's `when`. */
   readonly parity?: ParitySpec;
+  /**
+   * What the agent SAYS, for the scenarios that say something material.
+   *
+   * Absent on families A-L, and that absence is load-bearing: `runner.ts` falls
+   * back to the one neutral sentence those families have always used, so adding
+   * this field moved no existing scenario's behaviour at all. INV-18 is the only
+   * consumer, and it is on the `Scenario` for the same reason `parity` is - so a
+   * failure message can quote what the spec declared without the invariant
+   * having to know how family M was generated.
+   */
+  readonly release?: ReleaseSpec;
   /** Axis values, for the coverage table in the report. */
   readonly labels: Readonly<Record<string, string>>;
 }
@@ -938,6 +954,89 @@ function familyL(): Scenario[] {
   return out;
 }
 
+/**
+ * M. What the agent is allowed to SAY, crossed with four contact zones.
+ *
+ * WHY A FAMILY AND NOT A HANDFUL OF E2E TESTS
+ * ---------------------------------------------------------------------------
+ * `tests/e2e/claimGate.test.ts` and `tests/e2e/claimGateExhaustion.test.ts`
+ * already prove the gate's behaviour case by case, and they are the gate task's.
+ * They are not the same claim as this one. They assert that the gate works in the
+ * cases somebody thought of. This family asserts a PROPERTY - that no released
+ * text asserts an absent effect - over a matrix, in four zones, alongside every
+ * other invariant in the sweep. A regression that only showed up in
+ * `Asia/Kolkata`, or only when a Hebrew claim met an English day word, or only
+ * once a second invariant's scenario had put a row in the same database, is the
+ * kind this finds and a case list does not.
+ *
+ * It also makes INV-18 non-vacuous about the thing that matters. Without family M
+ * every scenario in the sweep releases the same two sentences, neither of which
+ * asserts anything - so INV-18 would be applicable 1,600 times and would never
+ * once examine a claim. That is the vacuity `report.ts` prints in capitals, and a
+ * gate invariant proved only against silence is worth nothing.
+ *
+ * FOUR ZONES, AND THE FIFTH IS EXCLUDED FOR A REASON
+ * ---------------------------------------------------------------------------
+ * `RELEASE_ZONES` is New York, London, Jerusalem and Kolkata: the zones in which
+ * `tomorrow at 2pm` at `n01-midweek` is Thursday 5 March 2026 at 14:00 local.
+ * `Australia/Sydney` is already on Thursday at that instant, so `tomorrow` there
+ * is Friday and every spec that says "Thursday" would be a genuine wrong-day
+ * claim. Crossing it in would not test the gate harder, it would test a
+ * different thing and report it as this one. The exclusion is in
+ * `KNOWN_COVERAGE_GAPS` and `dimensions.test.ts` re-derives all four targets
+ * from Luxon so this comment cannot quietly go stale.
+ *
+ * EVERY SCENARIO RUNS THE SAME UNDERLYING CALL
+ * ---------------------------------------------------------------------------
+ * One expression, one policy, one diary, one instant. That is deliberate: the
+ * only thing varying across this family is WHAT THE AGENT SAID, so a failure
+ * localises to the sentence rather than to the scheduling.
+ */
+function familyM(): Scenario[] {
+  const out: Scenario[] = [];
+
+  for (const spec of RELEASE_SPECS) {
+    // All but the two claim-after-refusal specs share one proposal, so the only
+    // thing varying across the family is what the agent SAID.
+    const when = spec.when ?? RELEASE_PROBE_EXPRESSION;
+    for (const zone of RELEASE_ZONES) {
+      out.push({
+        id: `M-say-${spec.key}-${assertedKey(zone)}`,
+        family: 'M-claim-release',
+        nowUtc: BASELINE_NOW.nowUtc,
+        // A zone dimension is needed for `worldFrom` and family M's zones are
+        // its own, so one is synthesised - the same thing family L does.
+        world: worldFrom({ key: assertedKey(zone), zone, rationale: '', observesDst: true }, DEFAULT_POLICY),
+        availability: FREE_DIARY,
+        utterance: utteranceFor(when),
+        toolName: spec.tool,
+        args: schedulingArgs(spec.tool, when),
+        replay: false,
+        // Honestly EITHER for every spec. Whether Thursday 14:00 is accepted is a
+        // scheduling question and this family is not asking it; what must hold is
+        // INV-18, which reads the rows that actually resulted rather than
+        // predicting them. `r08` in particular ends with NO tool call dispatched
+        // at all, which is neither an acceptance nor a refusal.
+        direction: 'EITHER',
+        release: spec,
+        labels: {
+          timezone: zone,
+          now: BASELINE_NOW.key,
+          expression: 'release-probe',
+          policy: DEFAULT_POLICY.key,
+          availability: FREE_DIARY.key,
+          tool: spec.tool,
+          releaseSpec: spec.key,
+          releaseExpect: spec.expect,
+          releaseLanguage: spec.language,
+        },
+      });
+    }
+  }
+
+  return out;
+}
+
 /** `Asia/Kolkata` -> `asia-kolkata`, so a scenario id stays a safe seed suffix. */
 function assertedKey(zone: string): string {
   return zone.toLowerCase().replace(/[^a-z0-9]+/g, '-');
@@ -966,6 +1065,12 @@ export const FAMILY_PURPOSE: Readonly<Record<FamilyKey, string>> = {
     'Translated Hebrew/English pairs dispatched through the real front door, both sides of each pair, ' +
     'across three locale zones (Asia/Jerusalem, America/New_York, Pacific/Auckland - family-local, see ' +
     'the coverage gaps) and two `now` instants. Policed by INV-15, INV-16 and INV-17.',
+  'M-claim-release':
+    'WHAT THE AGENT IS ALLOWED TO SAY. Supported and unsupported claims - wrong day, wrong time, invented ' +
+    'confirmation number, an email nothing can send, a handover nobody requested, a claim made before its ' +
+    'own tool ran, and three consecutive unsupported attempts driven all the way to the withholding path - ' +
+    'in English, Hebrew and mixed Hebrew-English, across four contact zones in which `tomorrow at 2pm` is ' +
+    'the same Thursday. Policed by INV-18.',
 };
 
 /**
@@ -988,6 +1093,7 @@ export function generateScenarios(): readonly Scenario[] {
     ...familyJ(),
     ...familyK(),
     ...familyL(),
+    ...familyM(),
   ];
 
   const seen = new Set<string>();

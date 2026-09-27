@@ -48,7 +48,10 @@ import type {
   FutureAction,
   Meeting,
   QualificationState,
+  Task,
 } from '../../src/domain/entities.js';
+import type { ClaimGateTurnReport } from '../../src/agent/agentTurnService.js';
+import type { ToolOutcome } from '../../src/agent/tools/results.js';
 import { ScriptedLlmProvider } from '../../src/llm/scriptedLlmProvider.js';
 import type { BusyInterval } from '../../src/ports/availability.js';
 import { createProviderRegistry } from '../../src/providers/index.js';
@@ -104,6 +107,42 @@ export interface ScenarioObservation {
   readonly meetings: readonly Meeting[];
   readonly futureActions: readonly FutureAction[];
   readonly qualificationStates: readonly QualificationState[];
+  /**
+   * Handover tasks this contact owns, after the turn.
+   *
+   * Read for INV-18: a HANDOVER claim is supported by a `Task`, and the claim
+   * gate's own exhaustion path writes exactly one. Without this the invariant
+   * could not tell "a person really was asked for" from "the model said so".
+   */
+  readonly tasks: readonly Task[];
+  /**
+   * Every `ToolOutcome` the turn produced, successes and refusals.
+   *
+   * INV-18 needs these as its INDEPENDENT source of what this turn actually did:
+   * a `check_availability` that succeeded wrote no row, and a refusal wrote no
+   * row either, so the rows alone cannot distinguish "nothing happened" from
+   * "something happened that persists nothing". This is the same data the claim
+   * gate's ledger is built from, read here separately off the turn result rather
+   * than by calling `buildActionLedger` - see the note on INV-18's oracle.
+   */
+  readonly toolOutcomes: readonly ToolOutcome[];
+  /**
+   * What the claim gate decided, per piece of customer-facing text.
+   *
+   * The whole subject of INV-18. `enabled` is carried through rather than
+   * discarded because a runtime with no gate is itself a violation, and an
+   * invariant that silently treated it as "nothing to check" would report the
+   * one configuration that matters as green.
+   */
+  readonly claimGate: ClaimGateTurnReport;
+  /**
+   * The text that actually reached the caller, in order.
+   *
+   * Cross-checked against `claimGate.releases` by INV-18: every returned message
+   * must correspond to a release the gate approved. That is what closes the gap
+   * between "the gate said no" and "the caller got it anyway".
+   */
+  readonly assistantMessages: readonly string[];
   readonly contact: Contact;
   /** `AgentConfiguration.businessHoursJson`, for the business-hours invariant. */
   readonly businessHoursJson: string;
@@ -135,24 +174,55 @@ async function countRows(db: Database): Promise<DomainRowCounts> {
 }
 
 /**
+ * What families A-L have always said, and still say.
+ *
+ * Kept as a named constant because INV-18 and `dimensions.ts` both need to be
+ * able to point at it, and because the one property that matters about it is
+ * that it asserts NOTHING material - which `tests/claimGate/` verifies against
+ * the real detector rather than assuming.
+ */
+export const NEUTRAL_SWEEP_TEXT = 'Let me take care of that for you.';
+
+/**
  * The scripted turn for one scenario.
  *
  * One model step carrying exactly one tool call, then exhaustion returns plain
  * text so the turn terminates. That shape keeps the audit chain readable and
  * makes "the rows this scenario wrote" unambiguous.
+ *
+ * FAMILY M IS THE ONE EXCEPTION, AND IT CHANGES NOTHING FOR THE OTHERS.
+ * A scenario carrying a `release` spec scripts what that spec says instead: its
+ * `withToolCall` text in the same step as the tool call, and one further step per
+ * `afterToolResult` entry. Every scenario WITHOUT a spec gets exactly the array
+ * this function has always returned, byte for byte, which is why adding the axis
+ * moved no existing count.
+ *
+ * Note what the extra steps are for. A claim-gate REGENERATION is a real call to
+ * `LlmProvider.completeTurn`, so it consumes the next scripted step - which is
+ * the mechanism family M uses to drive the bounded regeneration loop
+ * deterministically without a model. When a spec's steps run out,
+ * `ScriptedLlmProvider` falls back to its `finalText`, which asserts nothing, so
+ * an unsupported turn ends in a truthful sentence rather than in silence. `r08`
+ * supplies one more unsupported step than the bound allows, which is how it
+ * reaches the withholding path instead.
  */
 function scriptFor(scenario: Scenario, contactId: string) {
-  return [
+  const toolCalls = [
     {
-      assistantText: 'Let me take care of that for you.',
-      toolCalls: [
-        {
-          toolCallId: `sweep-${scenario.id}`,
-          toolName: scenario.toolName,
-          argumentsJson: renderArguments(scenario.args, contactId),
-        },
-      ],
+      toolCallId: `sweep-${scenario.id}`,
+      toolName: scenario.toolName,
+      argumentsJson: renderArguments(scenario.args, contactId),
     },
+  ];
+
+  const release = scenario.release;
+  if (release === undefined) {
+    return [{ assistantText: NEUTRAL_SWEEP_TEXT, toolCalls }];
+  }
+
+  return [
+    { assistantText: release.withToolCall, toolCalls },
+    ...release.afterToolResult.map((assistantText) => ({ assistantText, toolCalls: [] })),
   ];
 }
 
@@ -247,6 +317,7 @@ async function runScenario(
     const futureActions = await db.futureActions.listByContact(world.contact.id);
     const qualification = await db.qualificationStates.findByContactId(world.contact.id);
     const qualificationStates = qualification ? [qualification] : [];
+    const tasks = await db.tasks.listByContact(world.contact.id);
 
     // Asked of the SAME provider instance the validator consulted, over each
     // persisted meeting's exact window. This is the oracle for invariant 3, and
@@ -275,6 +346,10 @@ async function runScenario(
       meetings,
       futureActions,
       qualificationStates,
+      tasks,
+      toolOutcomes: result.toolOutcomes,
+      claimGate: result.claimGate,
+      assistantMessages: result.assistantMessages,
       busyOverMeetings,
       replayRowsAfter,
       stopReason: result.stopReason,
@@ -296,6 +371,14 @@ async function runScenario(
       meetings: [],
       futureActions: [],
       qualificationStates: [],
+      tasks: [],
+      toolOutcomes: [],
+      // A thrown turn released nothing, so there is nothing for INV-18 to
+      // examine. Reported as an empty report rather than as `enabled: false`,
+      // which would be a LIE about the wiring - INV-13 is the invariant that
+      // fails a throw, and INV-18 must not double-report it as a gate defect.
+      claimGate: { enabled: true, releases: [] },
+      assistantMessages: [],
       busyOverMeetings: [],
       replayRowsAfter: null,
       stopReason: 'THREW',

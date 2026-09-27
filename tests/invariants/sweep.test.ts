@@ -8,7 +8,7 @@
  *
  * ONE `it` FOR THE WHOLE CORPUS, ON PURPOSE
  * ---------------------------------------------------------------------------
- * The corpus is several hundred scenarios and the invariant list is fifteen, so
+ * The corpus is several hundred scenarios and the invariant list is sixteen, so
  * this is thousands of checks. Emitting one vitest case per check would bury
  * every other test in the repository and make the run unreadable. Instead the
  * sweep runs once and every violation is reported together, each quoting its
@@ -23,7 +23,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { summarizeInvariants } from '../qa/report.js';
+import { claimGateSummary, summarizeInvariants } from '../qa/report.js';
 import { executeSweep } from './sweep.js';
 import { generateScenarios } from './scenarios.js';
 
@@ -111,6 +111,66 @@ describe('the invariant sweep', () => {
         localePersisted.length,
         'family L that refused everything would satisfy INV-15 and INV-17 vacuously',
       ).toBeGreaterThan(30);
+
+      // --- INV-18: the claim gate was actually exercised -------------------
+      // Every scenario in the corpus releases text, so INV-18 is applicable
+      // almost everywhere - which is how it could look busy while proving
+      // nothing. Families A-L release two sentences that assert NOTHING
+      // material, so without family M the invariant would report well over a
+      // thousand green checks having never examined a single claim. These
+      // assertions are the guard against precisely that, and they are stated in
+      // terms of claims examined rather than checks passed.
+      const gate = claimGateSummary(sweep.observations);
+      expect(
+        gate.scenariosWithoutAGate,
+        'every scenario is built by buildAgentRuntime, which always wires a claim gate and offers no way ' +
+          'to disable it. A scenario without one means the production composition root changed.',
+      ).toBe(0);
+      expect(
+        gate.leakedClaims,
+        'a claim the gate itself flagged as unsupported, on the very attempt whose text it released. This ' +
+          'is a customer being told something false, and it is the one number here that must be zero.',
+      ).toBe(0);
+      expect(
+        gate.releasesWithAClaim,
+        'INV-18 must have examined real assertions, not only the two neutral sentences families A-L release. ' +
+          'If this is low, family M has been dropped or its wording no longer asserts anything.',
+      ).toBeGreaterThan(30);
+      expect(
+        gate.releasesWithheld,
+        'the designed exhaustion outcome must actually be reached by the corpus; a withholding path that is ' +
+          'never driven is a path nobody has seen work',
+      ).toBeGreaterThan(0);
+      expect(
+        gate.byOutcome.map((row) => row.outcome).sort(),
+        'all four claim-gate outcomes must occur in the corpus. A gate that only ever reports ' +
+          'NO_MATERIAL_CLAIM has not been tested; one that never reports SUPPORTED would mean it blocks ' +
+          'every true sentence too.',
+      ).toEqual(['CORRECTED_AFTER_REGENERATION', 'NO_MATERIAL_CLAIM', 'SUPPORTED', 'WITHHELD_HANDED_OFF']);
+      // And the rejection reasons have to have been produced by real turns, not
+      // only by the pure-function corpus in tests/claimGate/.
+      for (const reason of [
+        'NO_MATCHING_EFFECT',
+        'EFFECT_WAS_REFUSED',
+        'WRONG_DAY',
+        'WRONG_TIME',
+        'INVENTED_IDENTIFIER',
+        'NO_TOOL_FOR_PROMISE',
+      ]) {
+        expect(
+          gate.byUnsupportedReason.map((row) => row.reason),
+          `no turn in the sweep ever produced ${reason}, so the sweep has not seen that rejection work ` +
+            'end to end',
+        ).toContain(reason);
+      }
+
+      const claimFamily = sweep.scenarios.filter((scenario) => scenario.family === 'M-claim-release');
+      expect(claimFamily.length, 'family M must be in the corpus').toBeGreaterThan(40);
+      const hebrewClaims = claimFamily.filter((scenario) => /[֐-׿]/.test(JSON.stringify(scenario.release ?? {})));
+      expect(
+        hebrewClaims.length,
+        'family M must carry Hebrew claim texts - Hebrew is the path with no recommended model',
+      ).toBeGreaterThan(8);
 
       // --- no invariant may be vacuous -------------------------------------
       const summaries = summarizeInvariants(sweep.results);
