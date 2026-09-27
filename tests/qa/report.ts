@@ -60,6 +60,37 @@ export const KNOWN_COVERAGE_GAPS: readonly string[] = [
     'in tests/scheduling/meetingSchedulingService.test.ts, not across the matrix.',
   'The live OpenAI provider is not exercised. Every scenario runs against ScriptedLlmProvider, which is ' +
     'the point - but it means the sweep says nothing about whether a real model emits well-formed calls.',
+  'BOUNDED DELIBERATELY: family L crosses its Hebrew and code-switched expressions with THREE zones ' +
+    '(Asia/Jerusalem, America/New_York, Pacific/Auckland) and TWO `now` instants of its own, not with the ' +
+    'five zones and ten instants families A-K use. Adding Asia/Jerusalem and Pacific/Auckland to the main ' +
+    '`TIMEZONES` axis would have cost ~224 extra scenarios across seven families to re-prove ENGLISH ' +
+    'behaviour at a different offset, on a sweep that already runs against real SQLite on a ' +
+    'memory-constrained host. The consequence: the two zones family L adds are NOT crossed with families ' +
+    'A-K, and the Hebrew expressions are not crossed with Europe/London, Australia/Sydney, Asia/Kolkata ' +
+    'or UTC. tests/scheduling/localeParity.test.ts covers six zones and six instants at the resolver ' +
+    'level, where a cell costs microseconds instead of a database.',
+  'INV-16 (Hebrew/English parity) resolves the counterpart phrase through DateTimeResolver, which is the ' +
+    'system under test - unlike INV-02 it is NOT an independent measurement. It cannot be: no oracle can ' +
+    'know what a Hebrew phrase means without a Hebrew dictionary, and writing one inside the harness ' +
+    'would be the reimplementation this design forbids. What it does assert is RELATIONAL (two phrasings ' +
+    'agree) and tied to the front door (the persisted row must equal both). A change that broke both ' +
+    'languages identically would pass INV-16 and fail tests/scheduling/naturalLanguage.test.ts, which ' +
+    'pins English independently.',
+  'INV-17 re-derives the named calendar day only for day anchors whose meaning is fixed arithmetic - ' +
+    '`today`, `implicit_today`, `tonight`, `tomorrow`, `day_after_tomorrow` and `iso_date:*`. A ' +
+    '`weekday:*`, `next_weekday:*` or `end_of_week` anchor is reported INAPPLICABLE naming the label, ' +
+    'because re-deriving it would mean reimplementing the ISO-week arithmetic under test. Weekday ' +
+    'parity is asserted instead by INV-16 and by tests/scheduling/localeParity.test.ts.',
+  'INV-15 reads the interpretation from the TOOL_CALL_VALIDATED audit event, so it covers every ACCEPTED ' +
+    'call including read-only ones - but it says nothing about REFUSED calls. That a refusal NAMES the ' +
+    'token it could not account for is asserted in tests/scheduling/localeRefusalBreadth.test.ts, across ' +
+    'thirteen scripts, rather than across this matrix.',
+  'The Hebrew natural-language path cannot name a local time between 01:00 and 03:00, which is where ' +
+    'every ordinary DST transition sits: Hebrew has no am/pm and no declared day part covers 02:00, so a ' +
+    'digit hour of 1-11 is refused first. The DST gap and repeat classes are therefore driven through ' +
+    'the locale-agnostic ISO path and the English grammar. That a HEBREW phrase reaches the same DST ' +
+    'checks is proved in tests/scheduling/localeTimezoneBoundaries.test.ts using America/Havana, whose ' +
+    'spring-forward happens at local midnight - the one transition hour Hebrew can name.',
 ];
 
 interface InvariantSummary {

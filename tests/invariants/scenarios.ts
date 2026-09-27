@@ -9,13 +9,18 @@
  *
  * WHY FAMILIES AND NOT ONE BIG CARTESIAN PRODUCT
  * ---------------------------------------------------------------------------
- * Crossing every axis with every other would be 5 zones x 10 instants x 17
- * expressions x 4 policies x 4 availability states x 6 tool shapes = over
- * 800,000 cases, which is not thoroughness, it is a way of running the same
- * three code paths a hundred thousand times. Instead the corpus is a set of
- * named FAMILIES, each of which crosses the axes that actually interact for the
+ * Crossing every axis with every other would be 5 zones x 10 instants x 35
+ * expressions x 4 policies x 4 availability states x 6 tool shapes = well over
+ * a million cases, which is not thoroughness, it is a way of running the same
+ * three code paths a million times. Instead the corpus is a set of named
+ * FAMILIES, each of which crosses the axes that actually interact for the
  * question it asks, and holds the rest at a documented baseline. Every axis the
  * mission names is exhaustively crossed in at least one family.
+ *
+ * Family L, added by the locale work, goes one step further and declares its own
+ * zone and `now` axes rather than widening the shared ones. That is a DELIBERATE
+ * BOUND with a stated cost - see the comment above `LOCALE_ZONES` in
+ * `dimensions.ts` and the matching entry in `KNOWN_COVERAGE_GAPS`.
  *
  * `docs/ARCHITECTURE.md` and the `qa:sweep` report both name these families, so
  * coverage - and the gaps in it - can be read off rather than inferred.
@@ -28,6 +33,9 @@ import {
   LEAD_TIME_BOUNDARY_CASES,
   LEAD_TIME_BOUNDARY_ZONE,
   LEAD_TIME_EXPRESSIONS,
+  LOCALE_NOW_INSTANTS,
+  LOCALE_PARITY_PAIRS,
+  LOCALE_ZONES,
   NOW_INSTANTS,
   OVERRIDE_PROBE_EXPRESSION,
   POLICIES,
@@ -40,6 +48,7 @@ import {
   type AvailabilityDimension,
   type Direction,
   type ExpressionDimension,
+  type LocaleParityPair,
   type NowDimension,
   type PolicyDimension,
   type TimezoneDimension,
@@ -80,7 +89,29 @@ export type FamilyKey =
   | 'H-idempotency-replay'
   | 'I-qualification-cap'
   | 'J-timezone-override'
-  | 'K-lead-time-boundary';
+  | 'K-lead-time-boundary'
+  | 'L-locale-parity';
+
+/**
+ * The other half of a translated pair, carried on the scenario so that a
+ * per-scenario invariant can state a relation between two inputs.
+ *
+ * `INV-16` is the only consumer. It is on the `Scenario` rather than looked up
+ * from `dimensions.ts` so that a failure message can quote both sides without
+ * the invariant having to know how family L was generated.
+ */
+export interface ParitySpec {
+  /** The `LocaleParityPair` key, for the failure message. */
+  readonly key: string;
+  /** Which side of the pair THIS scenario is. */
+  readonly side: 'he' | 'en';
+  /** The `when` the other side of the pair would have used. */
+  readonly counterpartRaw: string;
+  /** False for a pair that is a faithful translation and still differs. */
+  readonly identical: boolean;
+  /** Required when `identical` is false; quoted in the report. */
+  readonly whyNotIdentical?: string;
+}
 
 export interface Scenario {
   /** Stable across runs and across machines. Quoted in every failure message. */
@@ -96,6 +127,8 @@ export interface Scenario {
   /** Dispatch the SAME turn twice, to probe idempotency. */
   readonly replay: boolean;
   readonly direction: Direction;
+  /** Set only by family L: the translated counterpart of this scenario's `when`. */
+  readonly parity?: ParitySpec;
   /** Axis values, for the coverage table in the report. */
   readonly labels: Readonly<Record<string, string>>;
 }
@@ -674,8 +707,9 @@ function familyI(): Scenario[] {
  *
  * WHY THIS FAMILY EXISTS
  * ---------------------------------------------------------------------------
- * Families A-I never populate the optional `timezone` argument, so for all 509 of
- * them the zone a slot was agreed in IS the contact's persisted zone. That made
+ * Families A-I never populate the optional `timezone` argument, and neither does
+ * family L, so for every one of them the zone a slot was agreed in IS the
+ * contact's persisted zone. That made
  * an entire class of bug invisible: an accepted call could be checked against a
  * window the MODEL chose rather than the one the contact lives in, and every
  * invariant would still read green, because no invariant looked at the contact's
@@ -798,6 +832,112 @@ function familyK(): Scenario[] {
   return out;
 }
 
+/**
+ * L. Hebrew and English, saying the same thing, through the real front door.
+ *
+ * WHY THIS IS A FAMILY AND NOT A UNIT TEST
+ * ---------------------------------------------------------------------------
+ * `tests/scheduling/localeParity.test.ts` already asserts parity at the
+ * resolver, across six zones and six instants, for thirty-seven pairs. That is
+ * cheap and wide and it is not the same claim as this one. It stops at
+ * `DateTimeResolver`. What it cannot say is that the phrase survives the
+ * DISPATCHER: that a Hebrew `when` arriving as a JSON tool argument, against a
+ * seeded Asia/Jerusalem contact, produces a validated row, a receipt whose
+ * leftover is empty, and an instant on the day the contact named. Every
+ * invariant in this sweep applies to it, INV-15 / INV-16 / INV-17 included.
+ *
+ * BOTH SIDES OF EACH PAIR ARE DISPATCHED
+ * ---------------------------------------------------------------------------
+ * Emitting only the Hebrew half and resolving the English half inside the
+ * invariant would leave the English half untested through the front door in
+ * these zones, and would make a failure ambiguous between "Hebrew is wrong" and
+ * "this zone is wrong". So each pair produces two scenarios, each carrying the
+ * other as its `parity.counterpartRaw`, and INV-16 fires on both.
+ *
+ * THE BOUND, STATED HERE AS WELL AS IN `dimensions.ts`
+ * ---------------------------------------------------------------------------
+ * Three zones and two `now` instants, not five and ten. Adding Asia/Jerusalem
+ * and Pacific/Auckland to `TIMEZONES` would have cost 224 extra scenarios
+ * across families A-J to re-prove English behaviour at a different offset. The
+ * choice is recorded in `KNOWN_COVERAGE_GAPS` so the printed report says it too.
+ */
+function familyL(): Scenario[] {
+  const out: Scenario[] = [];
+
+  const push = (
+    pair: LocaleParityPair,
+    side: 'he' | 'en',
+    zoneKey: string,
+    zone: string,
+    nowKey: string,
+    nowUtc: string,
+    tool: 'schedule_followup' | 'schedule_meeting',
+  ): void => {
+    const raw = side === 'he' ? pair.hebrew : pair.english;
+    const counterpartRaw = side === 'he' ? pair.english : pair.hebrew;
+    out.push({
+      id: `L-par-${pair.key}-${side}-${zoneKey}-${nowKey}-${tool === 'schedule_meeting' ? 'mt' : 'fu'}`,
+      family: 'L-locale-parity',
+      nowUtc,
+      // A zone dimension is needed for `worldFrom`, and family L's zones are
+      // its own, so one is synthesised rather than looked up in `TIMEZONES`.
+      world: worldFrom({ key: zoneKey, zone, rationale: '', observesDst: true }, DEFAULT_POLICY),
+      availability: FREE_DIARY,
+      utterance: side === 'he' ? `${raw}, בבקשה.` : `Could you make it ${raw}?`,
+      toolName: tool,
+      args: schedulingArgs(tool, raw),
+      replay: false,
+      // Honestly EITHER. Whether 15:00 on the named day is inside the seeded
+      // Monday-to-Friday window depends on the weekday, and working that out
+      // here would mean reimplementing the resolver.
+      direction: 'EITHER',
+      parity: {
+        key: pair.key,
+        side,
+        counterpartRaw,
+        identical: pair.identical,
+        ...(pair.whyNotIdentical ? { whyNotIdentical: pair.whyNotIdentical } : {}),
+      },
+      labels: {
+        timezone: zone,
+        now: nowKey,
+        expression: pair.expressionKey,
+        policy: DEFAULT_POLICY.key,
+        availability: FREE_DIARY.key,
+        tool,
+        parityPair: pair.key,
+        localeSide: side,
+      },
+    });
+  };
+
+  for (const pair of LOCALE_PARITY_PAIRS) {
+    for (const side of ['he', 'en'] as const) {
+      for (const zone of LOCALE_ZONES) {
+        for (const now of LOCALE_NOW_INSTANTS) {
+          push(pair, side, zone.key, zone.zone, now.key, now.nowUtc, 'schedule_followup');
+        }
+      }
+    }
+  }
+
+  // The headline pair through the MEETING path as well, because that one also
+  // consults the availability provider and writes a row with an END that has
+  // to sit inside business hours too. One pair rather than ten: the difference
+  // between the two tools is not a locale question, and the other nine pairs
+  // would only re-prove `MeetingSchedulingService`.
+  const headline = LOCALE_PARITY_PAIRS[0] as LocaleParityPair;
+  for (const side of ['he', 'en'] as const) {
+    for (const zone of LOCALE_ZONES) {
+      for (const now of LOCALE_NOW_INSTANTS) {
+        push(headline, side, zone.key, zone.zone, now.key, now.nowUtc, 'schedule_meeting');
+      }
+    }
+  }
+
+  return out;
+}
+
 /** `Asia/Kolkata` -> `asia-kolkata`, so a scenario id stays a safe seed suffix. */
 function assertedKey(zone: string): string {
   return zone.toLowerCase().replace(/[^a-z0-9]+/g, '-');
@@ -822,6 +962,10 @@ export const FAMILY_PURPOSE: Readonly<Record<FamilyKey, string>> = {
   'K-lead-time-boundary':
     'Sub-minute `now` instants straddling the configured minimum lead time by one and thirty seconds, ' +
     'in both directions.',
+  'L-locale-parity':
+    'Translated Hebrew/English pairs dispatched through the real front door, both sides of each pair, ' +
+    'across three locale zones (Asia/Jerusalem, America/New_York, Pacific/Auckland - family-local, see ' +
+    'the coverage gaps) and two `now` instants. Policed by INV-15, INV-16 and INV-17.',
 };
 
 /**
@@ -843,6 +987,7 @@ export function generateScenarios(): readonly Scenario[] {
     ...familyI(),
     ...familyJ(),
     ...familyK(),
+    ...familyL(),
   ];
 
   const seen = new Set<string>();

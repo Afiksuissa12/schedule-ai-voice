@@ -2,9 +2,9 @@
  * THE INVARIANTS: properties that must hold for EVERY scenario in the sweep.
  *
  * An invariant is not an expected value. It is a sentence that stays true no
- * matter which of the 509 inputs produced the state being examined - "IF a
- * meeting was persisted THEN it sits inside the configured business hours",
- * never "scenario B-mt-nyc-n01 books 2026-03-05T19:00Z". That conditional shape
+ * matter which of the several hundred inputs produced the state being examined -
+ * "IF a meeting was persisted THEN it sits inside the configured business
+ * hours", never "scenario B-mt-nyc-n01 books 2026-03-05T19:00Z". That shape
  * is what lets one function police a matrix that no one could enumerate by
  * hand, and it is the part of the legacy harness's philosophy worth carrying
  * forward.
@@ -30,9 +30,12 @@ import { DateTime, IANAZone } from 'luxon';
 
 import { ValidationProvenanceSchema } from '../../src/domain/provenance.js';
 import { NON_DECISION_MAKER_SCORE_CEILING } from '../../src/agent/tools/qualificationRubric.js';
+import { FixedClock } from '../../src/ports/clock.js';
 import { VALIDATION_ERROR_CODES } from '../../src/ports/validation.js';
+import { DateTimeResolver } from '../../src/scheduling/dateTimeResolver.js';
+import { schedulingPolicy } from '../../src/scheduling/policy.js';
 import type { ScenarioObservation } from './runner.js';
-import type { Scenario } from './scenarios.js';
+import { proposedWhen, type Scenario } from './scenarios.js';
 
 /** One invariant's verdict for one scenario. */
 export interface InvariantResult {
@@ -142,6 +145,52 @@ export function containsInOrder(types: readonly string[], expected: readonly str
     if (cursor === expected.length) return true;
   }
   return false;
+}
+
+/**
+ * The grammar's own account of itself, as it is written into the receipt.
+ *
+ * Only the fields the three locale invariants read are declared. Everything
+ * here is OPTIONAL because the ISO-instant and ISO-local paths produce no
+ * natural-language interpretation at all, and an invariant must be able to tell
+ * "this phrase consumed every token" from "this input never went through the
+ * grammar".
+ */
+interface RecordedInterpretation {
+  readonly matched?: readonly string[];
+  readonly dayAnchor?: string;
+  readonly leftover?: readonly string[];
+  readonly locales?: readonly string[];
+  readonly carriers?: readonly string[];
+  readonly normalized?: string;
+}
+
+/** `provenance.notes.interpretation`, or null when the input was not parsed. */
+function interpretationIn(notes: Record<string, unknown> | undefined): RecordedInterpretation | null {
+  const candidate = notes?.['interpretation'];
+  if (typeof candidate !== 'object' || candidate === null) return null;
+  return candidate as RecordedInterpretation;
+}
+
+/** Every `ValidationProvenance` the dispatcher wrote into an audit event. */
+function provenancesInAudit(
+  observation: ScenarioObservation,
+  types: readonly string[],
+): { eventType: string; notes: Record<string, unknown> | undefined }[] {
+  const found: { eventType: string; notes: Record<string, unknown> | undefined }[] = [];
+  for (const event of observation.auditEvents) {
+    if (!types.includes(event.type)) continue;
+    let detail: { provenance?: unknown };
+    try {
+      detail = JSON.parse(event.detailJson) as { provenance?: unknown };
+    } catch {
+      continue; // INV-06 already reports a malformed detailJson.
+    }
+    const parsed = ValidationProvenanceSchema.safeParse(detail.provenance);
+    if (!parsed.success) continue;
+    found.push({ eventType: event.type, notes: parsed.data.notes });
+  }
+  return found;
 }
 
 function sameCounts(a: Record<string, number>, b: Record<string, number>): string[] {
@@ -792,7 +841,7 @@ const noTurnThrows: Invariant = {
 };
 
 // ---------------------------------------------------------------------------
-// INV-14: the one the 509-scenario sweep used to be blind to.
+// INV-14: the one the sweep used to be blind to.
 // ---------------------------------------------------------------------------
 
 const scheduledInstantsSitInsideTheContactsOwnHours: Invariant = {
@@ -914,6 +963,372 @@ const scheduledInstantsSitInsideTheContactsOwnHours: Invariant = {
 };
 
 // ---------------------------------------------------------------------------
+// INV-15: the fail-closed rule, as a property of every accepted call.
+// ---------------------------------------------------------------------------
+
+const noAcceptedResolutionIgnoresAToken: Invariant = {
+  id: 'INV-15-no-accepted-resolution-ignores-a-token',
+  title: 'Every ACCEPTED natural-language `when` consumed every token of the phrase - leftover is empty',
+  because:
+    'This is the § 8.3 defect stated as a property rather than as a Hebrew example. The old grammar ' +
+    'discarded whatever its regexes did not match, so `מחר ב-15:00` kept its digits, lost its day word, ' +
+    'and fell through to "the contact meant today" - a validated, persisted, audit-trailed booking one ' +
+    'calendar day early with every check green. The fix is that a phrase may resolve only if every ' +
+    'non-whitespace token was consumed by a rule somebody wrote down, and `interpretation.leftover` is ' +
+    'the evidence. Asserted here on the ACCEPTED side because that is where the harm is: a refusal with ' +
+    'a leftover is the system working. Read from the `TOOL_CALL_VALIDATED` audit event rather than from ' +
+    'the persisted row, so it also covers `check_availability`, which legitimately accepts a time and ' +
+    'writes nothing. It says nothing about calls that were refused - those are covered by ' +
+    'tests/scheduling/localeRefusalBreadth.test.ts, which asserts the refusal NAMES the leftover.',
+  check(observation) {
+    const validated = provenancesInAudit(observation, ['TOOL_CALL_VALIDATED']);
+    const withGrammar = validated
+      .map((entry) => interpretationIn(entry.notes))
+      .filter((interpretation): interpretation is RecordedInterpretation => interpretation !== null);
+
+    if (withGrammar.length === 0) {
+      return [
+        notApplicable(
+          this.id,
+          observation.scenarioId,
+          validated.length === 0
+            ? 'no tool call was validated'
+            : 'the accepted `when` was an ISO instant or ISO local datetime, so no grammar ran',
+        ),
+      ];
+    }
+
+    return withGrammar.map((interpretation) => {
+      const leftover = interpretation.leftover ?? [];
+      if (leftover.length > 0) {
+        return fail(
+          this.id,
+          observation.scenarioId,
+          `an accepted resolution left ${String(leftover.length)} token(s) unaccounted for: ` +
+            `"${leftover.join(' ')}" (normalized "${interpretation.normalized ?? '?'}", ` +
+            `dayAnchor ${interpretation.dayAnchor ?? 'none'}). A word nobody looked at must refuse, ` +
+            'not book.',
+        );
+      }
+      // The second half of the same guarantee, stated where a reader will look
+      // for it: the implicit-today branch is the one that turned a dropped day
+      // word into a wrong booking, and it must be unreachable with a leftover.
+      if ((interpretation.matched ?? []).includes('implicit_today') && leftover.length > 0) {
+        return fail(
+          this.id,
+          observation.scenarioId,
+          'an accepted resolution reached the implicit-today branch with tokens left over',
+        );
+      }
+      return pass(
+        this.id,
+        observation.scenarioId,
+        `accepted with nothing left over (locales ${(interpretation.locales ?? []).join('+') || 'none'}, ` +
+          `carriers ${(interpretation.carriers ?? []).length}, dayAnchor ${interpretation.dayAnchor ?? 'none'})`,
+      );
+    });
+  },
+};
+
+// ---------------------------------------------------------------------------
+// INV-16: Hebrew and English parity.
+// ---------------------------------------------------------------------------
+
+/**
+ * A resolver kept per (`now`, zone) so the parity invariant does not rebuild
+ * one 132 times. Pure data in, pure data out; a cache cannot make it
+ * non-deterministic.
+ */
+const PARITY_RESOLVERS = new Map<string, DateTimeResolver>();
+
+function parityResolver(nowUtc: string): DateTimeResolver {
+  const cached = PARITY_RESOLVERS.get(nowUtc);
+  if (cached) return cached;
+  const built = new DateTimeResolver(new FixedClock(nowUtc));
+  PARITY_RESOLVERS.set(nowUtc, built);
+  return built;
+}
+
+const hebrewAndEnglishAgree: Invariant = {
+  id: 'INV-16-hebrew-and-english-parity',
+  title:
+    'A translated Hebrew/English pair resolves to the SAME instant under the same `now`, zone and policy',
+  because:
+    'The defect was never "Hebrew resolves to a slightly wrong hour". It was that the same instruction, ' +
+    'said in two languages, produced two DIFFERENT CALENDAR DAYS, and only the English one was ever ' +
+    'asserted. A parity claim is the only shape that catches that, and it is also the shape that ' +
+    'survives a tzdata change: nobody has to recompute an expected instant. ' +
+    'ON THE HONESTY OF THE ORACLE: this invariant resolves the counterpart phrase through ' +
+    '`DateTimeResolver`, which is the system under test, so unlike INV-02 it is not an independent ' +
+    'measurement. It cannot be - no oracle can know what a Hebrew phrase means without a Hebrew ' +
+    'dictionary, and writing one here would be the reimplementation the harness forbids. What makes it ' +
+    'worth having is that the claim is RELATIONAL (two inputs agree) rather than absolute (this input ' +
+    'means 15:00), and that it is tied back to the front door: when the scenario persisted a row, the ' +
+    'row\'s own instant is asserted to equal both sides. A change that broke Hebrew and English ' +
+    'identically would pass here and fail `tests/scheduling/naturalLanguage.test.ts`, which pins ' +
+    'English independently.',
+  check(observation, scenario) {
+    const parity = scenario.parity;
+    if (parity === undefined) {
+      return [notApplicable(this.id, observation.scenarioId, 'not a parity scenario')];
+    }
+    if (!parity.identical) {
+      return [
+        notApplicable(
+          this.id,
+          observation.scenarioId,
+          `pair ${parity.key} is a DECLARED non-identical translation: ${parity.whyNotIdentical ?? 'no reason given'}`,
+        ),
+      ];
+    }
+    const raw = proposedWhen(scenario.args);
+    if (raw === null) {
+      return [notApplicable(this.id, observation.scenarioId, 'the call carries no `when`')];
+    }
+
+    const zone = scenario.world.contactTimezone;
+    const resolver = parityResolver(scenario.nowUtc);
+    const policy = schedulingPolicy({ defaultTimezone: zone, defaultMeetingDurationMinutes: 30 });
+    const mine = resolver.resolve({ raw, timezone: zone }, { policy });
+    const theirs = resolver.resolve({ raw: parity.counterpartRaw, timezone: zone }, { policy });
+
+    const describe = (side: string, text: string, result: typeof mine): string =>
+      result.ok
+        ? `${side} "${text}" -> ${result.value.startUtc} (${result.value.startLocal} ${zone})`
+        : `${side} "${text}" -> REFUSED ${result.code}`;
+
+    if (mine.ok !== theirs.ok) {
+      return [
+        fail(
+          this.id,
+          observation.scenarioId,
+          `pair ${parity.key} disagrees on WHETHER it resolves at all.\n      ` +
+            `${describe(parity.side, raw, mine)}\n      ` +
+            `${describe(parity.side === 'he' ? 'en' : 'he', parity.counterpartRaw, theirs)}`,
+        ),
+      ];
+    }
+
+    if (!mine.ok || !theirs.ok) {
+      // Both refused. Parity still has something to say: they must refuse for
+      // the same reason, or one language is being held to a different rule.
+      const mineCode = mine.ok ? null : mine.code;
+      const theirsCode = theirs.ok ? null : theirs.code;
+      if (mineCode !== theirsCode) {
+        return [
+          fail(
+            this.id,
+            observation.scenarioId,
+            `pair ${parity.key} refuses in both languages but for different reasons: ` +
+              `${String(mineCode)} vs ${String(theirsCode)}`,
+          ),
+        ];
+      }
+      return [pass(this.id, observation.scenarioId, `pair ${parity.key}: both refused with ${String(mineCode)}`)];
+    }
+
+    if (mine.value.startUtc !== theirs.value.startUtc) {
+      return [
+        fail(
+          this.id,
+          observation.scenarioId,
+          `pair ${parity.key} resolves to DIFFERENT INSTANTS.\n      ` +
+            `${describe(parity.side, raw, mine)}\n      ` +
+            `${describe(parity.side === 'he' ? 'en' : 'he', parity.counterpartRaw, theirs)}\n      ` +
+            'This is the FOUNDER_REVIEW § 8.3 defect class. Do not relax the assertion.',
+        ),
+      ];
+    }
+
+    const mineDay = DateTime.fromISO(mine.value.startUtc, { zone }).toFormat('yyyy-LL-dd');
+    const theirsDay = DateTime.fromISO(theirs.value.startUtc, { zone }).toFormat('yyyy-LL-dd');
+    if (mineDay !== theirsDay) {
+      return [
+        fail(
+          this.id,
+          observation.scenarioId,
+          `pair ${parity.key} lands on different calendar days in ${zone}: ${mineDay} vs ${theirsDay}`,
+        ),
+      ];
+    }
+
+    // And tie it back to what actually went through the dispatcher, so this is
+    // not purely a statement about a resolver call made inside a test.
+    const persisted = [
+      ...observation.meetings.map((meeting) => ({ kind: 'Meeting', id: meeting.id, startUtc: meeting.startUtc })),
+      ...observation.futureActions.map((action) => ({
+        kind: 'FutureAction',
+        id: action.id,
+        startUtc: action.scheduledForUtc,
+      })),
+    ];
+    for (const row of persisted) {
+      if (DateTime.fromISO(row.startUtc).toMillis() !== DateTime.fromISO(mine.value.startUtc).toMillis()) {
+        return [
+          fail(
+            this.id,
+            observation.scenarioId,
+            `pair ${parity.key}: the two phrasings agree on ${mine.value.startUtc}, but the ${row.kind} ` +
+              `the dispatcher persisted says ${row.startUtc}`,
+          ),
+        ];
+      }
+    }
+
+    return [
+      pass(
+        this.id,
+        observation.scenarioId,
+        `pair ${parity.key}: both phrasings -> ${mine.value.startUtc} (${mineDay} ${zone})` +
+          (persisted.length > 0 ? `, and the persisted row agrees` : ', nothing persisted'),
+      ),
+    ];
+  },
+};
+
+// ---------------------------------------------------------------------------
+// INV-17: the resolved calendar day is the day the phrase named.
+// ---------------------------------------------------------------------------
+
+/**
+ * The day-anchor labels whose meaning is FIXED ARITHMETIC on the contact's own
+ * calendar, and therefore re-derivable here without knowing any vocabulary.
+ *
+ * The labels are canonical and language-neutral by design
+ * (`docs/DECISIONS.md` § 9.7): `מחר ב-15:00` and `tomorrow at 15:00` both
+ * record `tomorrow`. That is exactly what makes this oracle possible, and it is
+ * why it is a locale-agnostic check rather than a Hebrew one.
+ */
+const DERIVABLE_DAY_OFFSETS: Readonly<Record<string, number>> = {
+  today: 0,
+  implicit_today: 0,
+  tonight: 0,
+  tomorrow: 1,
+  day_after_tomorrow: 2,
+};
+
+const resolvedDayIsTheDayThePhraseNamed: Invariant = {
+  id: 'INV-17-resolved-day-is-the-day-the-phrase-named',
+  title: "Every persisted instant falls on the calendar day its own receipt names, read in the contact's zone",
+  because:
+    'The wrong-day booking is the harm, and every other invariant in this file would have reported green ' +
+    'while it happened: the row was well formed, inside business hours, in the future, with a complete ' +
+    'receipt - just one day early. This check takes the day anchor the receipt CLAIMS, re-derives what ' +
+    'that label means by plain calendar arithmetic, and compares it with where the instant actually ' +
+    'landed. It is an independent oracle in the sense that matters: it never asks the grammar what the ' +
+    "phrase meant, only what the receipt said it meant. " +
+    'THE ZONE IT IS EVALUATED IN: the zone the phrase was resolved in, which is ' +
+    '`provenance.resolvedTimezone`. For every scenario that does not populate the optional `timezone` ' +
+    "tool argument - all of them outside family J - that IS the contact's persisted zone, and this " +
+    'check additionally asserts so. In family J the model asserts a different zone on the contact\'s ' +
+    'behalf ("I am in Denver this week"), and there "tomorrow" means tomorrow on the clock the contact ' +
+    'said they were on; INV-14 is the invariant that polices the business-hours consequence of that. ' +
+    'LABELS IT CANNOT DERIVE - a weekday, `next_weekday`, `end_of_week`, or a relative offset - are ' +
+    'reported as INAPPLICABLE naming the label, rather than guessed at: deriving a weekday would mean ' +
+    'reimplementing the ISO-week arithmetic this sweep exists to test.',
+  check(observation, scenario) {
+    const rows = [
+      ...observation.meetings.map((meeting) => ({
+        kind: 'Meeting',
+        id: meeting.id,
+        startUtc: meeting.startUtc,
+        json: meeting.validationProvenanceJson,
+      })),
+      ...observation.futureActions.map((action) => ({
+        kind: 'FutureAction',
+        id: action.id,
+        startUtc: action.scheduledForUtc,
+        json: action.validationProvenanceJson,
+      })),
+    ];
+    if (rows.length === 0) {
+      return [notApplicable(this.id, observation.scenarioId, 'no scheduled row persisted')];
+    }
+
+    const assertedZone = scenario.labels['assertedTimezone'];
+
+    return rows.map((row) => {
+      const parsed = ValidationProvenanceSchema.safeParse(JSON.parse(row.json));
+      if (!parsed.success) {
+        // INV-04 reports the unreadable receipt; this one has nothing to read.
+        return notApplicable(this.id, observation.scenarioId, `${row.kind} ${row.id} has no readable provenance`);
+      }
+      const provenance = parsed.data;
+      const zone = provenance.resolvedTimezone;
+
+      // The zone the phrase was read in must be the contact's own, unless the
+      // model was allowed to assert one.
+      if (assertedZone === undefined && zone !== observation.contact.timezone) {
+        return fail(
+          this.id,
+          observation.scenarioId,
+          `${row.kind} ${row.id}: no timezone was asserted by the model, so the phrase should have been ` +
+            `read on the contact's clock (${observation.contact.timezone}); the receipt says ${zone}`,
+        );
+      }
+
+      const interpretation = interpretationIn(provenance.notes);
+      const anchor = interpretation?.dayAnchor;
+      if (interpretation === null || anchor === undefined) {
+        return notApplicable(
+          this.id,
+          observation.scenarioId,
+          `${row.kind} ${row.id}: the receipt records no day anchor (an ISO input, or a relative offset ` +
+            'whose day is not named)',
+        );
+      }
+
+      const landedOn = DateTime.fromISO(row.startUtc, { zone }).toFormat('yyyy-LL-dd');
+
+      const isoDate = /^iso_date:(\d{4}-\d{2}-\d{2})$/.exec(anchor);
+      if (isoDate) {
+        const named = isoDate[1] as string;
+        return landedOn === named
+          ? pass(this.id, observation.scenarioId, `${row.kind} ${row.id}: "${anchor}" landed on ${named} ${zone}`)
+          : fail(
+              this.id,
+              observation.scenarioId,
+              `${row.kind} ${row.id}: the receipt names the calendar date ${named}, but the instant ` +
+                `${row.startUtc} falls on ${landedOn} in ${zone}`,
+            );
+      }
+
+      const offsetDays = DERIVABLE_DAY_OFFSETS[anchor];
+      if (offsetDays === undefined) {
+        return notApplicable(
+          this.id,
+          observation.scenarioId,
+          `${row.kind} ${row.id}: day anchor "${anchor}" is not one whose meaning is fixed calendar ` +
+            'arithmetic (weekday / end-of-week labels are deliberately not re-derived here)',
+        );
+      }
+
+      const named = DateTime.fromISO(provenance.nowUtc, { zone: 'utc' })
+        .setZone(zone)
+        .startOf('day')
+        .plus({ days: offsetDays })
+        .toFormat('yyyy-LL-dd');
+
+      if (landedOn !== named) {
+        return fail(
+          this.id,
+          observation.scenarioId,
+          `${row.kind} ${row.id}: the receipt says the contact named "${anchor}", which is ${named} in ` +
+            `${zone} counting from now=${provenance.nowUtc} - but the persisted instant ${row.startUtc} ` +
+            `falls on ${landedOn}. This is a booking on the wrong calendar day ` +
+            '(FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md § 8.3).',
+        );
+      }
+      return pass(
+        this.id,
+        observation.scenarioId,
+        `${row.kind} ${row.id}: "${anchor}" = ${named} in ${zone}, and that is where it landed`,
+      );
+    });
+  },
+};
+
+// ---------------------------------------------------------------------------
 
 /**
  * Invariants 09 (determinism) and 10 (no network I/O) are properties of the
@@ -935,6 +1350,9 @@ export const INVARIANTS: readonly Invariant[] = [
   dstCodesOnlyInDstZones,
   noTurnThrows,
   scheduledInstantsSitInsideTheContactsOwnHours,
+  noAcceptedResolutionIgnoresAToken,
+  hebrewAndEnglishAgree,
+  resolvedDayIsTheDayThePhraseNamed,
 ];
 
 /** Run every invariant over every observation. */

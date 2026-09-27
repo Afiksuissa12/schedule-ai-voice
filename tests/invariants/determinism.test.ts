@@ -4,9 +4,9 @@
  * WHY A SUBSET HERE AND THE FULL CORPUS IN THE CLI
  * ---------------------------------------------------------------------------
  * Determinism is a property of the whole sweep, so the honest check is to run
- * all 509 scenarios twice. That costs roughly double the sweep, and the sweep
- * is already the slowest thing in this repository - so `npm run test` asserts
- * it over a deliberately chosen cross-section, and `npm run qa:sweep --
+ * the whole corpus twice. That costs roughly double the sweep, and the sweep is
+ * already the slowest thing in this repository - so `npm run test` asserts it
+ * over a deliberately chosen cross-section, and `npm run qa:sweep --
  * determinism` runs the complete double pass for a release check.
  *
  * This is a real limitation and it is stated rather than hidden: it is listed
@@ -33,9 +33,18 @@ const DETERMINISM_TIMEOUT_MS = 600_000;
  * Taking the first N scenarios would be worse than useless - they are all from
  * family A. This takes a stride through each family instead, so the subset
  * spans timezones, `now` instants, policies and availability states.
+ *
+ * Family L is sampled MORE DENSELY than the rest, at one in three rather than
+ * one in seven. Its scenarios are the ones this repository has the least
+ * history with, and the locale invariants (INV-15..17) read fields - the
+ * recorded leftover, the day-anchor label, the parity counterpart - that no
+ * earlier determinism run ever compared. A non-reproducible resolver would
+ * show up there first.
  */
 function crossSection(scenario: Scenario, index: number): boolean {
-  return index % 7 === 0 || scenario.family === 'D-dst-edges' || scenario.family === 'H-idempotency-replay';
+  if (scenario.family === 'D-dst-edges' || scenario.family === 'H-idempotency-replay') return true;
+  if (scenario.family === 'L-locale-parity') return index % 3 === 0;
+  return index % 7 === 0;
 }
 
 describe('determinism', () => {

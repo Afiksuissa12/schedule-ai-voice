@@ -18,11 +18,17 @@ import {
   AVAILABILITY_STATES,
   LEAD_TIME_BOUNDARY_CASES,
   LEAD_TIME_BOUNDARY_ZONE,
+  LEAD_TIME_EXPRESSIONS,
+  LOCALE_NOW_INSTANTS,
+  LOCALE_PARITY_PAIRS,
+  LOCALE_ZONES,
   NOW_INSTANTS,
   POLICIES,
+  REJECTED_EXPRESSIONS,
   seededRandom,
   TIMEZONE_OVERRIDE_CASES,
   TIMEZONES,
+  VALID_EXPRESSIONS,
 } from './dimensions.js';
 
 describe('timezone dimension', () => {
@@ -242,6 +248,159 @@ describe('the lead-time boundary dimension', () => {
       expect(actual >= minimumMinutes * 60 ? 'ACCEPT' : 'REJECT').toBe(direction);
     },
   );
+});
+
+describe('the locale dimensions', () => {
+  it('every locale zone is a real IANA zone, and Asia/Jerusalem is one of them', () => {
+    for (const { zone } of LOCALE_ZONES) {
+      expect(IANAZone.isValidZone(zone), `${zone} is not a real IANA zone`).toBe(true);
+    }
+    expect(
+      LOCALE_ZONES.map((locale) => locale.zone),
+      'the zone the § 8.3 defect was found in must be in the matrix',
+    ).toContain('Asia/Jerusalem');
+  });
+
+  it('the locale zones add something the main timezone axis does not have', () => {
+    // If every locale zone were already in `TIMEZONES` the family-local axis
+    // would be pure cost. Two of the three are new, and the shared one is
+    // deliberate - see the comment above `LOCALE_ZONES`.
+    const swept = new Set(TIMEZONES.map((timezone) => timezone.zone));
+    const added = LOCALE_ZONES.filter((locale) => !swept.has(locale.zone));
+    expect(added.length, 'the locale axis must cross at least two zones the main axis never reaches')
+      .toBeGreaterThanOrEqual(2);
+    expect(LOCALE_ZONES.some((locale) => swept.has(locale.zone)), 'and at least one shared with it, as a control')
+      .toBe(true);
+  });
+
+  it('Asia/Jerusalem transitions on its OWN dates, which is why it earns a place', () => {
+    // Israel moves on neither the US date (2026-03-08) nor the EU one
+    // (2026-03-29). A suite that knew only those two would ship an Israeli
+    // off-by-one hour with every test green.
+    const zone = 'Asia/Jerusalem';
+    expect(DateTime.fromISO('2026-03-20T12:00:00.000Z', { zone }).isInDST, 'still winter time on 20 March').toBe(
+      false,
+    );
+    expect(DateTime.fromISO('2026-03-28T12:00:00.000Z', { zone }).isInDST, 'summer time by 28 March').toBe(true);
+    // And on 20 March New York has ALREADY transitioned.
+    expect(DateTime.fromISO('2026-03-20T12:00:00.000Z', { zone: 'America/New_York' }).isInDST).toBe(true);
+  });
+
+  it('every locale `now` is a valid UTC instant, and one puts the contact on another calendar day', () => {
+    for (const instant of LOCALE_NOW_INSTANTS) {
+      expect(DateTime.fromISO(instant.nowUtc, { zone: 'utc' }).isValid).toBe(true);
+      expect(instant.nowUtc).toMatch(/Z$/);
+    }
+    const across = LOCALE_NOW_INSTANTS.find((instant) => instant.key === 'ln2-across-local-midnight')
+      ?.nowUtc as string;
+    expect(DateTime.fromISO(across, { zone: 'America/New_York' }).toFormat('yyyy-LL-dd')).toBe('2026-03-04');
+    expect(DateTime.fromISO(across, { zone: 'utc' }).toFormat('yyyy-LL-dd')).toBe('2026-03-05');
+  });
+
+  it('every parity pair names an expression that really is in the expression dimensions', () => {
+    const declared = new Set(
+      [...VALID_EXPRESSIONS, ...REJECTED_EXPRESSIONS, ...LEAD_TIME_EXPRESSIONS].map(
+        (expression) => expression.key,
+      ),
+    );
+    for (const pair of LOCALE_PARITY_PAIRS) {
+      expect(declared.has(pair.expressionKey), `${pair.key} points at unknown expression ${pair.expressionKey}`)
+        .toBe(true);
+    }
+  });
+
+  it('every parity pair carries the SAME raw text as the expression it names', () => {
+    // Otherwise family L would be sweeping one string while the dimension
+    // table documented another, and the report's `expression` axis would lie.
+    const byKey = new Map(
+      [...VALID_EXPRESSIONS, ...REJECTED_EXPRESSIONS, ...LEAD_TIME_EXPRESSIONS].map(
+        (expression) => [expression.key, expression.raw] as const,
+      ),
+    );
+    for (const pair of LOCALE_PARITY_PAIRS) {
+      expect(byKey.get(pair.expressionKey), pair.key).toBe(pair.hebrew);
+    }
+  });
+
+  it('a pair that is NOT identical must say why, and one that is must not', () => {
+    for (const pair of LOCALE_PARITY_PAIRS) {
+      if (pair.identical) {
+        expect(pair.whyNotIdentical, `${pair.key} is identical, so it must carry no exception text`)
+          .toBeUndefined();
+      } else {
+        expect(
+          pair.whyNotIdentical,
+          `${pair.key} is declared NOT identical. An undocumented exception is indistinguishable from ` +
+            'an untested one.',
+        ).toBeTruthy();
+        expect((pair.whyNotIdentical as string).length).toBeGreaterThan(80);
+      }
+    }
+  });
+
+  it('the parity list is mostly identical pairs, or INV-16 would be near-vacuous', () => {
+    const identical = LOCALE_PARITY_PAIRS.filter((pair) => pair.identical);
+    expect(identical.length).toBeGreaterThanOrEqual(6);
+    expect(identical.length / LOCALE_PARITY_PAIRS.length).toBeGreaterThan(0.5);
+  });
+
+  it('the two sides of every pair are genuinely different strings, in different scripts', () => {
+    const hebrewLetters = /[֐-׿]/;
+    for (const pair of LOCALE_PARITY_PAIRS) {
+      expect(pair.hebrew, pair.key).not.toBe(pair.english);
+      expect(hebrewLetters.test(pair.hebrew), `${pair.key}: the "hebrew" side contains no Hebrew`).toBe(true);
+      expect(hebrewLetters.test(pair.english), `${pair.key}: the "english" side contains Hebrew`).toBe(false);
+    }
+  });
+
+  it('the locale expressions cover every class the regression brief names', () => {
+    const locale = [...VALID_EXPRESSIONS, ...REJECTED_EXPRESSIONS, ...LEAD_TIME_EXPRESSIONS].filter(
+      (expression) => expression.locales !== undefined,
+    );
+    const hebrewLetters = /[֐-׿]/;
+
+    // Hebrew-bearing, code-switched, and unknown-language expressions all
+    // present, in both the accept and the refuse direction.
+    expect(locale.filter((expression) => expression.locales?.includes('he')).length).toBeGreaterThanOrEqual(8);
+    expect(locale.filter((expression) => (expression.locales ?? []).length === 2).length).toBeGreaterThanOrEqual(2);
+    expect(locale.filter((expression) => (expression.locales ?? []).length === 0).length).toBeGreaterThanOrEqual(4);
+    expect(locale.filter((expression) => expression.direction === 'EITHER').length).toBeGreaterThanOrEqual(6);
+    expect(locale.filter((expression) => expression.direction === 'REJECT').length).toBeGreaterThanOrEqual(8);
+
+    // An expression declaring `['he']` must actually contain Hebrew, and one
+    // declaring `[]` must contain none of it.
+    for (const expression of locale) {
+      if (expression.locales?.includes('he')) {
+        expect(hebrewLetters.test(expression.raw), `${expression.key} declares he but has no Hebrew`).toBe(true);
+      }
+      if ((expression.locales ?? []).length === 0) {
+        expect(hebrewLetters.test(expression.raw), `${expression.key} declares no locale but has Hebrew`).toBe(
+          false,
+        );
+      }
+    }
+  });
+
+  it('every dimension entry still carries a rationale that explains itself', () => {
+    // The style rule this file is built on: a dimension without a reason is a
+    // dimension nobody can review.
+    const everything: { key: string; rationale: string }[] = [
+      ...VALID_EXPRESSIONS,
+      ...REJECTED_EXPRESSIONS,
+      ...LEAD_TIME_EXPRESSIONS,
+      ...LOCALE_ZONES,
+      ...LOCALE_NOW_INSTANTS,
+      ...LOCALE_PARITY_PAIRS,
+    ];
+    // 30 characters, not 40: `x07-asap` says "Intent with no time in it at
+    // all." in 33 and that genuinely is the whole explanation. The bar is set
+    // where it catches an empty or placeholder string, not where it rewards
+    // padding.
+    for (const entry of everything) {
+      expect(entry.rationale.length, `${entry.key} has a rationale too short to explain anything`)
+        .toBeGreaterThan(30);
+    }
+  });
 });
 
 describe('the seeded PRNG', () => {
