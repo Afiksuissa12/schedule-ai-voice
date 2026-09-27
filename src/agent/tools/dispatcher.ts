@@ -99,6 +99,20 @@ export class ToolDispatcher {
         // An auditor must see what the model actually emitted.
         rawArgumentsJson: argumentsJson,
         argumentsByteLength: argumentsJson.length,
+        // PURELY ADDITIVE, and absent on every call where no provider reshaped
+        // anything - which is every call from every provider in this repository
+        // except the local Ollama one, and almost every call even there. A
+        // provider is allowed to unwrap a container the model's runtime got
+        // wrong (`ToolCallArgumentsNormalization` in src/ports/llm.ts says under
+        // what rule), and this is where the bytes it replaced are recorded, so
+        // "what did the model actually say" stays answerable from the audit
+        // trail alone.
+        ...(request.argumentsNormalization
+          ? {
+              argumentsNormalizationRule: request.argumentsNormalization.rule,
+              preNormalizationArgumentsJson: request.argumentsNormalization.rawArgumentsJson,
+            }
+          : {}),
       },
     });
 

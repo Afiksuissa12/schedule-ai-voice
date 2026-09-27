@@ -25,6 +25,32 @@
  * Implementations live in `src/llm`.
  */
 
+/**
+ * The record that a provider reshaped a tool call's arguments before handing
+ * them over, and what they looked like before it did.
+ *
+ * WHY THIS EXISTS AT ALL, GIVEN `argumentsJson` IS MEANT TO BE VERBATIM
+ * ---------------------------------------------------------------------------
+ * Some models are trained on a tool protocol their runtime's chat template does
+ * not fully parse, and the result is arguments in a shape no schema on earth
+ * would accept - not wrong VALUES, a wrong CONTAINER. A provider is allowed to
+ * unwrap such a container, under a rule narrow enough that the unwrapping
+ * cannot be mistaken for a judgement about what the model meant. What it is NOT
+ * allowed to do is make the change invisible: `argumentsJson` is read by
+ * auditors as what the model said, so the bytes it replaced have to travel with
+ * it.
+ *
+ * A provider that never reshapes anything never sets this, and every consumer
+ * that does not care about it never looks at it. `rule` is a stable identifier
+ * rather than prose so an audit query can count how often a given rule fired.
+ */
+export interface ToolCallArgumentsNormalization {
+  /** Stable id of the rule that fired. Documented where the rule is implemented. */
+  readonly rule: 'ollama-tool-name-parameters-wrapper';
+  /** The arguments string EXACTLY as the model produced it, before the rule ran. */
+  readonly rawArgumentsJson: string;
+}
+
 export interface ToolCallRequest {
   /** Provider-supplied id correlating this call with its result turn. */
   readonly toolCallId: string;
@@ -33,8 +59,19 @@ export interface ToolCallRequest {
    * Raw JSON arguments exactly as the model produced them. UNTRUSTED and
    * UNPARSED by design: stored verbatim on `ConversationTurn.rawPayloadJson`
    * so an auditor sees what the model actually said, not a cleaned-up version.
+   *
+   * The ONE exception is declared rather than hidden: when
+   * `argumentsNormalization` is present, this string is the post-normalization
+   * form and that field carries the pre-normalization bytes.
    */
   readonly argumentsJson: string;
+  /**
+   * OPTIONAL. Present only when the provider applied a documented, named
+   * normalization to `argumentsJson`. Absent means "these are the model's own
+   * bytes", which is the case for every provider in this repository except the
+   * local Ollama one, and for almost every call even there.
+   */
+  readonly argumentsNormalization?: ToolCallArgumentsNormalization;
 }
 
 export type LlmMessageRole = 'user' | 'assistant' | 'system' | 'tool';

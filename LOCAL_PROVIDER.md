@@ -193,6 +193,12 @@ is dropped. The audit trail therefore records the model's arguments faithfully, 
 the whitespace Ollama had already discarded before we saw it. Stated plainly here so no
 auditor is surprised by it.
 
+> **Mission 2D added exactly one further transformation, and it is declared rather than
+> quiet.** §4.5 removes an outer container that names the tool — never a key or a value
+> inside the arguments — and when it fires, the call carries the pre-transformation bytes on
+> `ToolCallRequest.argumentsNormalization` so the audit trail still answers "what did the
+> model actually say". Everything in the paragraph above remains true of every other call.
+
 Tool-call ids: Ollama 0.34 issues its own (`call_xf7lm9o3`) and those are preferred. For a
 build that does not, the provider mints `local-call-<turn>-<n>`, scoped by turn so two
 calls in one conversation cannot collide. A call with no usable *name* is dropped, never
@@ -214,10 +220,11 @@ and answers in words — is verified live in `§ 8`.
 ### 4.3 The text fallback, and how it is counted
 
 Some small models emit tool calls as JSON inside the text instead of in the native field,
-usually when the chat template's tool support fails. The fallback recognises four shapes:
-the whole message, a fenced code block, Mistral's `[TOOL_CALLS]` marker, and a balanced JSON
-value starting at the first character. Braces are never hunted for mid-prose — a model
-*explaining* a tool call is not calling one.
+usually when the chat template's tool support fails. The fallback recognises **five** shapes:
+the whole message, a fenced code block, Mistral's `[TOOL_CALLS]` marker, a balanced JSON
+value starting at the first character, and — added in Mission 2D — a Cohere **action list**
+that opens a line (§4.6). Braces are never hunted for mid-prose — a model *explaining* a tool
+call is not calling one.
 
 **It is conservative because a fallback that guesses is worse than no fallback**: a guessed
 tool call is an action proposed by the mapping layer rather than by the model, and that
@@ -234,7 +241,9 @@ layer has no authority to propose actions. Every one of these must hold:
 
 Anything that fails after looking like a tool call is **counted as malformed, left in the
 assistant's text, and never converted**. The contact hears the model's words and nothing is
-proposed. That is the safe failure, and a visible one.
+proposed. That is the safe failure, and a visible one. **§4.6 carves out one exception to
+"left in the assistant's text"** — an action-list span, which is provably machine protocol
+rather than speech — and no exception at all to "never converted".
 
 Counting, per turn in `metrics.toolCallHealth` and cumulatively via `provider.stats()`:
 
@@ -261,6 +270,111 @@ because the property under test there is a property of the mapper, not of the mo
 
 If the native field produced anything, the text scan does not run. A model that called a
 tool properly is believed.
+
+### 4.5 The ONE normalization: an outer container that names the tool
+
+> Added in Mission 2D. The evidence, the counts and the decision are in
+> `docs/MISSION_2D_AYA_ROOT_CAUSE.md`. Implemented as `unwrapToolNameParametersWrapper` in
+> `src/llm/ollama/mapping.ts`, applied in `mapNativeToolCalls` and nowhere else.
+
+**What it is for.** `aya-expanse:8b` is trained on Cohere's tool protocol, in which a call is
+written `{"tool_name": "<tool>", "parameters": {...}}`. Served through Ollama 0.34.3, the
+*name* half of that reached `function.name` correctly and the *arguments* half did not:
+`function.arguments` came back as the whole Cohere object, container and all. In the committed
+fair benchmark **all 36** of its native calls arrived that way and the dispatcher refused
+**all 36** with `SCHEMA_VIOLATION`, naming `tool_name` and `parameters` as unrecognised keys
+and every required field as missing — because none of them was where the schema looks.
+
+**The container is wrong. Nothing inside it is being judged.**
+
+**Every precondition. All five must hold**; any one failing means the arguments are passed
+through completely untouched and the call is accepted or refused downstream exactly as it
+would have been before this rule existed.
+
+1. The arguments value is a **plain JSON object** `W`.
+2. `W`'s own key set is **exactly** `{tool_name, parameters}` — both present, nothing else.
+   Key order is irrelevant. Two keys and only two is what makes the shape unambiguous: a
+   container carries no arguments of its own, so a third key means this is an arguments object
+   that happens to contain `tool_name`, and unwrapping it would be a guess.
+3. `W.tool_name` is a string **exactly equal** to the tool the call already names. No
+   trimming, no case folding, no aliasing.
+4. `W.parameters` is a **plain JSON object**. A string that would parse to one is not accepted
+   here, unlike in the text fallback: a native call's arguments were already parsed by the
+   runtime, so a string at this depth is double-encoding, and un-double-encoding is repair.
+5. `W.parameters` is **not itself a container** by tests 2–4.
+
+On success `argumentsJson` becomes the inner object serialised, with **no key and no value
+inside it touched**, and the call carries
+`argumentsNormalization: { rule: 'ollama-tool-name-parameters-wrapper', rawArgumentsJson: … }`.
+
+**What stays refused.** Every row below is a passing negative check in
+`npm run llm:mapcheck` §13 and in `tests/llm/ollamaAyaToolShape.test.ts`, asserted twice: that
+the rule does not fire, **and** that the arguments still fail strict validation.
+
+| Shape | Why |
+|---|---|
+| `{tool_name, parameters, <anything else>}` | Three keys — could be a legitimate arguments object |
+| `{parameters}` or `{tool_name}` alone | Not the pair |
+| `{tool_name: "<a different tool>", parameters}` | The model disagreed with itself; choosing a winner is not this layer's authority |
+| a name differing only by whitespace or case | A mismatch is a mismatch |
+| `parameters` as an array, `null`, a number, or a string | Not an object |
+| a nested container | No single reading of how many layers were meant |
+| `{name, arguments}` | The OpenAI envelope, which Ollama already hands us unwrapped. A tool whose schema declared fields called `name` and `arguments` would be mangled by a rule that recognised it. No tool in `TOOL_DEFINITIONS` declares `tool_name` or `parameters`, which is what makes Cohere's pair safe to key on |
+
+**Unwrapping is not forgiveness.** The result faces the same strict Zod schema and the same
+nine dispatch checks as any other call. Measured on the committed evidence: of the 34 wrapped
+calls whose arguments the transcript recorded in full, **31 unwrap** and 3 nested ones do not
+— and **only 19 of the 31 then pass**. The other 12 fail on enum and required-field defects
+the container was hiding, and they stay refused. The full per-call table, including the two
+calls whose arguments the transcript renderer truncated, is in
+`docs/MISSION_2D_AYA_ROOT_CAUSE.md` §5.
+
+**It is not keyed on a model tag.** The rule keys off the shape of the value, so it is inert
+for every model that does not produce the container and correct for any that does, whatever
+its name and whatever the runtime version.
+
+### 4.6 An action list written into the spoken channel
+
+> Added in Mission 2D. `docs/MISSION_2D_AYA_ROOT_CAUSE.md` §8 has the evidence.
+
+`aya-expanse:8b` also writes Cohere's protocol into its **assistant text** — `Action:`
+followed by a JSON array of `{tool_name, parameters}` entries, sometimes fenced and sometimes
+not, and sometimes naming Cohere's no-op sentinel `directly-answer`, which is not one of the
+nine tools. Eleven turns of the committed benchmark do it. Before Mission 2D the six *fenced*
+ones were refused and **left in the text**, and the five *unfenced* ones were invisible to
+every span shape — so a real tool call was dropped in silence **and** its JSON, including an
+internal contact id, was what the contact got.
+
+**An action-list span** is a span whose JSON parses to a **non-empty array** in which **every**
+element is a plain object whose own key set is exactly `{tool_name, parameters}`, with
+`tool_name` a non-empty string and `parameters` a plain object.
+
+- **Detection.** Action lists are recognised in one further position: **at the start of a
+  line**, with only spaces or tabs before them. This is reached only when none of the four
+  older shapes matched, so nothing previously recognised changes. It is not a mid-prose brace
+  hunt: the value must open a line **and** be an action list.
+- **Consumption.** An action-list span is **removed from the assistant text whether its calls
+  were accepted or refused.** This is the one exception to §4.3's "left in the assistant's
+  text", and it exists because the purpose of that rule — a reader must see what the model
+  tried to do — is served by the `malformed` counter and the `refusals` array, whereas leaving
+  it in place means reading JSON down a phone line.
+- **Judgement is unchanged.** Each element goes through the same `evaluateCandidate` as every
+  other candidate. An offered name with object parameters is proposed and then validated
+  normally; an unoffered name — `directly-answer` — is refused, counted, and explained.
+
+**What is deliberately left behind: the word `Action:`.** It is a *word*, and this layer
+removes JSON rather than wording. Deleting a literal English token would be exactly the
+special-casing of conversational wording the Founder directive forbids, and a shape-based
+version ("delete a label line ending in a colon") would also delete `Notes:`. Recorded as
+residue in `docs/MISSION_2D_AYA_ROOT_CAUSE.md` §8.4 rather than fixed. In practice a turn that
+now carries a tool call is an intermediate turn, so the sentence the contact hears comes from
+the next provider call.
+
+**What must NOT be removed, and is not.** `adversarial-guardrail` turn 1 has the same model
+writing a single-backticked JSON **object** into an English sentence explaining what the right
+format would be. It is not an array, it does not open a line, and it is not even valid JSON.
+It stays exactly where the model put it, nothing is proposed, and nothing is counted — the
+same treatment prose that merely mentions a tool has always had.
 
 ---
 
@@ -536,12 +650,12 @@ refusing it, is the system working — not a defect.
 
 | Check | Result |
 |---|---|
-| `npm test` | **500 passed, 2 skipped** — unchanged from Baseline V1 |
+| `npm test` | **500 passed, 2 skipped** — unchanged from Baseline V1 (Mission 2D: **1,072 passed, 2 skipped**, including `tests/llm/ollamaAyaToolShape.test.ts`) |
 | `npm run build` | clean |
 | `npm run typecheck` | clean |
 | `npm run qa:sweep` | **601 scenarios, 0 violations, 0 network attempts — PASS** |
 | `npm run slice:demo` | green, 13 audit events on one correlation id |
-| `npm run llm:mapcheck` | **62 checks, 0 failures** |
+| `npm run llm:mapcheck` | **62 checks, 0 failures** (Mission 2D: **84 checks, 0 failures** — §4.5, §4.6) |
 | `npm run llm:probe` | 4 checks, 0 failures, against the real host |
 | `npm run llm:smoke` | **24 checks, 0 failures**, against a real `qwen2.5:7b-instruct` |
 
