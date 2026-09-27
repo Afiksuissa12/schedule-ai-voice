@@ -13,44 +13,23 @@
  */
 import { execFileSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 
 import type { AgentRuntime } from '../../app/composition.js';
 import { seedSliceWorld, type SliceWorld } from '../../app/seedSliceWorld.js';
+import { prismaDbPushArgs } from '../../db/prismaCli.js';
 import { createProviderRegistry, type ProviderRegistry } from '../../providers/index.js';
 import type { DailyLocalBusyRule } from '../../providers/deterministicAvailabilityProvider.js';
 import { FixedClock } from '../../ports/clock.js';
 import { newCorrelationId } from '../../shared/ids.js';
 import type { BenchmarkScenario } from '../corpus/schema.js';
 
-/**
- * Locate the Prisma CLI through Node's own resolver.
- *
- * NOT `join(repoRoot, 'node_modules', ...)`. This repository is checked out as
- * a git worktree whose `node_modules` lives at the workspace root above it, so
- * a path built from the repo root does not exist. `createRequire().resolve`
- * walks the same chain Node itself would and finds the package wherever it is
- * actually installed.
- */
-function prismaCliPath(): string {
-  return createRequire(import.meta.url).resolve('prisma/build/index.js');
-}
-
 /** Apply the frozen Prisma schema to a brand-new SQLite file. */
 export function applySchema(repoRoot: string, databasePath: string): void {
   mkdirSync(dirname(databasePath), { recursive: true });
   execFileSync(
     process.execPath,
-    [
-      prismaCliPath(),
-      'db',
-      'push',
-      '--schema',
-      join(repoRoot, 'prisma', 'schema.prisma'),
-      '--skip-generate',
-      '--accept-data-loss',
-    ],
+    prismaDbPushArgs(join(repoRoot, 'prisma', 'schema.prisma')),
     {
       cwd: repoRoot,
       env: {

@@ -28,13 +28,13 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { createDatabase, type Database } from '../../src/db/database.js';
+import { prismaDbPushArgs } from '../../src/db/prismaCli.js';
 import { FixedClock } from '../../src/ports/clock.js';
 import { seedTestFixtures, type TestFixtures, type SeedTestFixturesOptions } from './fixtures.js';
 
 const HELPERS_DIR = dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = resolve(HELPERS_DIR, '..', '..');
 const SCHEMA_PATH = join(REPO_ROOT, 'prisma', 'schema.prisma');
-const PRISMA_CLI = join(REPO_ROOT, 'node_modules', 'prisma', 'build', 'index.js');
 const TMP_ROOT = join(REPO_ROOT, '.tmp');
 const TEMPLATE_DIR = join(TMP_ROOT, 'test-db-templates');
 const TEST_DB_DIR = join(TMP_ROOT, 'test-dbs');
@@ -164,7 +164,7 @@ export function ensureTemplateDatabase(): string {
   try {
     execFileSync(
       process.execPath,
-      [PRISMA_CLI, 'db', 'push', '--schema', SCHEMA_PATH, '--skip-generate', '--accept-data-loss'],
+      prismaDbPushArgs(SCHEMA_PATH),
       {
         cwd: REPO_ROOT,
         env: { ...process.env, DATABASE_URL: toFileUrl(buildPath), PRISMA_HIDE_UPDATE_MESSAGE: '1' },

@@ -35,6 +35,7 @@ import { fileURLToPath } from 'node:url';
 import { renderChain, renderChainAnswers, summarizeChain } from './auditReport.js';
 import { buildAgentRuntime } from './composition.js';
 import { seedSliceWorld } from './seedSliceWorld.js';
+import { prismaDbPushArgs } from '../db/prismaCli.js';
 import { ADVERSARIAL, ScriptedLlmProvider, scriptedArgs, type ScriptedStep } from '../llm/scriptedLlmProvider.js';
 import { FixedClock } from '../ports/clock.js';
 import { parseCallContactPayload } from '../followup/payloads.js';
@@ -202,15 +203,7 @@ async function main(): Promise<void> {
 function applySchema(databasePath: string): void {
   execFileSync(
     process.execPath,
-    [
-      join(REPO_ROOT, 'node_modules', 'prisma', 'build', 'index.js'),
-      'db',
-      'push',
-      '--schema',
-      join(REPO_ROOT, 'prisma', 'schema.prisma'),
-      '--skip-generate',
-      '--accept-data-loss',
-    ],
+    prismaDbPushArgs(join(REPO_ROOT, 'prisma', 'schema.prisma')),
     {
       cwd: REPO_ROOT,
       env: {

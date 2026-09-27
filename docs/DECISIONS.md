@@ -831,3 +831,56 @@ The nine ordered validation checks and their order, the `ValidationProvenance`
 receipt and its write path, the pinned-slot single-resolution guarantee, the
 business-hours anchor zone, the dispatcher chokepoint and refusals-as-values are
 all untouched.
+
+---
+
+## 10. Integrating the three Mission 2B branches
+
+The evaluation-fairness, resolver and regression branches were developed in
+parallel and merged without textual conflict. Two things still had to be settled
+by hand before the merged tree ran.
+
+### 10.1 The Prisma CLI is resolved through Node, never built from the repo root
+
+Four places shelled out to `prisma db push` to apply the schema to a throwaway
+SQLite file, and three of them located the CLI as
+`join(REPO_ROOT, 'node_modules', 'prisma', 'build', 'index.js')`. That path is
+wrong whenever the repository is checked out as a **git worktree**, which is how
+every agent in this project works: `node_modules` is installed once at the
+workspace root ABOVE the worktree, so the repo-root path does not exist and the
+call dies with `MODULE_NOT_FOUND`. `tests/helpers/testDb.ts` is the global test
+setup, so this took down the ENTIRE suite before a single test ran — not one
+test, all of them.
+
+`src/eval/runner/world.ts` had already met this exact problem and solved it
+correctly with `createRequire(import.meta.url).resolve('prisma/build/index.js')`,
+which walks the same lookup chain Node itself would and finds the package
+wherever it actually is. Its fix carried a comment explaining precisely why the
+repo-root form is wrong. The other three call sites never learned it.
+
+So the resolver is now **one shared function**, `prismaDbPushArgs()` in
+`src/db/prismaCli.ts`, and all four call sites use it —
+`tests/helpers/testDb.ts`, `src/app/sliceDemo.ts`, `src/cli/support.ts` and
+`src/eval/runner/world.ts`, which lost its private copy. The duplication was the
+actual defect: a correct fix existed in this repository and three copies of the
+bug outlived it, because nothing made them share. Four identical argv arrays
+could drift in four directions; one cannot.
+
+This is the one place where integration had to touch `src/db`, which § 9.10
+records as untouched by the resolver branch. That statement remains true of that
+branch. It is no longer true of the merged tree, and this is the change that made
+it false.
+
+### 10.2 The cross-branch seam is load-bearing, and the sweep proves it
+
+The regression branch wrote invariants INV-16 (Hebrew/English parity) and INV-17
+(the resolved day is the day the phrase named) against a Hebrew lexicon that only
+existed on the resolver branch. Neither branch could demonstrate that pairing
+alone. In the merged tree `npm run qa:sweep` runs 823 scenarios and reports
+**INV-16 at 108 applicable checks and INV-17 at 258, both with zero failures**,
+which is the first evidence that the regression net and the fail-closed resolver
+agree about Hebrew. Likewise the evaluation-fairness branch's environment
+records reach the report through `src/eval/report/generate.ts`, and the
+regression branch's `tests/qa/report.ts` reaches the operator through
+`tests/qa/sweepCli.ts`. Both seams are exercised by the merged suite rather than
+asserted here.

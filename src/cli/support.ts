@@ -35,6 +35,7 @@ import { fileURLToPath } from 'node:url';
 import { llmToolDefinitions, TOOL_NAMES } from '../agent/tools/definitions.js';
 import { buildSystemPrompt, LOCAL_BRAIN_SYSTEM_PROMPT_REF } from '../agent/prompt/systemPrompt.js';
 import { createDatabase, type Database } from '../db/database.js';
+import { prismaDbPushArgs } from '../db/prismaCli.js';
 import { FixedClock } from '../ports/clock.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -76,15 +77,7 @@ export async function withTemporaryDatabase<T>(fn: (world: ProofWorld) => Promis
 function applySchema(databasePath: string): void {
   execFileSync(
     process.execPath,
-    [
-      join(REPO_ROOT, 'node_modules', 'prisma', 'build', 'index.js'),
-      'db',
-      'push',
-      '--schema',
-      join(REPO_ROOT, 'prisma', 'schema.prisma'),
-      '--skip-generate',
-      '--accept-data-loss',
-    ],
+    prismaDbPushArgs(join(REPO_ROOT, 'prisma', 'schema.prisma')),
     {
       cwd: REPO_ROOT,
       env: {
