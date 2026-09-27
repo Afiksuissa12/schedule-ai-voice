@@ -505,7 +505,29 @@ function findSpeechLiterals(scanned: ReturnType<typeof scanSource>, file: string
 // Allowances
 // ---------------------------------------------------------------------------
 
-const ALLOW_RE = /\/\/\s*anti-scripting:allow\s+([A-Z_]+)\s*(?:[-–—:]\s*(.*))?$/;
+/**
+ * The reason group is `[^\n]*` rather than `(.*)` ON PURPOSE.
+ *
+ * `.` does not match a carriage return. The committed blobs here are LF, but
+ * `core.autocrlf=true` and no `.gitattributes` means a working tree on this
+ * repository's own configuration is CRLF - so with `(.*)$` the regex could not
+ * consume the `\r` a CRLF line leaves on the end of each `split('\n')` element,
+ * the whole match failed, and a directive WITH a reason was silently ignored:
+ * the one shape the allowlist exists to honour. (A directive with no reason
+ * still matched, because `\s*` eats the `\r`; it is rejected later for having no
+ * justification. So the bug suppressed exactly the valid allowances and none of
+ * the invalid ones.)
+ *
+ * Which means the check's VERDICT depended on how the reader had cloned: green
+ * on an LF checkout, `exit 1` on a CRLF one, same commit. Do not "fix" that by
+ * normalising line endings in `.gitattributes` - a source-hygiene check must not
+ * be defeasible by a line ending under any configuration.
+ *
+ * `[^\n]*` consumes the `\r` into the captured reason, where the `.trim()` in
+ * `collectAllowances` removes it. `KNOWN_GOOD` carries a CRLF sample so the
+ * non-vacuity self-test fails if this regresses.
+ */
+const ALLOW_RE = /\/\/\s*anti-scripting:allow\s+([A-Z_]+)\s*(?:[-–—:]\s*([^\n]*))?$/;
 
 interface CollectedAllowances {
   /** Keyed `RULE@line` for every line a directive covers. */

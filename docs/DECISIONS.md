@@ -991,3 +991,36 @@ records reach the report through `src/eval/report/generate.ts`, and the
 regression branch's `tests/qa/report.ts` reaches the operator through
 `tests/qa/sweepCli.ts`. Both seams are exercised by the merged suite rather than
 asserted here.
+
+### 10.3 The anti-scripting allowlist is fixed in the regex, not in `.gitattributes`
+
+`npm run check:anti-scripting` was exiting **1** on the single allowance the
+repository declares, in `src/agent/prompt/clauses.ts`. `ALLOW_RE` in
+`src/context/antiScriptingCheck.ts` captured the justification with `(.*)`
+anchored at `$`; `.` does not match `\r`, so on a CRLF line the match failed
+outright, `collectAllowances` returned nothing, and `isAllowed` could never return
+true. The allowlist documented in `CONVERSATION_CONTEXT.md` § 7 had never worked.
+The defect is pre-existing — `master` (`deeb88b`) has the same regex — and was
+found by independent QA running the command rather than reading about it.
+
+**Two fixes were available and the cheaper one was rejected.** The committed blobs
+are LF; the CRLF is added at checkout by `core.autocrlf=true` with no
+`.gitattributes`. Adding `* text=auto eol=lf` would have made the symptom go away
+without making the check correct — and it would have left the verdict a function
+of how each person cloned the repository, green on one machine and red on another
+for the same commit. A source-hygiene gate whose result depends on the
+environment is not a gate. So the fix is in the pattern: `[^\n]*`, which consumes
+the `\r` into the captured reason where the existing `.trim()` removes it. The
+check is now line-ending agnostic under any git configuration.
+
+**The guard is a second corpus entry, not a new test file.** `KNOWN_GOOD` in
+`src/context/antiScriptingSelfTest.ts` already held an allowed-with-reason sample,
+but assembled with `.join('\n')` — so the non-vacuity self-test exercised a line
+ending none of the 27 files the walk reads actually has, which is why it kept
+reporting a clean allowance path while the real one was broken. The same two lines
+are now also joined with `\r\n`, from a shared `ALLOWED_GUARDRAIL_EXAMPLE` constant
+so the pair cannot drift. With the old regex restored, the self-test names that
+sample and fails. Both samples live in
+the self-test corpus rather than `tests/` because this check must stay runnable as
+a standalone CLI with its non-vacuity proof attached, per § 6.3; a vitest file
+would be an addition to that, not a replacement for it.
