@@ -45,6 +45,16 @@
  * (`confirmation number`) are suppressed by a negator - because `I cannot give
  * you a confirmation number` is an honest sentence.
  *
+ * A MARKER PHRASE WIDENS WHAT COUNTS AS AN IDENTIFIER, IN THAT SENTENCE ONLY
+ * ---------------------------------------------------------------------------
+ * `483921` cannot be in `IDENTIFIER_SHAPES`: a bare digit run is a price, a
+ * duration and a house number. But `Your confirmation number is 483921.` has
+ * ANNOUNCED that the next thing is a reference, so the number beside it is either
+ * one the system issued or one the model made up - a checkable mismatch rather
+ * than an ambiguity. `MARKER_ADJACENT_SHAPES` is consulted only for the claim a
+ * marker phrase produced, which bounds the widening to sentences that say
+ * `confirmation number` in so many words.
+ *
  * FAIL-SAFE DIRECTION
  * ---------------------------------------------------------------------------
  * Where detection is uncertain it DETECTS, and the verifier then decides against
@@ -175,7 +185,10 @@ export function detectMaterialClaims(text: string, options: DetectClaimsOptions 
             excerpt: sentence.raw,
             assertedDay: day,
             assertedTime: time,
-            identifiers,
+            // The marker's OWN claim carries the looser shapes as well - see
+            // `markerAdjacentIdentifiers`. Only this claim does; the effect
+            // claims above and the bare-shape claim below keep the strict list.
+            identifiers: markerAdjacentIdentifiers(sentence, identifiers, day, time),
           });
         }
       }
@@ -288,6 +301,41 @@ const IDENTIFIER_SHAPES: readonly { readonly name: string; readonly pattern: Reg
   { name: 'PREFIXED_CODE', pattern: /^[a-z]{1,10}[-_]\d{2,}$/u },
 ];
 
+/**
+ * Shapes that count as an identifier ONLY next to an identifier MARKER.
+ *
+ * WHY THESE ARE SEPARATE FROM `IDENTIFIER_SHAPES`
+ * ---------------------------------------------------------------------------
+ * A bare digit run cannot be in the table above: it is a price, a duration, a
+ * house number and a year, and a rule that fired on it everywhere would flag
+ * `that is 45 minutes` as an invented reference. § 4.4's trade stands.
+ *
+ * But `Your confirmation number is 483921.` is not uncertain. The sentence has
+ * ANNOUNCED that the next thing is a reference, and a number-shaped token beside
+ * that announcement either is an identifier the system issued or is one the model
+ * made up - a checkable mismatch, not an ambiguity. Independent QA found this
+ * released as affirmatively SUPPORTED: `483921` matched no shape, so
+ * `claim.identifiers` was empty, so `INVENTED_IDENTIFIER` had nothing to test and
+ * `hasIssuedOperationalIdentifier` then satisfied the marker with an unrelated
+ * `FutureAction` id from a genuine booking. Reporting a fabricated reference as
+ * verified is worse than missing it.
+ *
+ * So these shapes are collected only when a marker phrase fired in the same
+ * sentence, which bounds the false-positive surface to sentences that say
+ * `confirmation number` / `booking reference` / `מספר אישור` in so many words.
+ *
+ *  - `DIGIT_RUN` - three or more digits. `483921`.
+ *  - `GROUPED_DIGITS` - the same behind a separator. `48-3921`.
+ *  - `LETTER_LED_CODE` - a letter-first mix with at least two digits, which is
+ *    the gap below `CODE_LIKE`'s four. `AB12`. Letter-FIRST on purpose: `3pm` and
+ *    `2pm` are times, and a time in a sentence about a reference is still a time.
+ */
+const MARKER_ADJACENT_SHAPES: readonly { readonly name: string; readonly pattern: RegExp }[] = [
+  { name: 'DIGIT_RUN', pattern: /^\d{3,}$/u },
+  { name: 'GROUPED_DIGITS', pattern: /^\d{2,}[-_/]\d{2,}$/u },
+  { name: 'LETTER_LED_CODE', pattern: /^[a-z][a-z0-9]*\d[a-z0-9]*\d[a-z0-9]*$/u },
+];
+
 /** Identifier-shaped tokens in one sentence, in the order they appear. */
 function identifierShapedTokens(sentence: ClaimSentence): readonly string[] {
   const out: string[] = [];
@@ -295,6 +343,42 @@ function identifierShapedTokens(sentence: ClaimSentence): readonly string[] {
     if (IDENTIFIER_SHAPES.some((shape) => shape.pattern.test(token.text))) out.push(token.text);
   }
   return out;
+}
+
+/**
+ * The strict identifiers of a sentence, plus the looser marker-only shapes.
+ *
+ * A token the DAY or the TIME reading already consumed is excluded, and that is
+ * load-bearing rather than tidy: `2026` is a year and `1500` is a clock reading,
+ * and both would otherwise be reported as invented references in a sentence that
+ * happens to mention a booking reference. The exclusion is taken from the day and
+ * time the detector itself just read, so the gate and the scheduling vocabulary
+ * cannot disagree about which tokens were dates.
+ */
+function markerAdjacentIdentifiers(
+  sentence: ClaimSentence,
+  strict: readonly string[],
+  day: AssertedDay | null,
+  time: AssertedTime | null,
+): readonly string[] {
+  const alreadyRead = new Set<string>([...(day?.forms ?? []), ...(time?.forms ?? [])]);
+  const out = [...strict];
+  for (const token of sentence.tokens) {
+    if (alreadyRead.has(token.text) || out.includes(token.text)) continue;
+    if (MARKER_ADJACENT_SHAPES.some((shape) => shape.pattern.test(token.text))) out.push(token.text);
+  }
+  return out;
+}
+
+/**
+ * Exported so a test can assert the marker-only table is the thing that fired.
+ *
+ * Returns `null` for a token no marker-only shape matches, exactly as
+ * `identifierShapeOf` does for the strict table.
+ */
+export function markerAdjacentShapeOf(token: string): string | null {
+  const normalized = token.toLowerCase();
+  return MARKER_ADJACENT_SHAPES.find((shape) => shape.pattern.test(normalized))?.name ?? null;
 }
 
 /** Exported so a test can assert the shape table is the thing that fired. */

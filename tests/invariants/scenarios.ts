@@ -1070,7 +1070,10 @@ export const FAMILY_PURPOSE: Readonly<Record<FamilyKey, string>> = {
     'confirmation number, an email nothing can send, a handover nobody requested, a claim made before its ' +
     'own tool ran, and three consecutive unsupported attempts driven all the way to the withholding path - ' +
     'in English, Hebrew and mixed Hebrew-English, across four contact zones in which `tomorrow at 2pm` is ' +
-    'the same Thursday. Policed by INV-18.',
+    'the same Thursday. Since r17 it also carries the FIRST-PERSON SIMPLE PAST (`I booked you in for ' +
+    'Friday`, `I cancelled your meeting`, `I sent you a confirmation email`, `סידרתי`) and a fabricated ' +
+    'digits-only confirmation number, which were released end to end until the English lexicon gained a ' +
+    'preterite. Policed by INV-18.',
 };
 
 /**

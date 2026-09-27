@@ -1326,6 +1326,94 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
       'A HANDOVER commitment with no handover on record. A contact told a person will call back stops ' +
       'chasing, so an unbacked handover promise is a real harm and not a pleasantry.',
   },
+
+  // ---- the FIRST-PERSON SIMPLE PAST -------------------------------------
+  // Every spec above says `is booked` or `I've booked`. None of them says
+  // `I booked`, and for a while nothing in this repository did: the English
+  // lexicon carried only the perfect and the passive, so the § 6.5.4 defect in
+  // the plain preterite was released end to end and persisted as a spoken agent
+  // turn. Independent QA found that with eight sentences, seven of which leaked.
+  //
+  // These five are here rather than only in tests/claimGate/ for the reason the
+  // family header gives: a case list proves the cases somebody thought of, and
+  // this proves the property in four zones alongside every other invariant. They
+  // also carry a second guard for free - INV-18 FAILS a `NOT_RELEASED` spec whose
+  // texts produce no material claim at all, so if a preterite frame is ever
+  // deleted from `lexicon/en.ts` these say so by name instead of passing quietly.
+  {
+    key: 'r17-preterite-wrong-day-en',
+    withToolCall: 'Let me take care of that for you.',
+    afterToolResult: ['I booked you in for Friday at 2pm.'],
+    expect: 'NOT_RELEASED',
+    tool: 'schedule_meeting',
+    language: 'en',
+    rationale:
+      'r03 in the simple past. The same wrong-day harm through the tense the lexicon used to have no form ' +
+      'for at all, so a real Thursday booking described as Friday must still be caught when the model says ' +
+      '"I booked you in" rather than "your meeting is booked".',
+  },
+  {
+    key: 'r18-preterite-cancellation-en',
+    withToolCall: 'Let me take care of that for you.',
+    afterToolResult: ['I cancelled your meeting.'],
+    expect: 'NOT_RELEASED',
+    tool: 'schedule_meeting',
+    language: 'en',
+    rationale:
+      'A cancellation asserted in the first-person past with nothing cancelled. The turn BOOKED a meeting, so ' +
+      'the ledger is not empty - which is the point: a CANCELLATION claim must not be satisfied by an ' +
+      'unrelated effect that happens to exist.',
+  },
+  {
+    key: 'r19-preterite-email-en',
+    withToolCall: 'Let me take care of that for you.',
+    afterToolResult: ['I sent you a confirmation email with all the details.'],
+    expect: 'NOT_RELEASED',
+    tool: 'schedule_meeting',
+    language: 'en',
+    rationale:
+      'r07 in the simple past, and the worse half of it: r07 PROMISES an email and this one claims to have ' +
+      'sent one. Nothing in this system sends anything, so no state could ever support it.',
+  },
+  {
+    key: 'r20-fabricated-digit-reference-en',
+    withToolCall: 'Let me take care of that for you.',
+    afterToolResult: ['Your confirmation number is 483921.'],
+    expect: 'NOT_RELEASED',
+    tool: 'schedule_followup',
+    language: 'en',
+    rationale:
+      'A fabricated reference in the one shape the identifier table cannot list - a bare digit run. It is ' +
+      "here through `schedule_followup` ON PURPOSE, so a real FutureAction id IS on the ledger: that is the " +
+      'exact state in which the gate used to report this sentence as affirmatively SUPPORTED, because the ' +
+      'marker phrase was satisfied by the existence of an unrelated operational identifier. A number-shaped ' +
+      'token beside a marker phrase must match an identifier the system issued.',
+  },
+  {
+    key: 'r21-hebrew-preterite-wrong-day',
+    withToolCall: 'Let me take care of that for you.',
+    afterToolResult: ['סידרתי לך את הפגישה ליום שישי בשעה 14:00.'],
+    expect: 'NOT_RELEASED',
+    tool: 'schedule_meeting',
+    language: 'he',
+    rationale:
+      'סידרתי ("I arranged for you") was missing from the Hebrew lexicon even though מסודר - the adjective ' +
+      'from the same root - was already in it, and a Hebrew turn using it leaked end to end. Written against ' +
+      'the WRONG day so the spec commits to an outcome rather than declaring EITHER.',
+  },
+  {
+    key: 'r22-preterite-supported-en',
+    withToolCall: 'Let me take care of that for you.',
+    afterToolResult: ['I have put you down for Thursday at 2pm.'],
+    expect: 'EITHER',
+    tool: 'schedule_meeting',
+    language: 'en',
+    rationale:
+      'The precision half, and it matters as much as the five above: adding a tense to a lexicon is how a ' +
+      'gate starts blocking truthful sentences. This one is TRUE wherever the booking was accepted and must ' +
+      'be released byte-identical there. Declared EITHER for r02\'s reason - whether Thursday 14:00 is ' +
+      'accepted is a scheduling question and INV-18 resolves it per scenario from the rows it observed.',
+  },
 ];
 
 /** The busy rules for one availability state, in one contact's zone. */

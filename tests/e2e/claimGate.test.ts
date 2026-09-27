@@ -421,6 +421,209 @@ describe('the same defect in Hebrew', () => {
 });
 
 // ---------------------------------------------------------------------------
+// 8b. The same defect in the SIMPLE PAST, which is how it actually reached a
+//     customer after the first fix.
+// ---------------------------------------------------------------------------
+
+/**
+ * The wordings independent QA drove through this harness and watched leak.
+ *
+ * WHY THESE ARE E2E AND NOT ONLY IN `tests/claimGate/claimGateCorpus.ts`
+ * ---------------------------------------------------------------------------
+ * They were found end to end, and the finding was not "the detector returns an
+ * empty array" - it was that the sentence came back in `turn.assistantText` AND
+ * was written to `ConversationTurn` as a spoken AGENT row, with `meetings` 0 and
+ * `futureActions` 0 in the database. A unit test on the detector would have been
+ * green for the fix and would not have proved the release path. Both halves are
+ * asserted below, per wording.
+ *
+ * All eight were released before `lexicon/en.ts` gained the first-person
+ * preterite frames and `lexicon/he.ts` gained סידרתי; seven of the eight reported
+ * `NO_MATERIAL_CLAIM`, which means the ledger was never even read.
+ */
+const SIMPLE_PAST_LEAKS: readonly {
+  readonly label: string;
+  readonly text: string;
+  readonly reason: string;
+  readonly world?: { readonly contactTimezone: string };
+}[] = [
+  {
+    label: 'preterite booking - the § 6.5.4 sentence one inflection sideways',
+    text: 'I booked the callback for 3pm tomorrow. You can relax.',
+    reason: 'NO_MATCHING_EFFECT',
+  },
+  {
+    label: 'preterite scheduling',
+    text: 'I scheduled the callback for 3pm tomorrow.',
+    reason: 'NO_MATCHING_EFFECT',
+  },
+  { label: 'preterite cancellation', text: 'I cancelled your meeting.', reason: 'NO_MATCHING_EFFECT' },
+  {
+    // `moved to` was in the lexicon and could not help: it matches only ADJACENT
+    // tokens, and this sentence puts `your meeting` between the two.
+    label: 'preterite reschedule with the object between the verb and the preposition',
+    text: 'I moved your meeting to Friday at 10am.',
+    reason: 'NO_MATCHING_EFFECT',
+  },
+  {
+    label: 'the perfect of a verb the lexicon had no form for at all',
+    text: "I've put you down for tomorrow at 3pm.",
+    reason: 'NO_MATCHING_EFFECT',
+  },
+  {
+    // The stronger half of the aya-expanse:8b email defect: § 6.2 PROMISES one
+    // and this claims to have sent it. No tool in this system sends anything.
+    label: 'preterite send',
+    text: 'I sent you a confirmation email with all the details.',
+    reason: 'NO_TOOL_FOR_PROMISE',
+  },
+  {
+    label: 'the Hebrew first-person past of the root מסודר was already in',
+    text: 'סידרתי לך פגישה למחר בשעה 15:00.',
+    reason: 'NO_MATCHING_EFFECT',
+    world: JERUSALEM,
+  },
+];
+
+describe('an unsupported claim in the first-person simple past', () => {
+  const HONEST = 'Nothing is arranged yet. What time would suit you?';
+
+  for (const leak of SIMPLE_PAST_LEAKS) {
+    it(`is withheld, regenerated and never persisted: ${leak.label}`, async () => {
+      const ran = await run(
+        `gate-preterite-${SIMPLE_PAST_LEAKS.indexOf(leak)}`,
+        [{ assistantText: leak.text }, { assistantText: HONEST }],
+        'Just tell me it is done so I can get off the phone.',
+        leak.world ? { world: leak.world } : {},
+      );
+
+      const release = ran.turn.claimGate.releases[0];
+      expect(release?.outcome).toBe('CORRECTED_AFTER_REGENERATION');
+      expect(release?.attempts[0]?.unsupportedClaims.map((entry) => entry.reason)).toContain(leak.reason);
+
+      // 1. it did not reach the caller.
+      expect(ran.turn.assistantText).toBe(HONEST);
+      expect(ran.turn.assistantMessages).toEqual([HONEST]);
+      // 2. it was not written to the transcript as a spoken agent turn.
+      expect(await persistedAgentText(ran)).toEqual([HONEST]);
+      // 3. and the thing it claimed still does not exist.
+      const counts = await ran.harness.countDomainRows();
+      expect({ meetings: counts.meetings, futureActions: counts.futureActions }).toEqual({
+        meetings: 0,
+        futureActions: 0,
+      });
+    });
+  }
+
+  it('and a TRUE simple-past claim is released byte-identical, with no extra provider call', async () => {
+    // The precision direction, which matters just as much: a lexicon that grew a
+    // tense and started blocking truthful wording would be switched off.
+    const TRUE_PAST = 'I just put you down for tomorrow, Thursday, at 3 in the afternoon your time.';
+    const harness = await createSliceHarness({ label: 'gate-preterite-supported' });
+    harnesses.push(harness);
+    const conversation = await harness.startConversation();
+    harness.llm.setScript([
+      {
+        assistantText: 'Let me get that in the diary.',
+        toolCalls: [
+          {
+            toolName: 'schedule_meeting',
+            argumentsJson: scriptedArgs({
+              contact_id: harness.world.contact.id,
+              when: 'tomorrow afternoon at 3',
+              title: 'Intro call',
+            }),
+          },
+        ],
+      },
+      { assistantText: TRUE_PAST },
+    ]);
+
+    const turn = await harness.runtime.agent.handleTurn({
+      conversationId: conversation.id,
+      utterance: 'Book me in tomorrow afternoon at 3.',
+    });
+
+    expect(turn.toolOutcomes[0]?.ok).toBe(true);
+    expect(turn.assistantText).toBe(TRUE_PAST);
+    expect(turn.claimGate.releases.at(-1)?.outcome).toBe('SUPPORTED');
+    expect(harness.llm.callCount).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 8c. A fabricated reference in the one shape the identifier table cannot list.
+// ---------------------------------------------------------------------------
+
+describe('a fabricated digits-only confirmation number', () => {
+  it('is INVENTED_IDENTIFIER even though a real booking put an operational id on the ledger', async () => {
+    // The state that made this worse than a miss. With a genuine
+    // `schedule_followup` behind it the ledger carries a real FutureAction id,
+    // and the gate used to accept the marker phrase `confirmation number` on the
+    // strength of that unrelated id - so `483921` was reported as affirmatively
+    // SUPPORTED rather than merely missed.
+    const harness = await createSliceHarness({ label: 'gate-invented-digits' });
+    harnesses.push(harness);
+    const conversation = await harness.startConversation();
+
+    const FABRICATED = 'Your confirmation number is 483921. Quote that if you call back.';
+    const HONEST = "You're all set for tomorrow at 3 in the afternoon. I have no reference number to give you.";
+
+    harness.llm.setScript([
+      bookTomorrowAtThree(harness.world.contact.id),
+      { assistantText: FABRICATED },
+      { assistantText: HONEST },
+    ]);
+
+    const turn = await harness.runtime.agent.handleTurn({
+      conversationId: conversation.id,
+      utterance: 'Book it and give me a confirmation number.',
+    });
+
+    expect(turn.toolOutcomes[0]?.ok).toBe(true);
+    expect((await harness.countDomainRows()).futureActions).toBe(1);
+
+    const release = turn.claimGate.releases.at(-1);
+    const unsupported = release?.attempts[0]?.unsupportedClaims ?? [];
+    expect(unsupported.map((entry) => entry.reason)).toContain('INVENTED_IDENTIFIER');
+    expect(unsupported.find((entry) => entry.reason === 'INVENTED_IDENTIFIER')?.detail.invalidIdentifier).toBe(
+      '483921',
+    );
+    expect(turn.assistantText).toBe(HONEST);
+    expect((await spokenAgentText(harness, conversation.id)).join(' ')).not.toContain('483921');
+  });
+
+  it('but a real issued identifier quoted back beside the same marker is released', async () => {
+    // The other direction, and the reason the rule is scoped to marker sentences:
+    // the check is "does this token match something the system issued", not "are
+    // there digits here".
+    const harness = await createSliceHarness({ label: 'gate-real-id-beside-marker' });
+    harnesses.push(harness);
+    const conversation = await harness.startConversation();
+
+    harness.llm.setScript([bookTomorrowAtThree(harness.world.contact.id), { assistantText: 'PLACEHOLDER' }]);
+    const first = await harness.runtime.agent.handleTurn({
+      conversationId: conversation.id,
+      utterance: 'Call me back tomorrow afternoon at 3.',
+    });
+    const issued = first.toolOutcomes[0];
+    expect(issued?.ok).toBe(true);
+
+    // The id the tool actually issued, read out beside the marker phrase.
+    const actionId = (await harness.db.prisma.futureAction.findFirstOrThrow()).id;
+    const TRUE_REFERENCE = `Your booking reference is ${actionId}.`;
+    harness.llm.setScript([{ assistantText: TRUE_REFERENCE }]);
+    const second = await harness.runtime.agent.handleTurn({
+      conversationId: conversation.id,
+      utterance: 'What is the reference?',
+    });
+
+    expect(second.assistantText).toBe(TRUE_REFERENCE);
+    expect(second.claimGate.releases.at(-1)?.outcome).toBe('SUPPORTED');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 9. The property that matters just as much: a TRUE claim is untouched.
 // ---------------------------------------------------------------------------
 

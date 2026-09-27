@@ -91,9 +91,13 @@ export const KNOWN_COVERAGE_GAPS: readonly string[] = [
     'measurement, and it cannot be: knowing that נקבעה asserts a completed booking needs a Hebrew lexicon, ' +
     'and writing a second one inside the harness would be the reimplementation this design forbids (the same ' +
     'argument INV-16 makes). The consequence is precise: a bug in buildActionLedger or verifyClaims is ' +
-    'caught here, and a bug in the DETECTOR is not - it would make INV-18 quietly find fewer claims. That ' +
-    'gap is closed by tests/claimGate/claimGateCorpus.ts, a corpus with the answers written down in which ' +
-    'every detector rule must fire and every known-good sample must stay clean.',
+    'caught here, and a bug in the DETECTOR is caught only for the family M specs that declare ' +
+    'NOT_RELEASED - those FAIL when the detector finds no material claim in any of their texts, which is ' +
+    'what makes the six simple-past and fabricated-reference specs (r17-r21) a regression guard on the ' +
+    'lexicon and not only on the ledger. A detector rule that stopped firing on wording no spec declares ' +
+    'unsupportable would still make INV-18 quietly find fewer claims. That remaining gap is closed by ' +
+    'tests/claimGate/claimGateCorpus.ts, a corpus with the answers written down in which every detector ' +
+    'rule must fire and every known-good sample must stay clean.',
   'BOUNDED DELIBERATELY: family M crosses its claim texts with FOUR zones (America/New_York, Europe/London, ' +
     'Asia/Jerusalem, Asia/Kolkata) at ONE `now` instant, under ONE policy and one free diary. Australia/Sydney ' +
     'is deliberately excluded rather than overlooked: at n01-midweek Sydney is already on Thursday, so ' +

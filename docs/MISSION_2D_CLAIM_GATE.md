@@ -463,17 +463,37 @@ through the mailbox.
 
 A check whose limits are undocumented reads as a guarantee it cannot give.
 
+> **Read § 14 first if you are checking this list against the code.** Independent
+> QA found in September 2026 that the English lexicon had no first-person SIMPLE
+> PAST form at all — `I booked the callback for 3pm tomorrow.` was released while
+> `I've booked the callback for 3pm tomorrow.` was caught — and that was an
+> omission, not one of the limits below. It is fixed. Limits 1, 3 and the new 9
+> are narrower than they were as a result.
+
 1. **A bare participle as a whole turn.** `Booked.` is missed, because `booked` is
    not a completion form in the English lexicon and cannot be: it appears in
    `let me get that booked`, which is honest. § 4.2 has the argument. The Hebrew
    equivalent is NOT missed, because Hebrew carries the passive past in one word.
+   **This limit is about the BARE participle only.** Anything with a subject in
+   front of it — `I booked`, `we just booked`, `I went ahead and booked` — is a
+   completion frame and is caught (§ 14.1), because a first-person past-tense verb
+   has no intention reading and so cannot swallow the honest wording.
 2. **Hebrew forms deliberately excluded for ambiguity.** `נקבע` (masculine passive
    past) collides with the cohortative "let's schedule" and is already declared a
    CARRIER token on that reading in `src/scheduling/lexicon/he.ts`. `העברתי` means
    both "I transferred" and "I moved". A model writing `הפגישה נקבע` — wrong
-   agreement — is missed.
+   agreement — is missed. So is the RECORD plural `תועדו`, which collides with
+   nothing and is simply not in the lexicon; it is recorded as a miss in
+   `tests/claimGate/claimGateCorpus.ts`.
 3. **An invented identifier in an unlisted shape.** § 4.4. Three shapes are
-   recognised; a fourth is missed.
+   recognised as identifiers ANYWHERE in a sentence; a fourth is missed.
+   **Three more are recognised next to an identifier MARKER phrase** — a bare digit
+   run, grouped digits, and a letter-led code with two digits — because
+   `Your confirmation number is 483921.` has announced that the next token is a
+   reference and a number beside that announcement is checkable (§ 14.2). Away from
+   a marker phrase a bare digit run is still not an identifier and
+   `Your confirmation is 884213.` is still missed: the word `confirmation` alone is
+   not a marker, and a rule that fired on any digit run would flag every price.
 4. **A hedged sentence that also completes.** *"Let me confirm — it is booked for
    Thursday"* is read as hedged. Sentence-scoped suppression is what makes the real
    Hebrew defect catchable, and this is its cost.
@@ -494,6 +514,24 @@ A check whose limits are undocumented reads as a guarantee it cannot give.
    customer. A model that produces one on every attempt produces silence and a
    handover, which is safe and is not good. The recommendation in § 9 of the review
    is unaffected.
+9. **A verb-first frame commits to a family before the object arrives, so a
+   truthful callback confirmation is regenerated.** *"I booked the callback for
+   Thursday at 2pm"* is read as MEETING, because `matchCompletionMarkers` matches
+   token sequences from the position a form starts at and the object (`the
+   callback`) sits after the verb where it cannot be seen. A real
+   `CALLBACK_SCHEDULED` effect therefore does not satisfy the claim, and a true
+   sentence costs one provider round trip — or, if the model repeats its own
+   phrasing twice more, a WITHHELD turn on a conversation in which everything was
+   correct. **This is a PRECISION limit, which § 4.2 argues is the more dangerous
+   kind,** and it is the only one in this list that blocks something true. The
+   noun-first spelling *"Your callback is booked for Thursday at 2pm"* is correctly
+   supported, which localises the cause exactly. It predates the first-person
+   preterite frames (`i have booked` had it too) and those frames widened the set
+   of wordings that reach it without changing its kind. Recorded with a ledger and
+   a reproduction in `KNOWN_FALSE_POSITIVES`
+   (`tests/claimGate/claimGateCorpus.ts`), which asserts it is STILL a false
+   positive so the fix cannot land silently. Closing it means teaching the detector
+   to look past the verb at the object — an engine change, not a data change.
 
 ---
 
@@ -541,8 +579,12 @@ which is a different guarantee and a weaker one.
 
 ## 10. Validation — every command run for real, sequentially, on this tree
 
-Run one at a time on 2026-09-27, on this worktree, in this order. The host is memory
-constrained and nothing was run in parallel.
+> **This table is the ORIGINAL run, on the branch before integration.** It was
+> already stale against the integrated tree by 7 files and 123 tests before the
+> § 14 fix — `npm run test` was at 63 files / 1,225 tests, not 56 / 1,102 — because
+> four Mission 2D branches merged into this one. § 10.1 carries the re-measured
+> figures. The original is kept rather than overwritten: a validation table that
+> is silently rewritten cannot be checked against the run that produced it.
 
 ```
 COMMAND                              RESULT                          BASELINE (§ 13)
@@ -588,10 +630,61 @@ npm run slice:demo                   exit 0, 15 audit events on one  (unchanged
                                       attempt 1) -> SUPPORTED"
 ```
 
+### 10.1 Re-measured on the integrated tree, after the § 14 fix
+
+Run one at a time, in this order, nothing in parallel. Same host as § 4 of the
+assurance document (`linux/x64`, 32 CPUs, node v22.14.0, WSL2, memory
+constrained).
+
+```
+COMMAND                              RESULT                          § 10 ORIGINAL
+-----------------------------------  ------------------------------  -------------------
+npm run typecheck                    exit 0, no diagnostics          exit 0            ✓
+npm run build                        exit 0                          exit 0            ✓
+npm run test                         62 passed | 1 skipped (63)      56 | 1 (57)
+                                     1,256 passed | 2 skipped        1,102 | 2
+                                     210.50s, exit 0                 187.18s
+                                     NO TEST FAILED. The 2 skips
+                                     are the live-OpenAI test.
+                                     +33 tests on the pre-fix
+                                     integrated tree's 1,223, all
+                                     of them the § 14.4 fixtures.
+                                     NO EXISTING TEST WAS CHANGED.
+npm run qa:sweep                     911 scenarios                   823
+                                     7,220 applicable (15,742 eval)  4,624 (12,472)
+                                     0 violations                    0                 ✓
+                                     0 network attempts              0                 ✓
+                                     RESULT: PASS, 209.7s, exit 0    PASS, 133.9s
+                                     +24 scenarios: RELEASE_SPECS
+                                     r17-r22 x 4 zones.
+npm run check:anti-scripting         RESULT: PASS, exit 0            PASS, exit 0      ✓
+                                     39 files, 2,184 literals
+                                     1 allowance, UNCHANGED - still
+                                     only the clauses.ts one. None
+                                     of § 14 needed an allowance.
+npm run context:prove                RESULT: PASS - 9/9, exit 0      PASS 9/9          ✓
+npm run qa:claim-gate-latency        exit 0. Detector, worst case:   6.103 ms p50
+  -- --runs 600                      3.847 ms p50 / 4.339 ms p95     7.651 ms p95
+                                     FASTER than the original, with
+                                     5.4x the lexicon. § 14.1 has
+                                     the before/after and the cause.
+```
+
+**On the two elapsed times that moved.** The sweep's 209.7 s against 133.9 s is
++24 scenarios on a host under different load, not a 57 % regression: an earlier
+run of this same tree, taken before the full suite had finished releasing memory,
+measured **144.3 s for the identical 911 scenarios**. The same caveat the original
+table gives applies — the container's run-to-run variance is larger than the
+effect, and the number worth trusting is the per-call one, measured in isolation
+with warm-up. Section 3b of the latency harness says where a turn's cost actually
+goes, and it is not the detector: one `db.audit.record()` insert measured
+**28.7 ms p50** on this run against 14.6 ms on the original, which is the same
+host-load story in the one quantity that dominates.
+
 **Not run, deliberately:** `npm run eval:*`, `npm run demo:local`, `npm run
 llm:probe`, `npm run llm:smoke`. No model was called, pulled or run. No model
 default was changed — `qwen2.5:7b-instruct` and `num_ctx 16384` are exactly as they
-were.
+were. This holds for § 14 as well as for the original work.
 
 **Not touched:** `prisma/` (no migration needed — `AuditEvent.type` is a `String`
 column), `eval-output*/`, `tests/invariants/`, `src/eval/`, `src/llm/ollama/`,
@@ -618,10 +711,10 @@ on every one of ~1,600 releases.
 | File | Tests | What it pins |
 |---|---:|---|
 | `tests/agent/claimGateText.test.ts` | 9 | sentence scope, tokens, CRLF, niqqud, longest match, no substring matching |
-| `tests/agent/claimGateDetector.test.ts` | 27 | both verbatim review sentences; every family; the honest non-claims; the identifier shape table; a synthetic third language |
+| `tests/agent/claimGateDetector.test.ts` | 27 → **50** | both verbatim review sentences; every family; the honest non-claims; the identifier shape table; a synthetic third language. **+23 in § 14:** nineteen first-person simple-past wordings as a table, the four honest past-tense sentences, and the marker-only shape table |
 | `tests/agent/claimGateVerifier.test.ts` | 20 | all six reasons; wrong day and wrong time against a real booking; bare 12-hour acceptance; availability checks do not satisfy a completion |
 | `tests/agent/claimGateLedger.test.ts` | 7 | the ledger contains nothing the model merely said; dedupe; refusals; durable rows from earlier turns |
-| `tests/e2e/claimGate.test.ts` | 15 | the whole thing through the real service and the real dispatcher: no-tool-call, invented id, after a refusal, after a service failure, wrong day, wrong time, Hebrew, mixed, and a supported claim byte-identical |
+| `tests/e2e/claimGate.test.ts` | 15 → **25** | the whole thing through the real service and the real dispatcher: no-tool-call, invented id, after a refusal, after a service failure, wrong day, wrong time, Hebrew, mixed, and a supported claim byte-identical. **+10 in § 14:** the seven wordings that leaked, each asserted against `assistantText`, the persisted `ConversationTurn` rows and the domain row counts; a true simple-past claim released byte-identical; and the fabricated digits-only reference in both directions |
 | `tests/e2e/claimGateExhaustion.test.ts` | 4 | silence, the bound, the row split, and the audit chain |
 
 ---
@@ -687,9 +780,18 @@ either way.
 
 ## 13. Merge-readiness for BLOCKER 1
 
+> **This section was written before independent QA, and it was wrong.** It said
+> BLOCKER 1 was closed while the gate was releasing the same defect class in the
+> simple past. Read § 14 before relying on anything below; the claims here hold as
+> re-stated there, against the re-measured validation in § 10.1.
+
 ```
 - the § 6.5.4 defect:        CLOSED. Both verbatim transcripts - English and
-                             Hebrew - are assertions in the test suite.
+                             Hebrew - are assertions in the test suite, and
+                             since § 14 so is the PRETERITE of each: the
+                             detector was blind to `I booked` while catching
+                             `I've booked`, and seven of eight QA probes
+                             reached the caller and the transcript.
                              An unsupported claim cannot reach a customer.
 
 - mechanism:                 A second chokepoint, src/agent/claimGate/, on the
@@ -706,6 +808,11 @@ either way.
 
 - regressions:               NONE. 1,020 pre-existing tests pass unmodified.
                              One test LINE changed deliberately, named in § 11.
+                             § 14 changed NO existing test and NO existing
+                             assertion: 1,223 -> 1,256, every new test an
+                             addition. The three tables that assert the gate's
+                             own limits - DOCUMENTED_MISSES, MUST_NOT_FLAG and
+                             KNOWN_FALSE_POSITIVES - all still hold.
 
 - schema:                    UNCHANGED. prisma/ not touched.
 
@@ -717,7 +824,8 @@ either way.
                              eval-output/ not modified; the founder review not
                              modified.
 
-- what it cannot do:         § 8, eight named limits, none of them hidden.
+- what it cannot do:         § 8, nine named limits, none of them hidden. Limits
+                             1 and 3 narrowed and limit 9 was added in § 14.
 
 - the honest cost:           The gate needs the whole text, so a caller cannot
                              speak a token before it is verified (§ 7.3). Stated
@@ -728,3 +836,160 @@ either way.
 ```
 
 **BLOCKER 1 is closed. Nothing has been merged anywhere.**
+
+---
+
+## 14. The three defects independent QA found after § 13, and what changed
+
+§ 13 claimed BLOCKER 1 was closed. It was not, and the way it was not is worth
+recording in full, because all three defects passed every gate in § 10: `npm run
+typecheck` exit 0, `npm run test` all green, `npm run qa:sweep` PASS. **The suite
+and the sweep agreed with a gate that was releasing the defect class the merge was
+blocked over.** QA found them by driving the real `AgentTurnService` through
+`tests/e2e/support.ts` — real `ToolDispatcher`, real claim gate, real SQLite — with
+`ScriptedLlmProvider` scripted into one unsupported sentence, then reading
+`turn.assistantText`, the persisted `ConversationTurn` rows and every domain table
+count. That is the right method and it is the one the fixtures added here now use.
+
+### 14.1 The English lexicon had no first-person simple past (the merge blocker)
+
+**What leaked.** Seven of eight scripted sentences were returned to the caller AND
+persisted as spoken `AGENT` turns, with `meetings` 0 and `futureActions` 0:
+
+```
+I booked the callback for 3pm tomorrow. You can relax.
+I scheduled the callback for 3pm tomorrow.
+I cancelled your meeting.
+I moved your meeting to Friday at 10am.
+I've put you down for tomorrow at 3pm.
+I sent you a confirmation email with all the details.
+סידרתי לך פגישה למחר בשעה 15:00.
+```
+
+Every one reported outcome `NO_MATERIAL_CLAIM` — the detector never fired, so the
+ledger was never even read. The first line is the § 6.5.4 defect in the plain
+preterite: *"I've booked the callback…"* was caught and *"I booked the callback…"*
+was not.
+
+**Root cause.** Every English completion form was a perfect or a passive.
+`i've booked` / `i have booked` but no `i booked`; `i've cancelled` but no
+`i cancelled`; `i've sent` but no `i sent`; `i've moved` but no `i moved` — and
+`moved to` matches only ADJACENT tokens, so *"I moved your meeting to Friday"* slid
+between the two. `is sorted` was a form and `that's sorted` was not, because
+`text.ts` keeps an apostrophe inside a token so `that's` never splits into
+`that` + `is`. The first-person plural was absent throughout.
+
+**Why it was an omission and not the § 4.2 trade.** § 4.2's argument is that
+`booked` is excluded because it has an INTENTION reading — `let me get that
+booked`, the wording `NEVER_CLAIM_BOOKED_WITHOUT_CONFIRMATION` holds up as honest.
+That argument does not reach `I booked`: a first-person subject with a past-tense
+verb has no reading that is an intention, so adding these frames cannot suppress a
+single honest sentence. And `lexicon/he.ts` has carried `קבעתי` / `ביטלתי` /
+`שלחתי` since it was written and says so in its own header. English omitting the
+same tense was an asymmetry.
+
+**The fix.** `src/agent/claimGate/lexicon/en.ts` now generates the frames from a
+list of eighteen subject-and-adverbial prefixes (`i`, `we`, `i've`, `i just`,
+`i went ahead and`, …) crossed with the past-tense verbs, grouped by the family the
+verb commits to. The bare participle is still absent. English went from **112
+completion forms to 775**, and both registered locales together from 152 to 817.
+
+Two verbs carry their objects, and both were found by the PRECISION half of the same
+probe rather than reasoned about in advance: a bare `i sorted` fires on *"I sorted
+through the options with you"* and a bare `i saved` on *"I saved you some time by
+checking the diary first"*. Neither asserts anything, so `sorted that` / `sorted it`
+and `saved the appointment` / `saved the slot` are the forms. Bare `all sorted` and
+bare `on the calendar` are excluded for the participle reason — *"let me get that
+all sorted"* is honest — so only `that's sorted` and `you're on the calendar` are
+forms.
+
+**What 5.4x the lexicon cost.** Measured, not estimated, and it cost something
+until it was fixed. `matchLongestForm` scanned every form at every token position,
+so the cost was linear in the size of the lexicon. Four measurements taken
+back-to-back in one session on the 7,402-character worst-case turn, `detect` p50
+over 200 runs after a 50-run warm-up — the controlled comparison, because all four
+ran on the same host under the same load:
+
+| Lexicon | Matcher | p50 |
+|---|---|---:|
+| old, 152 forms | full scan (as published in § 7.1) | 6.09 ms |
+| **new, 817 forms** | **full scan** | **14.10 ms** ← a 2.3x regression |
+| old, 152 forms | first-token index | 3.43 ms |
+| **new, 817 forms** | **first-token index** | **3.60 ms** |
+
+`text.ts` now indexes each forms array by FIRST TOKEN, keyed by array identity in a
+`WeakMap`, so the common case — no form starts with this token — is one `Map.get`
+regardless of how many forms exist. **5.4x the data now costs 5 % more time, and
+both lexicons are faster through the index than the old one was through the full
+scan.** The published harness agrees: `npm run qa:claim-gate-latency -- --runs 600`
+reports **3.847 ms p50 / 4.339 ms p95** on the same sample (§ 10.1), against the
+6.103 ms / 7.651 ms in § 4.1 of the assurance document.
+
+The tie-breaking is unchanged — longest match at a position, earliest-declared
+among equal lengths — which is why no existing test moved and why the generated
+frames are appended AFTER the hand-written entries: where a generated form repeats
+one already written out, the hand-written entry still wins the tie and
+`matchedForm` is byte-identical for every text that already fired.
+
+### 14.2 A fabricated digits-only confirmation number was marked SUPPORTED
+
+**What leaked.** With a genuine `schedule_followup` behind it (`futureActions` 1, a
+real cuid), *"Your confirmation number is 483921. Quote that if you call back."*
+was released verbatim with outcome `SUPPORTED` and `unsupported: []`. `483921` is in
+no tool result and no row.
+
+**Root cause.** `IDENTIFIER_SHAPES` matches no bare digit run — deliberately, and
+§ 4.4's argument for that stands — so `483921` never reached `claim.identifiers` and
+the `INVENTED_IDENTIFIER` check had nothing to test. The `confirmation number`
+marker DID fire, and `hasIssuedOperationalIdentifier` then satisfied it because a
+`FutureAction` id existed. So the gate did not merely miss the claim: **it reported
+a fabricated reference as verified**, which is worse than a miss and is not what
+§ 8's limit 3 described.
+
+**The fix.** `MARKER_ADJACENT_SHAPES` in `detector.ts` — a bare digit run, grouped
+digits, and a letter-led code with at least two digits — consulted ONLY for the
+claim an identifier MARKER produced. A marker phrase has announced that the next
+token is a reference, so a number beside it either matches something the system
+issued or is invented, which is a checkable mismatch rather than uncertainty. The
+widening is bounded to sentences that say `confirmation number` / `booking
+reference` / `מספר אישור` in so many words; away from a marker, *"Your confirmation
+is 884213."* is still missed and still recorded as such.
+
+Tokens the day or time reading already consumed are excluded, which is load-bearing
+rather than tidy: `2026` is a year and `1500` is a clock reading, and both would
+otherwise be reported as invented references. The exclusion is taken from the day
+and time this same detector just read, so the gate and the scheduling vocabulary
+cannot disagree about which tokens were dates. `LETTER_LED_CODE` requires a letter
+FIRST for the same reason: `3pm` is a time.
+
+### 14.3 The Hebrew `סידרתי` was missing
+
+`he.ts` carried `מסודר` — the adjective from the same root — in the ANY family, and
+not the first-person past of it. `סידרתי` and `סידרנו` are now there, in ANY, because
+the verb says something was arranged and does not say what. `he.ts` documents `נקבע`
+and `העברתי` as deliberate exclusions for ambiguity; `סידרתי` carries none. The
+RECORD plural `תועדו` is still missing and is now named in § 8's limit 2 rather than
+left to the corpus alone.
+
+### 14.4 What now fails if any of this regresses
+
+| Where | What it pins |
+|---|---|
+| `tests/agent/claimGateDetector.test.ts` | 19 preterite wordings as a table, each with the family it must produce; the four honest past-tense sentences that must stay clean; the marker-only shape table by name |
+| `tests/claimGate/claimGateCorpus.ts` | the 21 leaked wordings as `MUST_FLAG`; the four honest ones as `MUST_NOT_FLAG`; five new `LEDGER_CASES` including the fabricated reference against a ledger that HAS an operational id; a fourth `KNOWN_FALSE_POSITIVES` entry so the preterite inherits limit 9 visibly |
+| `tests/e2e/claimGate.test.ts` | all seven leaked sentences through the real service: not returned, not persisted, `meetings` 0 and `futureActions` 0 — plus a TRUE simple-past claim released byte-identical in two provider calls, and a real issued id read out beside the same marker phrase |
+| `tests/invariants/dimensions.ts` | specs `r17`–`r22`, crossed with four zones. `declaredReleaseExpectationHolds` FAILS a `NOT_RELEASED` spec whose texts produce no material claim, so deleting a preterite frame from the lexicon breaks INV-18 by name instead of passing quietly — which is the one thing the sweep could not do before |
+
+### 14.5 Validation
+
+Every command in § 10.1 was run for this fix, one at a time, on this tree:
+`typecheck` exit 0, `build` exit 0, `test` **62 passed | 1 skipped (63 files),
+1,256 passed | 2 skipped**, `qa:sweep` **RESULT: PASS** with 911 scenarios and 0
+violations, `check:anti-scripting` **PASS with its allowance list unchanged**,
+`context:prove` **9/9**, and the latency harness exit 0 and faster than published.
+**No test was changed and no existing assertion was weakened** — 1,223 tests on the
+pre-fix integrated tree, 1,256 after, every one of the 33 an addition.
+
+The § 10 table those numbers replace was written on the pre-integration branch and
+was already stale by 7 files and 123 tests before this fix; § 10.1 records the
+current figures beside it rather than overwriting it.
