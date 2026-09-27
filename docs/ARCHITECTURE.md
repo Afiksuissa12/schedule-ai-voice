@@ -22,11 +22,20 @@ itself out of.
 | Mechanism | File | What it makes impossible |
 |---|---|---|
 | One chokepoint from model to effect | `src/agent/tools/dispatcher.ts` | A model-originated action nobody checked |
+| **One chokepoint from model text to a customer** | `src/agent/claimGate/` | A sentence asserting an effect that never happened |
 | Tool schemas are `.strict()`, JSON Schema **generated** from Zod | `src/agent/tools/definitions.ts`, `jsonSchema.ts` | Telling the model one contract and judging it by another |
 | `validationProvenanceJson` is `NOT NULL` and structurally validated on write | `prisma/schema.prisma`, `src/db/repositories/scheduling.ts`, `src/domain/provenance.ts` | A scheduling decision with no record of what justified it |
 | History rebuilt from the database each turn | `src/conversation/conversationService.ts` | Business-critical state living in a context window |
 | Turn loop capped in code, not in the prompt | `src/agent/agentTurnService.ts` | A confused model acting forever |
+| Regeneration bound is a constant in code, not in the prompt | `src/agent/claimGate/claimGate.ts` | A model arguing with its own tool results indefinitely |
 | `AuditEvent` with `@@unique([correlationId, sequence])` | `src/audit/` | An action nobody can reconstruct |
+
+The first two rows are the whole of the governing rule, on its two axes. The
+chokepoint governs **what the system does**. The claim gate governs **what the
+system says about what it did**. Before the gate existed, the second axis was
+unguarded, and `docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 9.4 put it
+plainly: *"the chokepoint governs actions, not sentences. Every model that said
+something false said it freely."*
 
 ---
 
@@ -172,6 +181,81 @@ silently. Application code does it correctly and writes down how.
 
 ---
 
+## 5A. The effect and claim consistency gate — the second chokepoint
+
+Numbered `5A` rather than `6` deliberately: it sits **beside** § 5, not after it,
+and renumbering the sections other documents cite would be a worse cost than an
+unusual heading.
+
+`src/agent/claimGate/`. Every piece of customer-facing text passes through
+`ClaimGate.review` before it is persisted as an agent turn or returned to a
+caller. There is no second path: `AgentTurnService.releaseText` is the only route
+from `completion.assistantText` to `appendAgentText`.
+
+**Why it has to exist.** § 5's chokepoint is complete and it held for five
+different models across 105 scenario runs — and it has one boundary, stated in
+`docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 9.3 point 2: pressed by an
+adversarial contact, `qwen2.5:7b-instruct` invented a confirmation number and
+then said a callback was booked. **No tool call was made.** The chokepoint had
+nothing to refuse, because refusing tool calls is what it does and this was a
+sentence. `aya-expanse:8b` does the same thing in Hebrew (§ 6.2) and adds an
+email the agent has no tool to send.
+
+| # | Step | On failure |
+|---|---|---|
+| 1 | `detectMaterialClaims(text)` — **pure**, no I/O | no claim → released unchanged, `NO_MATERIAL_CLAIM` |
+| 2 | `buildActionLedger(...)` — **only now**, five repository reads | — |
+| 3 | `verifyClaims({ text, ledger })` | all supported → released **byte-identical**, `SUPPORTED` |
+| 4 | `buildStateInstruction(...)` → the **same** `LlmProvider`, offered **no tools** | verified → `CORRECTED_AFTER_REGENERATION` |
+| 5 | Bound reached (`MAX_CLAIM_GATE_REGENERATION_ATTEMPTS = 2`) | no text, a `Task`, `WITHHELD_HANDED_OFF` |
+
+**The ledger is the whole design.** It is derived *only* from real `ToolOutcome`
+values and rows read through the repositories — never from model text, never from
+the assistant transcript, never from a memory or a summary. It carries the
+effects, the refusals (tool, `ValidationErrorCode`, reason) and the identifiers
+the system has actually issued, because an identifier in a sentence that is in no
+tool result and no row is an invented identifier.
+`tests/agent/claimGateLedger.test.ts` asserts the negative directly: a
+conversation whose transcript is full of bookings, confirmation numbers and
+promised emails produces a ledger with nothing in it.
+
+**Six reasons a claim fails**, each machine-readable per claim:
+`NO_MATCHING_EFFECT`, `EFFECT_WAS_REFUSED`, `WRONG_DAY`, `WRONG_TIME`,
+`INVENTED_IDENTIFIER`, `NO_TOOL_FOR_PROMISE`. The day and time comparison is done
+in the **contact's own timezone**, against the resolved instant on the ledger,
+using the day-part windows the scheduler itself used — so a booking on the right
+day described as the wrong day is caught, which is § 8.3's wrong-day defect
+arriving through the sentence instead of through the resolver.
+
+**Detection is deterministic, and the locale vocabulary is data.**
+`src/agent/claimGate/lexicon/` follows the Mission 2B pattern exactly
+(`src/scheduling/lexicon/`): `en.ts` and `he.ts` export data, the engine holds no
+language-specific literal, and `tests/agent/claimGateDetector.test.ts` proves it
+by registering a synthetic third language at runtime. English asserts completion
+with a *frame* (`has been booked`); Hebrew asserts it with one inflected word
+(`נקבעה`). Day, time and weekday vocabulary is **not** duplicated — the verifier
+reads `REGISTERED_LEXICONS` from the scheduling resolver, so the gate cannot
+disagree with the resolver about what `מחר` means.
+
+**Four audit events**, on the turn's own `correlationId`:
+`CLAIM_GATE_CLAIM_VERIFIED`, `CLAIM_GATE_CLAIM_REJECTED`,
+`CLAIM_GATE_REGENERATION_REQUESTED`, `CLAIM_GATE_TEXT_WITHHELD`.
+`src/app/auditReport.ts` renders them as a sixth question — *what was the agent
+allowed to say* — beside the original five.
+
+**What it does not do.** It never edits, trims or substitutes text: either the
+model's own bytes go out or nothing does. It contains no customer-facing string,
+and the state handed back for regeneration contains no sentence for the model to
+echo — the failed attempt's own wording is deliberately withheld from it and kept
+in the audit trail instead. It never executes a tool: a regeneration is offered
+an empty tool list, so the gate cannot cause an effect even by accident.
+
+**The one honest cost.** The gate needs the whole text before release, so a caller
+cannot speak a token before it is verified. `docs/MISSION_2D_CLAIM_GATE.md` § 7
+has the measured numbers and what they mean for the voice milestone.
+
+---
+
 ## 6. The datetime validation pipeline
 
 `src/scheduling/dateTimeResolver.ts` + `src/scheduling/schedulingValidator.ts`.
@@ -282,6 +366,15 @@ await db.audit.listBySubject('MEETING', meeting.id); // why does this row exist?
 `src/app/auditReport.ts` renders a chain and answers the five questions it must
 be able to answer: what was said, what was decided, what tool was called, what
 was validated, what was persisted.
+
+**And, since Mission 2D, a sixth: what the agent was ALLOWED to say.** The five
+above all answer *what did the system do*; the sixth answers *what was the system
+permitted to claim about it*, which is a different axis and the one § 6.5.4's
+defect lives on. `summarizeChain().whatWasSayable` reads the four
+`CLAIM_GATE_*` events, so a turn that released no text at all can be explained
+from the chain alone — which attempt was rejected, for which machine-readable
+reason, how many regenerations were asked for, and whether it ended in a
+correction or a handover.
 
 ---
 

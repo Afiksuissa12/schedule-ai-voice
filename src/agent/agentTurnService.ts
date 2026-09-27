@@ -21,6 +21,23 @@
  *   5. If the cap is reached, refuse further tool calls with an audited
  *      `POLICY_VIOLATION` and end the turn.
  *
+ * WHERE THE CLAIM GATE SITS, AND WHY IT IS THERE AND NOT AT THE END
+ * ---------------------------------------------------------------------------
+ * Step 4 persists the model's text the moment it arrives, INSIDE the loop, and a
+ * turn can release more than one piece of text. So the gate is in front of every
+ * release rather than in front of the last one: `releaseText` below is the only
+ * path from `completion.assistantText` to `appendAgentText`, and it will not
+ * take that path until the text has been checked against the ledger.
+ *
+ * One consequence is worth stating rather than discovering. Text is released
+ * BEFORE the tool calls that arrived with it are dispatched, because that is the
+ * order a voice call happens in: the agent speaks, then the tool runs. So a model
+ * that says "I'll ring you tomorrow at 3" in the same completion as the
+ * `schedule_followup` that would make it true has asserted something that is not
+ * true YET, and the gate says so. That is not a false positive - it is exactly
+ * what the prompt clause `NEVER_CLAIM_BOOKED_WITHOUT_CONFIRMATION` already asks
+ * the model not to do, now enforced instead of requested.
+ *
  * WHY THE LOOP IS HARD-CAPPED
  * ---------------------------------------------------------------------------
  * A model that misreads a rejection can retry forever. Each iteration costs a
@@ -36,6 +53,7 @@
  * `ToolDispatcher`, and that is what keeps "the LLM reasons, application code
  * acts" true at the top of the stack as well as the bottom.
  */
+import type { AuditEventType } from '../audit/types.js';
 import type { Database } from '../db/database.js';
 import type { AgentConfiguration, Contact, Conversation } from '../domain/entities.js';
 import type { AgentLlmMessage } from '../llm/agentMessage.js';
@@ -55,6 +73,15 @@ import type { ToolDispatchContext } from './tools/context.js';
 import { llmToolDefinitions } from './tools/definitions.js';
 import type { ToolDispatcher } from './tools/dispatcher.js';
 import { toModelPayload, toModelPayloadJson, type ToolOutcome } from './tools/results.js';
+import { buildActionLedger } from './claimGate/ledger.js';
+import { handOffAfterClaimGateExhaustion } from './claimGate/handoff.js';
+import type {
+  ClaimGate,
+  ClaimGateAttempt,
+  ClaimGateAuditRecord,
+  ClaimGateDecision,
+  ClaimGateOutcome,
+} from './claimGate/claimGate.js';
 
 /**
  * The iteration cap.
@@ -99,6 +126,15 @@ export interface AgentTurnServiceOptions {
   readonly dispatcher: ToolDispatcher;
   readonly maxIterations?: number;
   readonly contextAssembly?: ContextAssemblyOptions | null;
+  /**
+   * The effect and claim consistency gate.
+   *
+   * `buildAgentRuntime` ALWAYS supplies one - it is a production guarantee, not
+   * an opt-in, and there is no configuration that turns it off. It is optional
+   * on this constructor only so that a unit test can exercise the turn loop in
+   * isolation; every supported wiring path has it.
+   */
+  readonly claimGate?: ClaimGate | null;
 }
 
 export interface HandleTurnInput {
@@ -113,7 +149,15 @@ export type TurnStopReason =
   /** The model finished: it produced text and asked for no more tools. */
   | 'MODEL_FINISHED'
   /** The iteration cap was reached. Recorded as a POLICY_VIOLATION. */
-  | 'ITERATION_CAP_REACHED';
+  | 'ITERATION_CAP_REACHED'
+  /**
+   * The claim gate withheld a release and the turn ended with NO text.
+   *
+   * A separate reason rather than a flag on `MODEL_FINISHED`, because the two
+   * mean opposite things to a caller: one is a turn that said its piece, the
+   * other is a turn that deliberately said nothing and asked for a person.
+   */
+  | 'CLAIM_GATE_WITHHELD';
 
 export interface AgentTurnResult {
   readonly correlationId: string;
@@ -135,6 +179,36 @@ export interface AgentTurnResult {
   readonly assembledContext?: AssembledContext | null;
   /** What the rolling-summary refresh did, when one is wired. */
   readonly memoryRefresh?: MemoryRefreshSummary | null;
+  /**
+   * What the claim gate did, per piece of customer-facing text.
+   *
+   * ALWAYS PRESENT, so a consumer never has to distinguish "the gate was off"
+   * from "the field is new". `enabled: false` happens only on a hand-wired
+   * `AgentTurnService` with no gate, which no supported path produces.
+   *
+   * The benchmark task reads this to separate the RAW model's unsupported-claim
+   * attempts from claims that LEAKED past the gate: attempt 1's
+   * `unsupportedClaims` is the model's own behaviour, and a non-empty
+   * `unsupportedClaims` on the RELEASED attempt would be a leak.
+   */
+  readonly claimGate: ClaimGateTurnReport;
+}
+
+/** Everything the gate decided this turn. */
+export interface ClaimGateTurnReport {
+  readonly enabled: boolean;
+  /** One entry per piece of text the model produced, in order. */
+  readonly releases: readonly ClaimGateRelease[];
+}
+
+export interface ClaimGateRelease {
+  /** Which turn-loop iteration produced this text. 1-based. */
+  readonly iteration: number;
+  /** Every attempt in order; attempt 1 is the model's original wording. */
+  readonly attempts: readonly ClaimGateAttempt[];
+  /** What actually reached the caller. `null` when the gate withheld. */
+  readonly releasedText: string | null;
+  readonly outcome: ClaimGateOutcome;
 }
 
 /** The compaction outcome, flattened onto the turn result. */
@@ -152,6 +226,7 @@ export class AgentTurnService {
   private readonly dispatcher: ToolDispatcher;
   private readonly maxIterations: number;
   private readonly contextAssembly: ContextAssemblyOptions | null;
+  private readonly claimGate: ClaimGate | null;
 
   constructor(options: AgentTurnServiceOptions) {
     this.db = options.db;
@@ -161,6 +236,7 @@ export class AgentTurnService {
     this.dispatcher = options.dispatcher;
     this.maxIterations = options.maxIterations ?? DEFAULT_MAX_TOOL_ITERATIONS;
     this.contextAssembly = options.contextAssembly ?? null;
+    this.claimGate = options.claimGate ?? null;
   }
 
   async handleTurn(input: HandleTurnInput): Promise<AgentTurnResult> {
@@ -290,6 +366,7 @@ export class AgentTurnService {
     // ---- the bounded loop ---------------------------------------------------
     const assistantMessages: string[] = [];
     const toolOutcomes: ToolOutcome[] = [];
+    const claimGateReleases: ClaimGateRelease[] = [];
     let stopReason: TurnStopReason = 'MODEL_FINISHED';
     let iterations = 0;
 
@@ -326,9 +403,36 @@ export class AgentTurnService {
         completion,
       );
 
+      // ---- the ONLY path from model text to a customer --------------------
       if (completion.assistantText) {
-        assistantMessages.push(completion.assistantText);
-        await this.conversations.appendAgentText(conversation.id, completion.assistantText);
+        const release = await this.releaseText({
+          scope: { conversation, contact, correlationId, nowUtc },
+          iteration,
+          text: completion.assistantText,
+          prompt,
+          turnContextText: turnContext.text,
+          tools,
+          toolOutcomesSoFar: toolOutcomes,
+          allowedToolNames,
+          dispatchContext,
+        });
+
+        if (release !== null) claimGateReleases.push(release);
+
+        if (release !== null && release.releasedText === null) {
+          // WITHHELD. Nothing is persisted as an agent turn, nothing is returned
+          // to the caller, and the turn stops here - carrying on would let the
+          // next iteration produce more text on top of a conversation the system
+          // has already decided it cannot speak into.
+          stopReason = 'CLAIM_GATE_WITHHELD';
+          break;
+        }
+
+        const released = release === null ? completion.assistantText : release.releasedText;
+        if (released !== null) {
+          assistantMessages.push(released);
+          await this.conversations.appendAgentText(conversation.id, released);
+        }
       }
 
       if (completion.toolCalls.length === 0) {
@@ -408,6 +512,7 @@ export class AgentTurnService {
       promptFingerprint: prompt.fingerprint,
       assembledContext: assembled,
       memoryRefresh,
+      claimGate: { enabled: this.claimGate !== null, releases: claimGateReleases },
     };
   }
 
@@ -471,6 +576,159 @@ export class AgentTurnService {
       messages: request.messages,
       tools: request.tools,
     });
+  }
+
+  /**
+   * Put one piece of customer-facing text through the claim gate.
+   *
+   * Returns `null` when no gate is wired, which is the signal to the caller that
+   * the text goes out as it always did. Otherwise returns the release record,
+   * whose `releasedText` is either the model's own bytes - unchanged, always, on
+   * every outcome that releases anything - or `null` for a withholding.
+   *
+   * THE REGENERATION CALL IS OFFERED NO TOOLS.
+   * That is a structural guarantee rather than a discipline: the gate cannot
+   * cause an effect, cannot book anything, cannot write a domain row, because the
+   * provider is handed an empty tool list and a tool call it does not make cannot
+   * be dispatched. It also keeps the gate honest about what it is asking for -
+   * words, not actions.
+   */
+  private async releaseText(input: {
+    scope: TurnScope;
+    iteration: number;
+    text: string;
+    prompt: BuiltSystemPrompt;
+    turnContextText: string;
+    tools: ReturnType<typeof llmToolDefinitions>;
+    toolOutcomesSoFar: readonly ToolOutcome[];
+    allowedToolNames: readonly string[];
+    dispatchContext: ToolDispatchContext;
+  }): Promise<ClaimGateRelease | null> {
+    const gate = this.claimGate;
+    if (gate === null) return null;
+
+    const { scope } = input;
+
+    const decision = await gate.review({
+      text: input.text,
+
+      // Built only when the detector has actually found a claim, so a turn that
+      // asserts nothing costs no database read at all.
+      loadLedger: () =>
+        buildActionLedger({
+          db: this.db,
+          conversationId: scope.conversation.id,
+          contact: scope.contact,
+          nowUtc: scope.nowUtc,
+          toolOutcomes: input.toolOutcomesSoFar,
+          permittedToolNames: input.allowedToolNames,
+          dayParts: input.dispatchContext.policy.dayParts,
+        }),
+
+      regenerate: async (request) => {
+        // The SAME provider, the same system prompt, the same transcript read
+        // back from the database - plus the authoritative state as a trailing
+        // system message, which is where a system-side instruction belongs.
+        const messages = await this.conversations.buildMessages(scope.conversation.id, {
+          leadingMessages: [{ role: 'system', content: input.turnContextText }],
+        });
+
+        await this.db.audit.record({
+          type: 'PROVIDER_INVOKED',
+          organizationId: scope.conversation.organizationId,
+          correlationId: scope.correlationId,
+          conversationId: scope.conversation.id,
+          contactId: scope.contact.id,
+          subjectType: 'CONVERSATION',
+          subjectId: scope.conversation.id,
+          summary: `LlmProvider ${this.llm.name()}.completeTurn (claim-gate regeneration ${request.attempt - 1})`,
+          detailJson: {
+            provider: this.llm.name(),
+            claimGateRegeneration: request.attempt - 1,
+            promptFingerprint: input.prompt.fingerprint,
+            messageCount: messages.length + 1,
+            // Stated rather than implied: nothing can be executed from this call.
+            offeredTools: [],
+          },
+          occurredAt: scope.nowUtc,
+        });
+
+        const completion = await this.llm.completeTurn({
+          systemPrompt: input.prompt.text,
+          messages: [...messages, { role: 'system', content: request.instruction }],
+          tools: [],
+        });
+
+        return completion.assistantText;
+      },
+
+      record: (event) => this.recordClaimGateEvent(scope, input.iteration, event),
+    });
+
+    if (decision.releasedText === null) {
+      await this.withholdAndHandOff(scope, decision);
+    }
+
+    return {
+      iteration: input.iteration,
+      attempts: decision.attempts,
+      releasedText: decision.releasedText,
+      outcome: decision.outcome,
+    };
+  }
+
+  /** One gate decision, as an audit event on the turn's correlation id. */
+  private async recordClaimGateEvent(
+    scope: TurnScope,
+    iteration: number,
+    event: ClaimGateAuditRecord,
+  ): Promise<void> {
+    const type: AuditEventType =
+      event.kind === 'VERIFIED'
+        ? 'CLAIM_GATE_CLAIM_VERIFIED'
+        : event.kind === 'REJECTED'
+          ? 'CLAIM_GATE_CLAIM_REJECTED'
+          : event.kind === 'REGENERATION_REQUESTED'
+            ? 'CLAIM_GATE_REGENERATION_REQUESTED'
+            : 'CLAIM_GATE_TEXT_WITHHELD';
+
+    await this.db.audit.record({
+      type,
+      organizationId: scope.conversation.organizationId,
+      correlationId: scope.correlationId,
+      conversationId: scope.conversation.id,
+      contactId: scope.contact.id,
+      subjectType: 'CONVERSATION',
+      subjectId: scope.conversation.id,
+      summary: event.summary,
+      detailJson: { iteration, ...event.detail },
+      occurredAt: scope.nowUtc,
+    });
+  }
+
+  /**
+   * The designed exhaustion outcome.
+   *
+   * No text, no canned replacement, a real `Task` with a deadline, and a durable
+   * SYSTEM note so the transcript records that this turn produced no words. See
+   * `src/agent/claimGate/handoff.ts` for the argument.
+   */
+  private async withholdAndHandOff(scope: TurnScope, decision: ClaimGateDecision): Promise<void> {
+    const task = await handOffAfterClaimGateExhaustion({
+      db: this.db,
+      organizationId: scope.conversation.organizationId,
+      correlationId: scope.correlationId,
+      conversationId: scope.conversation.id,
+      contact: scope.contact,
+      nowUtc: scope.nowUtc,
+      decision,
+    });
+
+    await this.conversations.appendSystemNote(
+      scope.conversation.id,
+      `Turn ended: the claim gate withheld this turn's text after ${decision.attempts.length} attempt(s). ` +
+        `Nothing was said to the contact and handover task ${task.id} was created.`,
+    );
   }
 
   private async recordDecision(

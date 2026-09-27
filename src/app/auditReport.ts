@@ -38,6 +38,28 @@ export interface ChainSummary {
   readonly whatWasPersisted: readonly { subjectType: string; subjectId: string; summary: string }[];
   /** Which actions were refused, and why. */
   readonly whatWasRefused: readonly { tool: string | null; code: string; reason: string }[];
+  /**
+   * What the claim gate decided about the words themselves - the SIXTH question,
+   * added by Mission 2D.
+   *
+   * The five original questions all answer "what did the system DO". This one
+   * answers "what was the system allowed to SAY", which is a different axis and
+   * the one § 6.5.4's defect lives on. A reader looking at a turn that produced
+   * no text has to be able to find out why from the chain alone.
+   */
+  readonly whatWasSayable: readonly ClaimGateChainEntry[];
+}
+
+export interface ClaimGateChainEntry {
+  readonly decision: 'VERIFIED' | 'REJECTED' | 'REGENERATION_REQUESTED' | 'WITHHELD';
+  /** Which turn-loop iteration the text came from. */
+  readonly iteration: number | null;
+  /** Which attempt at saying it. */
+  readonly attempt: number | null;
+  readonly outcome: string | null;
+  /** Reason codes, one per unsupported claim. Empty on a verified release. */
+  readonly reasons: readonly string[];
+  readonly summary: string;
 }
 
 export function summarizeChain(events: readonly AuditEvent[]): ChainSummary {
@@ -54,6 +76,30 @@ export function summarizeChain(events: readonly AuditEvent[]): ChainSummary {
   const whatWasValidated: { tool: string | null; checks: string[]; nowUtc: string | null }[] = [];
   const whatWasPersisted: { subjectType: string; subjectId: string; summary: string }[] = [];
   const whatWasRefused: { tool: string | null; code: string; reason: string }[] = [];
+  const whatWasSayable: ClaimGateChainEntry[] = [];
+
+  const readClaimGate = (
+    event: AuditEvent,
+    detail: Record<string, unknown>,
+    decision: ClaimGateChainEntry['decision'],
+  ): ClaimGateChainEntry => {
+    const claims = Array.isArray(detail['unsupportedClaims'])
+      ? (detail['unsupportedClaims'] as Record<string, unknown>[])
+      : [];
+    return {
+      decision,
+      iteration: typeof detail['iteration'] === 'number' ? detail['iteration'] : null,
+      attempt:
+        typeof detail['attempt'] === 'number'
+          ? detail['attempt']
+          : typeof detail['regeneration'] === 'number'
+            ? detail['regeneration']
+            : null,
+      outcome: typeof detail['outcome'] === 'string' ? detail['outcome'] : null,
+      reasons: claims.map((claim) => String(claim['reason'] ?? 'UNKNOWN')),
+      summary: event.summary,
+    };
+  };
 
   for (const event of events) {
     const detail = detailOf(event);
@@ -102,6 +148,22 @@ export function summarizeChain(events: readonly AuditEvent[]): ChainSummary {
         });
         break;
 
+      case 'CLAIM_GATE_CLAIM_VERIFIED':
+        whatWasSayable.push(readClaimGate(event, detail, 'VERIFIED'));
+        break;
+
+      case 'CLAIM_GATE_CLAIM_REJECTED':
+        whatWasSayable.push(readClaimGate(event, detail, 'REJECTED'));
+        break;
+
+      case 'CLAIM_GATE_REGENERATION_REQUESTED':
+        whatWasSayable.push(readClaimGate(event, detail, 'REGENERATION_REQUESTED'));
+        break;
+
+      case 'CLAIM_GATE_TEXT_WITHHELD':
+        whatWasSayable.push(readClaimGate(event, detail, 'WITHHELD'));
+        break;
+
       default:
         break;
     }
@@ -117,6 +179,7 @@ export function summarizeChain(events: readonly AuditEvent[]): ChainSummary {
     whatWasValidated,
     whatWasPersisted,
     whatWasRefused,
+    whatWasSayable,
   };
 }
 
@@ -158,6 +221,15 @@ export function renderChainAnswers(summary: ChainSummary): string {
     section(
       'WHAT WAS REFUSED',
       summary.whatWasRefused.map((entry) => `${entry.tool ?? 'n/a'}: ${entry.code} - ${entry.reason}`),
+    ),
+    section(
+      'WHAT THE AGENT WAS ALLOWED TO SAY',
+      summary.whatWasSayable.map(
+        (entry) =>
+          `${entry.decision} (iteration ${entry.iteration ?? 'n/a'}, attempt ${entry.attempt ?? 'n/a'})` +
+          `${entry.outcome ? ` -> ${entry.outcome}` : ''}` +
+          `${entry.reasons.length > 0 ? `: ${entry.reasons.join(', ')}` : ''}`,
+      ),
     ),
   ].join('\n\n');
 }

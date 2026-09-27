@@ -1024,3 +1024,205 @@ sample and fails. Both samples live in
 the self-test corpus rather than `tests/` because this check must stay runnable as
 a standalone CLI with its non-vacuity proof attached, per § 6.3; a vitest file
 would be an addition to that, not a replacement for it.
+
+---
+
+## 11. The effect and claim consistency gate
+
+**The finding this section answers**, recorded before it was fixed, in
+`docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 9.3 point 2 and again in § 13:
+
+> pressed to confirm a booking that did not exist, `qwen2.5:7b-instruct` invented
+> `CONF123456` and then said *"I've booked the callback for 3pm on your local
+> time."* No tool call was made. Nothing was booked. **The chokepoint cannot help
+> here, because the chokepoint refuses tool calls and this was a sentence.**
+
+`aya-expanse:8b` does the same thing in Hebrew (§ 6.2) and adds an email the agent
+has no tool to send. § 9.4 generalises it: *"the chokepoint governs actions, not
+sentences. Every model that said something false said it freely."*
+
+Built at `src/agent/claimGate/`, enabled by default, reported in
+`docs/MISSION_2D_CLAIM_GATE.md`. Five decisions are recorded here.
+
+### 11.1 The detector is DETERMINISTIC, not model-assisted
+
+**Decision.** Claim detection is a deterministic pass over tokens against locale
+vocabulary declared as data. No second model call is involved anywhere in
+detection or verification. The only model call the gate makes is the
+*regeneration*, and that asks the model to write English or Hebrew - never to
+judge whether something is true.
+
+**Why.** The finding being fixed IS that an instruction to a model is a request
+rather than a constraint. § 8.8's language-drift evidence is the standing
+demonstration: the prompt asks for the contact's language and the models answer in
+another one anyway. A model-assisted detector would put the guarantee back inside
+the component that cannot be relied on, and would do it at the cost of one extra
+provider round trip on **every** turn rather than only on failing ones.
+
+Three properties follow, and each of them was a requirement rather than a bonus:
+
+- **Free on the happy path.** The detector is pure, so it runs FIRST, and the
+  ledger's five database reads happen only when something has been found to check.
+  Measured p50 of 0.022 ms on a 34-character reply that asserts nothing.
+- **Identical on every run**, which is what lets `npm run qa:sweep --determinism`
+  stay byte-identical with the gate in the loop.
+- **Provable by a test that names the sentence.** The two verbatim transcripts
+  from the review are assertions in `tests/agent/claimGateDetector.test.ts`. If
+  either stops being detected, the build fails.
+
+**What was rejected.** A model-assisted or hybrid detector. It would have needed a
+deterministic path for the tests anyway (through `ScriptedLlmProvider`), so the
+tests would have proved the deterministic path and production would have run the
+other one - which is the worst of both.
+
+### 11.2 The locale vocabulary is DATA, and English and Hebrew are described differently
+
+**Decision.** `src/agent/claimGate/lexicon/` holds one module per language
+exporting a `ClaimLexicon` and nothing else. The engine, `detector.ts`, contains no
+language-specific literal. Adding a language is adding a module and one line in
+`lexicon/index.ts`.
+
+**Why.** This is § 9.4's conclusion applied a second time. The reason the Hebrew
+wrong-day defect could not be fixed by adding Hebrew alternatives to English
+regexes is that JavaScript's `\b` is defined on ASCII word characters, so
+`\bמחר\b` never matches. The same is true of `\bנקבעה\b`. A detector built as
+English regexes with Hebrew bolted on would have had no Hebrew coverage at all
+while appearing to have some - which is precisely the shape of the defect this
+mission exists to close, arriving through a different door.
+
+**The consequence that vindicates the shape.** The two languages need genuinely
+different declarations, and a single shared field layout could not have expressed
+both:
+
+- English asserts completion with a FRAME - `is booked`, `has been confirmed`,
+  `you are all set` - because the bare participle `booked` is ambiguous between a
+  completed effect and an intention (`let me get that booked`, which is the exact
+  wording the guardrail clause holds up as the HONEST thing to say).
+- Hebrew asserts completion with ONE inflected word - `נקבעה`, `בוטלה`, `אושרה` -
+  because the passive past is carried by the morphology.
+
+Day, time, weekday and day-part vocabulary is **not duplicated**. The verifier
+reads `REGISTERED_LEXICONS` from `src/scheduling/lexicon/`, so the gate and the
+resolver cannot disagree about what `מחר` or `אחרי הצהריים` means. The day-part
+WINDOWS come from the turn's own `SchedulingPolicy`, carried on the ledger, for the
+same reason.
+
+**Two Hebrew forms were deliberately excluded**, and the reasons are the interesting
+part. `נקבע` - the masculine passive past - collides with the cohortative "let's
+schedule", and `src/scheduling/lexicon/he.ts` already declares `נקבע` as a CARRIER
+token on exactly that reading. A form that is a completed booking in one reading
+and a proposal in another must not decide whether a sentence reaches a customer.
+`העברתי` means both "I transferred [to a colleague]" and "I moved [the meeting]",
+so it cannot say which family it belongs to. Both exclusions are misses, and both
+are recorded as misses in `docs/MISSION_2D_CLAIM_GATE.md` § 8 rather than papered
+over by guessing.
+
+### 11.3 The regeneration bound is TWO
+
+**Decision.** `MAX_CLAIM_GATE_REGENERATION_ATTEMPTS = 2`, a named constant in
+`src/agent/claimGate/claimGate.ts`. One original attempt plus at most two
+regenerations, so at most three provider calls for one released sentence.
+
+**Why two and not one, three or ten.** Two arguments, and they meet at two.
+
+**Latency.** Each attempt is one full provider round trip, paid on a live phone
+call while the caller listens to silence. Measured from the committed benchmark
+rather than guessed: of `qwen2.5:7b-instruct`'s 65 turns in
+`eval-output-fair-20260927/`, 57 made exactly one provider call, and those turns
+took **p50 2,102 ms, mean 3,574 ms, p95 4,213 ms** end to end. Two regenerations is
+therefore about 4.2 s of worst-case added latency, which is recoverable on a call;
+three would be over six seconds, which is a caller saying "hello? are you there?".
+
+**Diminishing returns.** A model handed the authoritative state either accepts it
+immediately or is arguing with it, and a model arguing with its own tool results is
+the § 6.5.4 behaviour this gate exists to STOP rather than to negotiate with. When
+two attempts are not enough the honest answer is a person, not a fourth try.
+
+**And it is a number in code, not an instruction in a prompt**, for the same
+reason `DEFAULT_MAX_TOOL_ITERATIONS` is. An instruction is a request; a number is a
+limit.
+
+**The one knob, and what it cannot do.** `buildAgentRuntime` accepts
+`claimGate.maxRegenerationAttempts` and accepts NOTHING that disables the gate.
+Lowering the bound makes the gate stricter - fewer chances to correct, not more
+chances to leak - so the only available misconfiguration is a safe one. This is
+deliberately unlike `contextAssembly` and `llmProviderConfig`, which are
+capabilities a deployment opts into.
+
+### 11.4 The exhaustion outcome is a real handover, and no words at all
+
+**Decision.** When every bounded attempt is still unsupported:
+
+1. NO text is released, and none is invented. `assistantText` is `null`,
+   `assistantMessages` is empty, `stopReason` is `CLAIM_GATE_WITHHELD`.
+2. A `Task` is created and `HUMAN_TRANSFER_REQUESTED` is emitted, through the same
+   code path the `transfer_to_human` tool uses.
+3. A `SYSTEM` note goes on the conversation, so the durable transcript records
+   that the turn produced no words.
+
+**Why nothing is said.** § 0's directive forbids canned customer-facing wording
+without exception. A gate that answered a model's dishonesty with a hardcoded
+apology would be the scripted conversation the whole architecture exists to
+prevent, and it would be scripted at exactly the moment a customer was most likely
+to remember it.
+
+**Why a `Task` and not silence alone.** Because the alternative has nobody
+accountable. The conversation has reached a state where the model asserts something
+the records do not support and will not stop; on a live call the contact is now
+waiting, and the only thing that resolves that is a human being. A `Task` with a
+deadline is how this system already expresses "a person must pick this up", it is
+already rendered by `src/app/auditReport.ts`, and it is already what an operator's
+queue reads. Recording the withholding only in the audit trail would make it
+explainable afterwards and actionable by nobody. It is marked URGENT and due now,
+because a caller is on the line.
+
+**Why it does NOT go through `ToolDispatcher`.** Because it would have to lie.
+`dispatch` opens with `TOOL_CALL_REQUESTED` summarised as "Model proposed
+transfer_to_human", and the model proposed nothing - application code decided. So
+the gate writes its own `HUMAN_TRANSFER_REQUESTED` with `toolCallId: null` and
+`requestedBy: 'CLAIM_GATE'`, sharing the row, the transaction and the events with
+the tool path through `src/agent/tools/handoverTask.ts`. An audit trail that
+records a fabricated model intent to satisfy a code path is worse than a second
+entry point.
+
+**What this writes, stated exactly, because the reading matters.** ONE row: the
+`Task`. Zero meetings, zero future actions, zero qualification states, zero calls,
+zero call outcomes. In particular the gate NEVER creates the effect the model
+falsely claimed, which is the property that actually matters, and
+`tests/e2e/claimGateExhaustion.test.ts` asserts that split table by table rather
+than asserting a single total. `docs/MISSION_2D_CLAIM_GATE.md` § 9 records that
+this is a deliberate interpretation of "zero domain rows written by the gate
+itself" and says why accountability was chosen over a strictly empty write.
+
+### 11.5 The gate needs the whole text, and that constrains the voice milestone
+
+**Decision.** Verification happens on the complete text, before release. Recorded
+here as a DECISION rather than an implementation note because it forecloses
+something a later milestone will want.
+
+**The consequence.** `src/ports/llm.ts` has an optional streaming path
+(`completeTurnStreaming`), and the local provider implements it - that is how the
+committed TTFT p50 of 98 ms was measured. **A caller cannot speak a token before
+the text is verified.** Streaming remains valuable for measurement, for a progress
+indicator and for an abort, but it can no longer be a path from a token to a
+loudspeaker. What a voice milestone gets instead is the whole sentence, slightly
+later, and the guarantee that it is true.
+
+**Why that is the right trade, stated rather than assumed.** The alternative is
+speaking the first half of a sentence and discovering the second half was false -
+and the § 6.5.4 transcript is precisely a sentence whose first half ("I've booked
+the callback") is the harmful part. There is no prefix of that sentence which is
+safe to say. Verifying a prefix is therefore not a smaller version of this gate; it
+is a different and weaker thing.
+
+**The measured cost**, on this host, with no model called:
+
+| Path | Cost |
+|---|---|
+| Text asserting nothing material | detector only, p50 0.022 ms, **zero** database reads, zero provider calls |
+| Text asserting something, supported | detector + ledger + verifier, p50 ≈ 2.2 ms, five repository reads, zero extra provider calls |
+| Each regeneration | one additional FULL provider round trip - p50 2,102 ms on the benchmark host |
+
+Full method and the rest of the numbers are in `docs/MISSION_2D_CLAIM_GATE.md`
+§ 7. `MISSION-2D-CLAIM-GATE-AND-HEBREW-MODEL-AUTO-CLAIM-ASSURANCE` publishes the
+measured-at-scale figures; this section records the design consequence.

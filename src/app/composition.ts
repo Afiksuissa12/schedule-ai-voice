@@ -58,6 +58,7 @@ import { createProviderRegistry, type ProviderRegistry, type ProviderRegistryCon
 import { MeetingSchedulingService } from '../scheduling/meetingSchedulingService.js';
 import { SchedulingValidator } from '../scheduling/schedulingValidator.js';
 import { AgentTurnService } from '../agent/agentTurnService.js';
+import { ClaimGate } from '../agent/claimGate/claimGate.js';
 import { ToolDispatcher } from '../agent/tools/dispatcher.js';
 
 /** The originating number used for outbound callbacks in this slice. */
@@ -185,6 +186,19 @@ export interface BuildAgentRuntimeOptions {
   readonly fromE164?: string;
   readonly dueActionRunnerId?: string;
   /**
+   * Tune the claim gate. There is NO option here that turns it off.
+   *
+   * That asymmetry is deliberate and it is the opposite of how
+   * `contextAssembly` and `llmProviderConfig` work above. Those are capabilities
+   * a deployment opts into; the gate is a guarantee about what may reach a
+   * customer, and a runtime that can be configured into telling somebody their
+   * meeting is booked when it is not has the defect back. Only the regeneration
+   * bound is adjustable, because a caller who wants fewer provider round trips on
+   * a slow host has a legitimate reason to ask - and lowering it makes the gate
+   * STRICTER, not weaker: fewer chances to correct, not more chances to leak.
+   */
+  readonly claimGate?: { readonly maxRegenerationAttempts?: number };
+  /**
    * Opt into durable memory and business context. Omitting it is Baseline V1.
    */
   readonly contextAssembly?: ContextAssemblyConfig | null;
@@ -202,6 +216,14 @@ export interface AgentRuntime {
   readonly conversations: ConversationService;
   readonly agent: AgentTurnService;
   readonly dueActions: DueActionRunner;
+  /**
+   * The claim gate this runtime wired. Never null.
+   *
+   * Exposed so a test or a report can read the regeneration bound in force,
+   * rather than hard-coding a number that could drift from the one the runtime
+   * is actually using.
+   */
+  readonly claimGate: ClaimGate;
   /**
    * The context layer, or null when this runtime did not opt in.
    *
@@ -319,12 +341,21 @@ export function buildAgentRuntime(options: BuildAgentRuntimeOptions = {}): Agent
           ...(memoryOptions === true ? {} : memoryOptions),
         });
 
+  // ENABLED BY DEFAULT, and there is no branch above this line that skips it.
+  // The chokepoint governs actions; this governs sentences. Both are always on.
+  const claimGate = new ClaimGate(
+    options.claimGate?.maxRegenerationAttempts !== undefined
+      ? { maxRegenerationAttempts: options.claimGate.maxRegenerationAttempts }
+      : {},
+  );
+
   const agent = new AgentTurnService({
     db,
     clock,
     llm,
     conversations,
     dispatcher,
+    claimGate,
     ...(options.maxToolIterations !== undefined ? { maxIterations: options.maxToolIterations } : {}),
     ...(contextAssembler ? { contextAssembly: { assembler: contextAssembler, memoryWriter } } : {}),
   });
@@ -349,6 +380,7 @@ export function buildAgentRuntime(options: BuildAgentRuntimeOptions = {}): Agent
     conversations,
     agent,
     dueActions,
+    claimGate,
     contextAssembler,
     memoryWriter,
     async shutdown() {
