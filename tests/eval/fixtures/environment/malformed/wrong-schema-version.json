@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "0.9.0",
+  "modelId": "qwen2.5:7b-instruct",
+  "runId": "fairness-sweep-2026-09-27",
+  "numCtx": 16384,
+  "sampledBy": "host-env-sampler 0.9.0",
+  "startedAtIso": "2026-09-27T09:00:00.000Z",
+  "endedAtIso": "2026-09-27T09:10:00.000Z",
+  "modelResidentBytes": 5368709120,
+  "offload": null,
+  "note": null,
+  "samples": [
+    {
+      "atIso": "2026-09-27T09:00:00.000Z",
+      "freeSystemRamBytes": 17179869184,
+      "vramUsedBytes": 6442450944,
+      "vramTotalBytes": 8585740288,
+      "gpuUtilizationPercent": 60,
+      "cpuLoadPercent": 15
+    }
+  ]
+}

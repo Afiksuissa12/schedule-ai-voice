@@ -1,0 +1,30 @@
+{
+  "schemaVersion": "1.0.0",
+  "modelId": "aya-expanse:8b",
+  "runId": "fairness-sweep-2026-09-27",
+  "numCtx": 16384,
+  "sampledBy": "host-env-sampler 1.0.0 (external, no nvidia-smi on PATH)",
+  "startedAtIso": "2026-09-27T13:00:00.000Z",
+  "endedAtIso": "2026-09-27T13:10:00.000Z",
+  "modelResidentBytes": null,
+  "offload": null,
+  "note": "The sampler ran but could not read ANY quantity on this host: nvidia-smi was not on PATH and the RAM/CPU counters were unavailable. A record that exists and measures nothing is still worth writing - it distinguishes `the sampler did not run` from `the sampler ran and saw nothing`.",
+  "samples": [
+    {
+      "atIso": "2026-09-27T13:00:00.000Z",
+      "freeSystemRamBytes": null,
+      "vramUsedBytes": null,
+      "vramTotalBytes": null,
+      "gpuUtilizationPercent": null,
+      "cpuLoadPercent": null
+    },
+    {
+      "atIso": "2026-09-27T13:10:00.000Z",
+      "freeSystemRamBytes": null,
+      "vramUsedBytes": null,
+      "vramTotalBytes": null,
+      "gpuUtilizationPercent": null,
+      "cpuLoadPercent": null
+    }
+  ]
+}

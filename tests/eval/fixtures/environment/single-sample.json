@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "1.0.0",
+  "modelId": "mistral:7b-instruct",
+  "runId": "fairness-sweep-2026-09-27",
+  "numCtx": 16384,
+  "sampledBy": "host-env-sampler 1.0.0 (external, runs on the Windows host)",
+  "startedAtIso": "2026-09-27T12:00:00.000Z",
+  "endedAtIso": "2026-09-27T12:00:00.000Z",
+  "modelResidentBytes": 5491948256,
+  "offload": {
+    "reportedBy": "ollama 0.34.3 /api/ps",
+    "gpuBytes": 5491948256,
+    "cpuBytes": 0,
+    "runtimeReportedText": "100% GPU"
+  },
+  "note": "One reading only - the sampler was started late. min, median and max are all this single sample, and the series says nothing about variation over the run.",
+  "samples": [
+    {
+      "atIso": "2026-09-27T12:00:00.000Z",
+      "freeSystemRamBytes": 17179869184,
+      "vramUsedBytes": 6442450944,
+      "vramTotalBytes": 8585740288,
+      "gpuUtilizationPercent": 55,
+      "cpuLoadPercent": 18
+    }
+  ]
+}

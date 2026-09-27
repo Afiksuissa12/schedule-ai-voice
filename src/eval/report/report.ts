@@ -12,9 +12,25 @@
  *    contains a judged number says it contains a judged number, and the
  *    recommendation section restates the judge's limitations rather than
  *    assuming the reader remembers them.
+ *
+ * The host environment sections added in results@2 are MEASURED, but they are
+ * measured by an EXTERNAL host sampler rather than by this harness, and they are
+ * labelled as such - a third provenance that must not be blurred into either of
+ * the other two. Where no sampler wrote a record, those sections print
+ * `not measured`: rule 1 applies to them exactly as it applies to everything
+ * else, so there is no zero and no plausible-looking default.
  */
 import { coverageMap, loadCorpus } from '../corpus/index.js';
 import { REQUIRED_COVERAGE } from '../corpus/schema.js';
+import {
+  ENVIRONMENT_QUANTITIES,
+  NOT_MEASURED,
+  summariseEnvironment,
+  type EnvironmentSummary,
+  type Spread,
+} from '../environment/aggregate.js';
+import { ENVIRONMENT_DIR_NAME } from '../environment/store.js';
+import { ENVIRONMENT_RECORD_SCHEMA_VERSION, type EnvironmentRecord } from '../environment/schema.js';
 import { CANDIDATES, REJECTED } from '../models/candidates.js';
 import { JUDGE_MODELS } from '../rubric/judge.js';
 import { JUDGE_PROMPT_VERSION } from '../rubric/judgePrompt.js';
@@ -33,6 +49,17 @@ export interface ReportInput {
   /** Recorded runs, keyed by model id, in candidate order. */
   readonly runsByModel: ReadonlyMap<string, readonly ScenarioRun[]>;
   readonly generatedAtIso: string;
+  /**
+   * Host conditions during each model's run, keyed by model id, as written by an
+   * EXTERNAL host sampler and validated by `src/eval/environment/schema.ts`.
+   *
+   * OPTIONAL, and `null` per model is a first-class value. Omitting it entirely
+   * is what a caller that does not care about conditions does - every existing
+   * caller, and every test written before results@2 - and it renders exactly the
+   * same as a run nobody sampled: `not measured` everywhere. A missing record is
+   * never an error, only an absence the report states out loud.
+   */
+  readonly environmentByModel?: ReadonlyMap<string, EnvironmentRecord | null>;
 }
 
 export interface Report {
@@ -58,8 +85,20 @@ export function buildReport(input: ReportInput): Report {
     return (b.composite ?? -1) - (a.composite ?? -1);
   });
 
+  // Host conditions, in the SAME order as every other table so a reader can
+  // read across. Models that produced no scorable run are appended rather than
+  // dropped: a model whose whole run errored is exactly the one whose machine
+  // conditions might explain why.
+  const environmentSummaries = environmentOrder(ranked, input).map((modelId) =>
+    summariseEnvironment(modelId, input.environmentByModel?.get(modelId) ?? null),
+  );
+
   const json = {
-    schema: 'schedule-ai-voice/eval-results@1',
+    // BUMPED FROM @1. results@2 is a strict SUPERSET: every key results@1
+    // carried is still here, unmoved and unrenamed, and the only change is the
+    // added `environment` block. A reader written against @1 keeps working; the
+    // identifier moves because the shape grew, not because it was restructured.
+    schema: 'schedule-ai-voice/eval-results@2',
     generatedAtIso: input.generatedAtIso,
     harnessVersion: HARNESS_VERSION,
     corpusVersion: corpus.corpusVersion,
@@ -113,9 +152,51 @@ export function buildReport(input: ReportInput): Report {
         durationMs: run.durationMs,
       };
     }),
+    /**
+     * ADDED IN results@2. Machine conditions per model, min/median/max over the
+     * host sampler's series, plus the offload split.
+     *
+     * Numeric fields are `null` where nothing was sampled - the same convention
+     * the rest of this file already uses, so a `null` never means zero. Because
+     * `null` on its own cannot distinguish "not sampled" from "this key is newer
+     * than your reader", each model ALSO carries `recordPresent` and an explicit
+     * `notMeasured` list of quantity keys. That list is the machine-readable form
+     * of the `not measured` cell in COMPARISON.md.
+     */
+    environment: {
+      recordSchemaVersion: ENVIRONMENT_RECORD_SCHEMA_VERSION,
+      /** Relative to the output root, so it moves with `EVAL_OUT_DIR`. */
+      directory: ENVIRONMENT_DIR_NAME,
+      writtenBy:
+        'An EXTERNAL host sampler, not this harness. `src/eval` never samples the machine: it runs in a ' +
+        'container and would measure the container rather than the host whose GPU did the work.',
+      provenance:
+        'MEASURED on the host, not judged, and not measured by this harness. Keep it distinct from both the ' +
+        'programmatic dimensions (measured here) and the judged dimensions (opinions).',
+      notMeasuredConvention:
+        'A quantity nobody sampled is `null` here, is listed by key in that model\'s `notMeasured`, and prints ' +
+        '`not measured` in COMPARISON.md. It is never 0 and never a default.',
+      quantities: ENVIRONMENT_QUANTITIES.map((q) => ({ key: q.key, label: q.label })),
+      models: environmentSummaries,
+    },
   };
 
-  return { json, markdown: renderMarkdown(ranked, input, corpus) };
+  return { json, markdown: renderMarkdown(ranked, input, corpus, environmentSummaries) };
+}
+
+/**
+ * Ranked models first, then anything else that has runs or a sampled record.
+ *
+ * De-duplicated while preserving that order, so the environment tables read
+ * across against the ranking and nothing with evidence on disk is omitted.
+ */
+function environmentOrder(ranked: readonly ModelScore[], input: ReportInput): string[] {
+  const order = [
+    ...ranked.map((score) => score.modelId),
+    ...input.runsByModel.keys(),
+    ...(input.environmentByModel?.keys() ?? []),
+  ];
+  return [...new Set(order)];
 }
 
 // ---------------------------------------------------------------------------
@@ -124,6 +205,7 @@ function renderMarkdown(
   ranked: readonly ModelScore[],
   input: ReportInput,
   corpus: ReturnType<typeof loadCorpus>,
+  environment: readonly EnvironmentSummary[],
 ): string {
   const out: string[] = [];
   const p = (line = ''): void => void out.push(line);
@@ -348,6 +430,13 @@ function renderMarkdown(
       'load, as the provider reports it.',
   );
   p();
+  p(
+    '**Do not compare these rows without reading section 7 and section 8 first.** Every number in this table ' +
+      'is a property of the machine as much as of the model. A candidate benchmarked while another ' +
+      'application held VRAM, or one whose weights spilled into system RAM, is slower for reasons that have ' +
+      'nothing to do with its quality.',
+  );
+  p();
   p('| Model | TTFT p50 | TTFT p95 | Turn p50 | Turn p95 | tok/s | Prompt tokens (mean / max) | Ctx util (mean / max) |');
   p('| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |');
   for (const score of ranked) {
@@ -361,8 +450,14 @@ function renderMarkdown(
   }
   p();
 
+  // ---- host conditions ----------------------------------------------------
+  // Placed immediately after latency because it is the section that decides
+  // whether the latency table is a comparison or five unrelated measurements.
+  renderEnvironment(p, environment);
+  renderOffloadSplit(p, environment);
+
   // ---- completeness -------------------------------------------------------
-  p('## 7. Run completeness');
+  p('## 9. Run completeness');
   p();
   p('| Model | Scenarios | OK | Errored | Turns |');
   p('| --- | ---: | ---: | ---: | ---: |');
@@ -377,7 +472,7 @@ function renderMarkdown(
   p();
 
   // ---- coverage -----------------------------------------------------------
-  p('## 8. Corpus coverage');
+  p('## 10. Corpus coverage');
   p();
   p('| Required shape | Scenarios |');
   p('| --- | --- |');
@@ -388,6 +483,191 @@ function renderMarkdown(
   p();
 
   return `${out.join('\n')}\n`;
+}
+
+// ---------------------------------------------------------------------------
+// Host conditions. Measured on the host by an external sampler - a third
+// provenance, kept labelled and kept apart from both judged and harness-measured
+// numbers, exactly as rule 2 of this file requires.
+// ---------------------------------------------------------------------------
+
+type Emit = (line?: string) => void;
+
+function renderEnvironment(p: Emit, environment: readonly EnvironmentSummary[]): void {
+  p('## 7. Machine conditions during each run (measured on the host)');
+  p();
+  p(
+    'Recorded by an **external host sampler**, not by this harness - `src/eval` runs in a container and would ' +
+      'measure the container rather than the host whose GPU did the work. One file per model per run under ' +
+      `\`${ENVIRONMENT_DIR_NAME}/\` in this output directory, schema ` +
+      `\`${ENVIRONMENT_RECORD_SCHEMA_VERSION}\`.`,
+  );
+  p();
+  p(
+    `Each cell is **min / median / max** across that run's samples. \`${NOT_MEASURED}\` means no sample ` +
+      'carried the quantity. **It does not mean zero, and it is not a default** - a comparison whose ' +
+      'conditions were never recorded is one nobody can defend, and saying so is the honest output.',
+  );
+  p();
+
+  if (environment.length === 0) {
+    p('_No models to report._');
+    p();
+    return;
+  }
+
+  p(`| Model | ${ENVIRONMENT_QUANTITIES.map((q) => q.header).join(' | ')} | Samples | num_ctx |`);
+  p(`| --- | ${ENVIRONMENT_QUANTITIES.map(() => '---:').join(' | ')} | ---: | ---: |`);
+  for (const summary of environment) {
+    const cells = ENVIRONMENT_QUANTITIES.map((q) =>
+      q.display === 'gib'
+        ? spreadGiB(summary.quantities[q.key])
+        : spreadPercent(summary.quantities[q.key]),
+    );
+    p(
+      `| \`${summary.modelId}\` | ${cells.join(' | ')} | ` +
+        `${summary.recordPresent ? summary.sampleCount : NOT_MEASURED} | ` +
+        `${summary.numCtx === null ? NOT_MEASURED : summary.numCtx.toLocaleString('en-US')} |`,
+    );
+  }
+  p();
+
+  const unsampled = environment.filter((summary) => !summary.recordPresent);
+  if (unsampled.length > 0) {
+    p(
+      `**${unsampled.length} of ${environment.length} model(s) have no host environment record at all:** ` +
+        `${unsampled.map((s) => `\`${s.modelId}\``).join(', ')}. Their latency and throughput rows in ` +
+        'section 6 cannot be compared against the others, because nothing records whether the machine was ' +
+        'in the same state. This is a gap in the evidence, not a result.',
+    );
+    p();
+  }
+
+  // `num_ctx` is the fairness precondition the protocol states, so a disagreement
+  // is called out here rather than left for a reader to spot across five rows.
+  const contexts = new Set(
+    environment.filter((s) => s.numCtx !== null).map((s) => s.numCtx as number),
+  );
+  if (contexts.size > 1) {
+    p(
+      `**The candidates did NOT all run at the same context length** (${[...contexts]
+        .sort((a, b) => a - b)
+        .join(', ')}). The KV cache is a real part of the VRAM footprint, so this comparison is invalid as a ` +
+        'like-for-like ranking. Re-run every model at one `num_ctx`.',
+    );
+    p();
+  }
+
+  const runIds = new Set(environment.filter((s) => s.runId !== null).map((s) => s.runId as string));
+  if (runIds.size > 1) {
+    p(
+      `**These records come from ${runIds.size} different runs** (${[...runIds]
+        .sort()
+        .map((id) => `\`${id}\``)
+        .join(', ')}). Conditions from separate sittings are not the identical conditions a fair ` +
+        'comparison needs. Treat the cross-model numbers as indicative only.',
+    );
+    p();
+  }
+
+  const noted = environment.filter((summary) => summary.note !== null && summary.note.trim() !== '');
+  p('**Conditions the sampler recorded in words:**');
+  p();
+  if (noted.length === 0) {
+    p(
+      '_No model carried a free-text note. Note that an EMPTY note is not evidence of a quiet machine - it ' +
+        'only means nobody wrote anything down._',
+    );
+  } else {
+    for (const summary of noted) p(`- \`${summary.modelId}\` - ${summary.note}`);
+  }
+  p();
+}
+
+/**
+ * The offload split, in its own section rather than a column in a wide table.
+ *
+ * This is THE number that explains an unfair comparison: a model that spilled
+ * part of itself into system RAM is slower for a reason that has nothing to do
+ * with its quality, and a reader scanning for that explanation must not have to
+ * find it inside a nine-column table.
+ */
+function renderOffloadSplit(p: Emit, environment: readonly EnvironmentSummary[]): void {
+  p('## 8. Offload split - how much of each model was on the GPU');
+  p();
+  p(
+    'As reported by the local runtime while the model was resident. A model held entirely in VRAM and a model ' +
+      'whose weights spilled into system RAM are **not competing on the same terms**: the spilled one pays a ' +
+      'PCIe round trip per token, and its latency in section 6 describes the spill rather than the model. ' +
+      'This is the first thing to check before believing any speed difference between two candidates.',
+  );
+  p();
+  p(`\`${NOT_MEASURED}\` means the local runtime's split was not recorded - never that it was 100% GPU.`);
+  p();
+
+  if (environment.length === 0) {
+    p('_No models to report._');
+    p();
+    return;
+  }
+
+  p('| Model | Resident (GiB) | On GPU (GiB) | In system RAM (GiB) | On GPU (%) | Runtime said | Reported by |');
+  p('| --- | ---: | ---: | ---: | ---: | --- | --- |');
+  for (const summary of environment) {
+    const offload = summary.offload;
+    p(
+      `| \`${summary.modelId}\` | ${gib(summary.modelResidentBytes)} | ${gib(offload?.gpuBytes ?? null)} | ` +
+        `${gib(offload?.cpuBytes ?? null)} | ${percent(offload?.gpuPercent ?? null)} | ` +
+        `${offload?.runtimeReportedText === undefined || offload.runtimeReportedText === null ? NOT_MEASURED : `\`${offload.runtimeReportedText}\``} | ` +
+        `${offload === null || offload === undefined ? NOT_MEASURED : offload.reportedBy} |`,
+    );
+  }
+  p();
+
+  // A model with NO record is not listed here. "We did not measure it" and "we
+  // measured it and it fitted" are different statements and only the second one
+  // may be treated as a clean bill of health.
+  const spilled = environment.filter((summary) => {
+    const cpuBytes = summary.offload?.cpuBytes ?? null;
+    return cpuBytes !== null && cpuBytes > 0;
+  });
+  if (spilled.length > 0) {
+    p(
+      `**${spilled.length} model(s) did not fit entirely on the GPU:** ` +
+        `${spilled.map((s) => `\`${s.modelId}\` (${gib(s.offload?.cpuBytes ?? null)} in system RAM)`).join(', ')}. ` +
+        'Their latency figures are not comparable with the models that fitted. Either free VRAM and re-run ' +
+        'them, or state the spill next to every speed claim about them.',
+    );
+    p();
+  }
+}
+
+// ---------------------------------------------------------------------------
+
+/** Bytes to GiB, or the `not measured` label. Never 0 for an absent reading. */
+function gib(bytes: number | null): string {
+  return bytes === null ? NOT_MEASURED : (bytes / 2 ** 30).toFixed(2);
+}
+
+function percent(value: number | null): string {
+  return value === null ? NOT_MEASURED : `${value.toFixed(1)}%`;
+}
+
+/**
+ * `min / median / max`, or a single `not measured` for the whole cell.
+ *
+ * The cell collapses to one label rather than printing three of them, because
+ * `not measured / not measured / not measured` is noise that makes a table
+ * harder to read without saying anything extra.
+ */
+function spreadGiB(value: Spread): string {
+  if (value.n === 0) return NOT_MEASURED;
+  return `${gib(value.min)} / ${gib(value.median)} / ${gib(value.max)}`;
+}
+
+function spreadPercent(value: Spread): string {
+  if (value.n === 0) return NOT_MEASURED;
+  return `${percent(value.min)} / ${percent(value.median)} / ${percent(value.max)}`;
 }
 
 // ---------------------------------------------------------------------------
