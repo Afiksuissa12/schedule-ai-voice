@@ -377,7 +377,7 @@ possibly-undefined. Both were reported through the mailbox.
 of claim that stays true for exactly as long as something is watching. This is
 what watches.
 
-### 6.1 Four regression files, and what each one is for
+### 6.1 Five regression files, and what each one is for
 
 | File | The claim it holds to account |
 |---|---|
@@ -385,8 +385,9 @@ what watches.
 | `tests/scheduling/localeTimezoneBoundaries.test.ts` | **A day word is counted on the contact's calendar, never on UTC's**, at five instants where the two disagree (Asia/Jerusalem, America/New_York, Pacific/Auckland, Pacific/Honolulu) with one agreeing control; and the **DST gap and autumn repeat in Israel *and* the United States**, plus Pacific/Auckland's southern-hemisphere pair and Pacific/Honolulu's absence of one. Reuses `dst.test.ts`'s idioms, and re-derives every transition date from Luxon so the header table cannot become a lie. |
 | `tests/scheduling/localeDateAndTime.test.ts` | **A date without a time is not a slot** — 9 day forms × 3 zones × both languages, refused with the same reason on both sides; and **a date with a time is a slot**, the same slot, for 4 different ways of naming a time. |
 | `tests/scheduling/localeRefusalBreadth.test.ts` | **The fail-closed rule names no alphabet.** 13 scripts — Arabic, Cyrillic, French, Han, Hangul, Greek, Thai, Devanagari, Georgian, Ethiopic, Armenian, an invented Latin word, an emoji — each refused with the leftover quoted in the reason *and* recorded as data in the receipt. Plus the **cross-locale ambiguity** rule across all seven kinds of disagreement it distinguishes, each with an agreement control. |
+| `tests/scheduling/localeLexicon.test.ts` | **Adding a locale needs no resolver edit.** A third locale that exists nowhere in `src/` — `zz`, with an entirely invented vocabulary, asserted to share no form with `en` or `he` — is registered at runtime through `ParseNaturalLanguageOptions.lexicons`, and every rule of the grammar is then driven in it: day anchors, weekdays with an **AFTER**-positioned modifier, day parts, an implies-today day part, named times, attached and detached clock prefixes, a clock suffix, meridiems, offsets with a softener, a one-word fixed duration, carriers, vagueness markers, period tokens. The receipt is asserted to credit `zz` by name for each. The fail-closed and am/pm rules are asserted to apply to it unchanged, and `en`/`he` to be unaffected by its presence. Dropping the synthetic locale fails 23 of the file's 33 assertions, which is what keeps it from being a test that passes by understanding nothing. |
 
-Every refusal in the last file is held to the same three statements: it refuses
+Every refusal in `localeRefusalBreadth.test.ts` is held to the same three statements: it refuses
 with `INVALID_FORMAT`, the reason NAMES the token, and it never becomes "the
 contact meant today". The last of those is the one that matters — a refusal
 nobody can act on is a nuisance, a wrong day is a customer on the phone at the

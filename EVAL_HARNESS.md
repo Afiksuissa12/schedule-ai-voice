@@ -19,13 +19,26 @@ default import graph reaches `src/eval/`.
 | How it runs | `npm test`, `npm run qa:sweep` | `npm run eval:run`, explicitly |
 | Network | Zero outbound attempts, asserted | Talks to Ollama on the host |
 
-**Layer A was not touched.** `ScriptedLlmProvider` is unchanged, no LLM call was added to anything the
-test suite or the sweep executes, and the numbers are the same as before this work:
+**Layer A was not touched *by this harness*.** `ScriptedLlmProvider` is unchanged and no LLM call was
+added to anything the test suite or the sweep executes. When this document was written, adding Layer B
+left Layer A at the numbers it already had:
 
 ```
 npm test          500 passed | 2 skipped
 npm run qa:sweep  601 scenarios, 0 violations, 0 network attempts
 ```
+
+Those two lines are a record of *that* comparison and are **not** the current totals. Layer A has grown
+since, for reasons that have nothing to do with this harness — the Mission 2B scheduling work added
+locale regression files and three invariants. On this branch:
+
+```
+npm test          1017 passed | 2 skipped  (49 files passed, 1 skipped)
+npm run qa:sweep  823 scenarios, 0 violations, 0 network attempts
+```
+
+The invariant that matters here is the one that has not moved: **0 network attempts**, with the
+benchmark in the same source tree.
 
 The separation is enforced structurally rather than by convention. `tests/invariants/networkTrap.ts`
 asserts zero outbound attempts across the whole sweep, and it still passes with the benchmark sitting
@@ -48,13 +61,18 @@ npm run eval:run        # THE BENCHMARK. Hours. Resumable.
 npm run eval:report     # -> results.json, COMPARISON.md, transcripts/
 ```
 
+`eval:run` does both phases — generate, then judge — in one invocation, which is what the line above
+gets you. A **fair cross-model comparison** splits them, and the exact commands for that are § 9.2
+steps 8 and 11. There is no separate judge CLI: judging is phase 2 of this command, and re-running it
+over already-recorded runs is how you reach that phase on its own (§ 9.4).
+
 Useful flags on `eval:run`:
 
 | Flag | Effect |
 | --- | --- |
 | `--model <tag>` | Restrict to one model. Repeatable. |
 | `--scenario <id>` | Restrict to one scenario. Repeatable. |
-| `--force` | Re-run scenarios that already have a recorded result. |
+| `--force` | Re-run scenarios that already have a recorded result. **Never pass this to a judging pass** — see § 9.4. |
 | `--skip-judge` | Programmatic results only. Roughly 3x faster. |
 | `--baseline-context` | Run the Baseline V1 context path instead of the production one. |
 | `--num-ctx <n>` | Override the context window. |
@@ -577,9 +595,11 @@ For each of the five candidates, in any fixed order, do all of the following bef
    npm run eval:run -- --model <tag> --num-ctx 16384 --force --skip-judge
    ```
 
-   - `--force` is **required.** Without it the run is a *resume*: it skips every `(model, scenario)`
-     already on disk and silently reuses records made under the old conditions. A comparison that
-     mixes fresh and stale records is not a comparison.
+   - `--force` is **required** *here, in the generation pass.* Without it this run is a *resume*: it
+     skips every `(model, scenario)` already on disk and silently reuses records made under the old
+     conditions. A comparison that mixes fresh and stale records is not a comparison.
+   - `--force` is **forbidden** in the judging pass at step 11, for the same reason it is required
+     here — it regenerates. Both rules are the one rule "measure once, under recorded conditions".
    - `--skip-judge` keeps judging out of the generation phase — see § 9.4.
 9. **Stop the sampler** and confirm the record exists and validates. `npm run eval:report` will refuse
    to run at all if it is malformed, which is the check.
@@ -587,7 +607,29 @@ For each of the five candidates, in any fixed order, do all of the following bef
 
 **After all five have generated.**
 
-11. Run the judging phase (§ 9.4).
+11. **Run the judging phase, once per candidate — with `--force` OMITTED.** This is the one step in the
+    whole protocol where `--force` must not be passed, and passing it destroys the sweep:
+
+    ```bash
+    npm run eval:run -- --model <tag> --num-ctx 16384     # no --force, no --skip-judge
+    ```
+
+    - `EVAL_OUT_DIR` must **still be exported**, exactly as at step 8. In a new shell it is not, and the
+      pass would judge whatever is in the default directory while leaving this sweep unjudged.
+    - **Why no `--force`.** Without it, the run *skips* every scenario already recorded and judges the
+      ones that carry no verdict yet — which, after step 8, is all 21 of them. **With** `--force` it
+      re-generates that candidate's 21 scenarios instead, throwing away the runs you just
+      measured under recorded conditions while the environment records (written at step 7, by a sampler
+      stopped at step 9, and not restartable retroactively) go on describing the discarded generation
+      pass. The result is a `COMPARISON.md` whose § 7 conditions belong to different runs than its § 6
+      latencies, with nothing saying so. That is § 9.1's failure mode, reached by being thorough.
+    - **Why no `--skip-judge`.** That flag is what *suppresses* judging; this pass is the judging.
+    - **Do not restart the sampler,** and do not unload between candidates here. Nothing this pass does
+      is measured: the judges' own latency is never reported, and the candidate's numbers were fixed at
+      step 8 and are only re-read. Both judges are themselves candidates (§ 9.4), so they are already on
+      the host from precondition 2 and nothing needs pulling.
+    - There is deliberately no judge-only CLI. Judging is phase 2 of `eval:run`, and a resumed run with
+      nothing left to generate *is* a judging pass. See § 9.4.
 12. `npm run eval:report` — with `EVAL_OUT_DIR` still exported — to write `results.json`,
     `COMPARISON.md` and the transcripts into the fresh directory.
 13. Read § 7 and § 8 of the generated `COMPARISON.md` **before** reading § 6. If either of them says a
@@ -695,7 +737,37 @@ load-bearing:
 Run the five generation passes with `--skip-judge`, then judge afterwards, in a second pass over the
 already-recorded runs.
 
-Two reasons, and the second is the one that actually forces it:
+**The command, in full.** Once per candidate, after all five have generated:
+
+```bash
+npm run eval:run -- --model <tag> --num-ctx 16384     # no --force, no --skip-judge
+```
+
+`--num-ctx` is repeated only so the console header does not misreport the window; judging re-reads
+recorded runs and does not re-generate at either width.
+
+**The flags are the whole point, so they are spelled out.**
+
+| Flag | In this pass | Why |
+| --- | --- | --- |
+| `--force` | **NEVER** | It is what makes the run regenerate. With it, all 21 scenarios of the candidate are re-run from scratch and the measured records — the ones the step-7 sampler described — are overwritten by a pass nobody sampled. This is the one step of § 9.2 where the step-8 rule is inverted |
+| `--skip-judge` | **NEVER** | It suppresses exactly the phase this pass exists to run |
+| `--model` | Yes, one per invocation | Mirrors step 8, so a run can be stopped and resumed one candidate at a time. Omitting it judges all five in one invocation and is equally correct — the loop is per judge model within a candidate either way, so each judge still loads once per candidate rather than once per scenario |
+
+**Why a plain resume IS the judging pass, and why there is no separate CLI for it.** A resume skips
+every `(model, scenario)` already on disk — and `runModel` recognises the case this creates: a record
+that has turns but **no verdicts** is a run interrupted between the two phases, so its scenario id goes
+into the judging queue even though nothing was generated for it (`src/eval/runner/runModel.ts`, the
+`hasRun` branch). After step 8 that describes *every* record, so a resume generates nothing, judges
+everything, and touches no latency number. A judge-only entry point would be a second spelling of the
+same code path with its own way of going stale.
+
+**How to tell it worked.** Every scenario logs `already recorded, skipping` in phase 1 — that line is
+the confirmation, not a warning — and the per-model summary reads `0 run, 21 skipped`. A summary
+reporting anything other than `0 run` means `--force` was passed and the generation pass was discarded;
+stop, and treat the sweep as void per § 9.6.
+
+Two reasons the phases are separated, and the second is the one that actually forces it:
 
 1. **The judges are themselves 7–8B models** (§ 7). Judging inline means loading a judge between
    candidate scenarios, evicting the candidate from VRAM, and reloading it — so the candidate's
@@ -728,11 +800,19 @@ the cross-model ranking — the per-model results may still be useful on their o
   records and says so.
 - **The corpus or rubric version changed mid-sweep.** Different scenarios or different weights mean
   the scores are not on one scale. Both are recorded on every run for exactly this check.
-- **Any model was resumed rather than re-run.** Without `--force`, records made under the old
-  conditions are silently reused.
+- **Any model was resumed rather than re-run** *in the generation pass* (step 8). Without `--force`
+  there, records made under the old conditions are silently reused. This does **not** apply to the
+  judging pass at step 11, which is *required* to be a resume: it must skip every recorded scenario, and
+  passing `--force` to it is its own entry on this list — see the next one.
+- **`--force` was passed to the judging pass**, re-generating the runs instead of judging them. The
+  generated text and the latencies then come from a pass the step-7 sampler never watched, while § 7
+  still reports the conditions of the discarded one. § 9.4 says how to check: the summary must read
+  `0 run`.
 - **Models were run concurrently**, or a model was not unloaded before the next one started. The
   second model's weights may have been pushed into system RAM by the first.
-- **Judging ran inline** with generation (§ 9.4).
+- **Judging ran inline** with generation — i.e. step 8 was run without `--skip-judge`, so judges were
+  evicting the candidate while its latency was being measured (§ 9.4). Step 11 also omits
+  `--skip-judge`, and that is not this: by then there is nothing left to generate.
 - **A model spilled into system RAM.** `COMPARISON.md` § 8 reports this per model. Either free VRAM
   and re-run it, or state the spill next to every speed claim about it.
 - **Conditions were not recorded at all.** `not measured` for a model means its § 6 row is
