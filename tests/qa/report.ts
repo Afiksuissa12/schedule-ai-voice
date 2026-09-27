@@ -85,6 +85,34 @@ export const KNOWN_COVERAGE_GAPS: readonly string[] = [
     'call including read-only ones - but it says nothing about REFUSED calls. That a refusal NAMES the ' +
     'token it could not account for is asserted in tests/scheduling/localeRefusalBreadth.test.ts, across ' +
     'thirteen scripts, rather than across this matrix.',
+  'INV-18 re-derives SUPPORT independently - from rows read back through the repositories and from the ' +
+    "turn's own ToolOutcome values, with Luxon doing the timezone arithmetic - but it reuses the claim " +
+    'gate\'s own DETECTOR to find the claims in the first place. That half is therefore NOT an independent ' +
+    'measurement, and it cannot be: knowing that נקבעה asserts a completed booking needs a Hebrew lexicon, ' +
+    'and writing a second one inside the harness would be the reimplementation this design forbids (the same ' +
+    'argument INV-16 makes). The consequence is precise: a bug in buildActionLedger or verifyClaims is ' +
+    'caught here, and a bug in the DETECTOR is not - it would make INV-18 quietly find fewer claims. That ' +
+    'gap is closed by tests/claimGate/claimGateCorpus.ts, a corpus with the answers written down in which ' +
+    'every detector rule must fire and every known-good sample must stay clean.',
+  'BOUNDED DELIBERATELY: family M crosses its claim texts with FOUR zones (America/New_York, Europe/London, ' +
+    'Asia/Jerusalem, Asia/Kolkata) at ONE `now` instant, under ONE policy and one free diary. Australia/Sydney ' +
+    'is deliberately excluded rather than overlooked: at n01-midweek Sydney is already on Thursday, so ' +
+    '`tomorrow at 2pm` there is FRIDAY and every spec that says "Thursday" would become a genuine wrong-day ' +
+    'claim - crossing it in would test a different thing and report it as this one. The consequence: the ' +
+    'claim texts are not crossed with DST edges, with a busy diary, with a restricted tool allowlist, or ' +
+    'with a southern-hemisphere offset. What varies across family M is only WHAT THE AGENT SAID, which is ' +
+    'what makes a failure there localise to the sentence rather than to the scheduling.',
+  'INV-18 says nothing about a turn whose text the gate never saw, because no such path exists to test: ' +
+    'AgentTurnService.releaseText is the only route from completion.assistantText to appendAgentText. What ' +
+    'INV-18 DOES assert is that every message handleTurn returned corresponds to a release the gate ' +
+    'approved, which is the observable form of the same claim. A hand-wired AgentTurnService constructed ' +
+    'with no gate would release text ungated; that constructor seam is test-only, buildAgentRuntime never ' +
+    'takes it, and INV-18 treats `claimGate.enabled === false` as a VIOLATION rather than as inapplicable ' +
+    'so that it cannot be reached silently.',
+  'The claim gate is swept against ScriptedLlmProvider, so family M proves what the gate does with a given ' +
+    'sentence - not how often a REAL model produces one. The rate at which a real model asserts something ' +
+    'unsupported is a benchmark question, and AgentTurnResult.claimGate.releases[].attempts[0] is the field ' +
+    'that answers it; this sweep deliberately does not call a model at all.',
   'The Hebrew natural-language path cannot name a local time between 01:00 and 03:00, which is where ' +
     'every ordinary DST transition sits: Hebrew has no am/pm and no declared day part covers 02:00, so a ' +
     'digit hour of 1-11 is refused first. The DST gap and repeat classes are therefore driven through ' +
@@ -132,6 +160,97 @@ export function errorCodeDistribution(
   return [...counts.entries()]
     .map(([code, count]) => ({ code, count }))
     .sort((a, b) => b.count - a.count || a.code.localeCompare(b.code));
+}
+
+/**
+ * WHAT THE AGENT WAS ALLOWED TO SAY, as numbers.
+ *
+ * INV-18 is applicable to almost every scenario in the corpus, because almost
+ * every scenario releases text. That breadth is the point of an invariant, and it
+ * is also how an invariant can look busy while proving nothing: families A-L all
+ * release the same two sentences, and neither asserts anything material, so
+ * INV-18 could report 1,700 green checks without ever having examined a claim.
+ *
+ * So the honest figure is not "checks passed", it is HOW MANY RELEASES CARRIED A
+ * MATERIAL CLAIM AT ALL. That is `releasesWithAClaim` below, and
+ * `sweep.test.ts` asserts a floor on it. Reporting the totals without it would be
+ * exactly the "silent truncation that reads as full coverage" this renderer
+ * exists to refuse.
+ */
+export interface ClaimGateSummary {
+  readonly scenariosWithAGate: number;
+  readonly scenariosWithoutAGate: number;
+  readonly releases: number;
+  readonly releasesWithAClaim: number;
+  readonly releasesWithheld: number;
+  /** The model's RAW behaviour: attempt 1 carried an unsupported claim. */
+  readonly rawModelAttemptsUnsupported: number;
+  /** Claims that got past the gate on the attempt it released. Must be 0. */
+  readonly leakedClaims: number;
+  readonly regenerationsRequested: number;
+  readonly byOutcome: readonly { readonly outcome: string; readonly count: number }[];
+  readonly byUnsupportedReason: readonly { readonly reason: string; readonly count: number }[];
+}
+
+export function claimGateSummary(observations: readonly ScenarioObservation[]): ClaimGateSummary {
+  const outcomes = new Map<string, number>();
+  const reasons = new Map<string, number>();
+  let scenariosWithAGate = 0;
+  let scenariosWithoutAGate = 0;
+  let releases = 0;
+  let releasesWithAClaim = 0;
+  let releasesWithheld = 0;
+  let rawModelAttemptsUnsupported = 0;
+  let leakedClaims = 0;
+  let regenerationsRequested = 0;
+
+  for (const observation of observations) {
+    if (observation.claimGate.enabled) scenariosWithAGate += 1;
+    else scenariosWithoutAGate += 1;
+
+    for (const release of observation.claimGate.releases) {
+      releases += 1;
+      outcomes.set(release.outcome, (outcomes.get(release.outcome) ?? 0) + 1);
+      if (release.releasedText === null) releasesWithheld += 1;
+
+      // A release "carried a claim" when the gate had something to verify -
+      // which is exactly the case where attempt 1 produced either a supported or
+      // an unsupported claim.
+      const first = release.attempts[0];
+      if (first !== undefined && (first.supportedClaimCount > 0 || first.unsupportedClaims.length > 0)) {
+        releasesWithAClaim += 1;
+      }
+      if (first !== undefined && first.unsupportedClaims.length > 0) rawModelAttemptsUnsupported += 1;
+
+      regenerationsRequested += Math.max(0, release.attempts.length - 1);
+
+      for (const attempt of release.attempts) {
+        for (const claim of attempt.unsupportedClaims) {
+          reasons.set(claim.reason, (reasons.get(claim.reason) ?? 0) + 1);
+        }
+        if (release.releasedText !== null && attempt.text === release.releasedText) {
+          leakedClaims += attempt.unsupportedClaims.length;
+        }
+      }
+    }
+  }
+
+  return {
+    scenariosWithAGate,
+    scenariosWithoutAGate,
+    releases,
+    releasesWithAClaim,
+    releasesWithheld,
+    rawModelAttemptsUnsupported,
+    leakedClaims,
+    regenerationsRequested,
+    byOutcome: [...outcomes.entries()]
+      .map(([outcome, count]) => ({ outcome, count }))
+      .sort((a, b) => b.count - a.count || a.outcome.localeCompare(b.outcome)),
+    byUnsupportedReason: [...reasons.entries()]
+      .map(([reason, count]) => ({ reason, count }))
+      .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason)),
+  };
 }
 
 export function outcomeDistribution(
@@ -274,6 +393,56 @@ export function renderReport(sweep: SweepResult, options: RenderOptions = {}): s
   }
   lines.push('');
 
+  // ---- INV-18 ------------------------------------------------------------
+  lines.push('-'.repeat(78));
+  lines.push('INV-18  WHAT THE AGENT WAS ALLOWED TO SAY');
+  lines.push('-'.repeat(78));
+  lines.push('');
+  const gate = claimGateSummary(sweep.observations);
+  lines.push(`  Scenarios with a claim gate wired   : ${gate.scenariosWithAGate}`);
+  if (gate.scenariosWithoutAGate > 0) {
+    lines.push(
+      `  !! WITHOUT a gate                   : ${gate.scenariosWithoutAGate}  <- every one of these is an ` +
+        'INV-18 VIOLATION; buildAgentRuntime offers no way to disable the gate',
+    );
+  } else {
+    lines.push('  Scenarios without a gate            : 0  (buildAgentRuntime offers no way to disable it)');
+  }
+  lines.push(`  Pieces of text released             : ${gate.releases}`);
+  lines.push(
+    `  ...of which asserted something      : ${gate.releasesWithAClaim}` +
+      (gate.releasesWithAClaim === 0
+        ? '   <- VACUOUS: INV-18 never examined a claim. A corpus in which nothing is'
+        : ''),
+  );
+  if (gate.releasesWithAClaim === 0) {
+    lines.push('     ever asserted cannot prove the gate has teeth. Check that family M is in the corpus.');
+  }
+  lines.push(`  Releases WITHHELD (nothing said)    : ${gate.releasesWithheld}`);
+  lines.push(`  Raw model attempts unsupported      : ${gate.rawModelAttemptsUnsupported}`);
+  lines.push(`  Regeneration attempts consumed      : ${gate.regenerationsRequested}`);
+  lines.push(
+    `  CLAIMS THAT LEAKED PAST THE GATE    : ${gate.leakedClaims}` +
+      (gate.leakedClaims === 0 ? '   (must be 0)' : '   <- MUST BE 0. A customer was told something false.'),
+  );
+  lines.push('');
+  lines.push('  gate outcome');
+  for (const row of gate.byOutcome) {
+    lines.push('  ' + bar(row.outcome, row.count, Math.max(gate.releases, 1)));
+  }
+  lines.push('');
+  if (gate.byUnsupportedReason.length === 0) {
+    lines.push('  No claim was ever rejected, so no rejection reason has been seen to work.');
+    lines.push('  tests/claimGate/claimGateCorpus.ts is the corpus that proves each one individually.');
+  } else {
+    lines.push('  why a claim was rejected (across every attempt, released or not)');
+    const rejected = gate.byUnsupportedReason.reduce((sum, row) => sum + row.count, 0);
+    for (const row of gate.byUnsupportedReason) {
+      lines.push('  ' + bar(row.reason, row.count, Math.max(rejected, 1)));
+    }
+  }
+  lines.push('');
+
   // ---- outcomes ----------------------------------------------------------
   lines.push('-'.repeat(78));
   lines.push('OUTCOME DISTRIBUTION');
@@ -384,6 +553,7 @@ export function renderJson(sweep: SweepResult, options: RenderOptions = {}): str
       violations: sweep.violations,
       networkAttempts: sweep.networkAttempts.map((attempt) => ({ via: attempt.via, target: attempt.target })),
       invariants: summarizeInvariants(sweep.results),
+      claimGate: claimGateSummary(sweep.observations),
       outcomes: outcomeDistribution(sweep.observations),
       errorCodes: errorCodeDistribution(sweep.observations),
       families: familyTable(sweep.scenarios, sweep.observations),
