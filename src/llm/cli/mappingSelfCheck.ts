@@ -25,9 +25,18 @@ import {
   toOllamaMessage,
   toOllamaMessages,
   toOllamaTool,
+  unwrapToolNameParametersWrapper,
 } from '../ollama/mapping.js';
 import { NdjsonLineAssembler } from '../ollama/ndjson.js';
 import {
+  AYA_RECORDED_ASSISTANT_TEXTS,
+  AYA_RECORDED_TOOL_CALLS,
+  FIXTURE_AYA_FENCED_DIRECTLY_ANSWER,
+  FIXTURE_AYA_NATIVE_NESTED_WRAPPED_CALL,
+  FIXTURE_AYA_NATIVE_WRAPPED_CALL,
+  FIXTURE_AYA_NATIVE_WRAPPED_CALL_TOOL_NAME_ECHOED,
+  FIXTURE_AYA_PROSE_ABOUT_A_TOOL_CALL,
+  FIXTURE_AYA_UNFENCED_ACTION_LIST,
   FIXTURE_NATIVE_TOOL_CALL,
   FIXTURE_NATIVE_TOOL_CALL_MISTRAL,
   FIXTURE_PROSE_MENTIONING_A_TOOL,
@@ -495,6 +504,170 @@ main(async () => {
     checks.ok(
       'a resident 7B Q4_K_M at num_ctx 4096 fits the 7.5 GB budget',
       (ps.models?.[0]?.size_vram ?? 0) < 7.5 * 1024 ** 3,
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  heading('13. MISSION 2D: aya-expanse:8b double-wraps its arguments');
+  {
+    detail('evidence', 'eval-output-fair-20260927/transcripts/aya-expanse_8b/ (21 transcripts, 44 tool calls)');
+    detail('rule', 'unwrapToolNameParametersWrapper - LOCAL_PROVIDER.md states every precondition');
+
+    // ---- the defect, and the fix, on a real recorded call -----------------
+    const wrapped = mapFixture(FIXTURE_AYA_NATIVE_WRAPPED_CALL);
+    checks.equal('the wrapper is removed and nothing inside it is touched', wrapped.toolCalls, [
+      {
+        toolCallId: 'call_aya00001',
+        toolName: 'schedule_meeting',
+        argumentsJson:
+          '{"contact_id":"cmujjkcy800tcr2bsbg8jyxyt","description":"Follow-up on Northwind Dispatch",' +
+          '"duration_minutes":30,"timezone":"America/New_York","title":"Follow-up call - Northwind Dispatch",' +
+          '"when":"2026-03-04T10:30:00-05:00"}',
+        argumentsNormalization: {
+          rule: 'ollama-tool-name-parameters-wrapper',
+          rawArgumentsJson:
+            '{"tool_name":"schedule_meeting","parameters":{"contact_id":"cmujjkcy800tcr2bsbg8jyxyt",' +
+            '"description":"Follow-up on Northwind Dispatch","duration_minutes":30,' +
+            '"timezone":"America/New_York","title":"Follow-up call - Northwind Dispatch",' +
+            '"when":"2026-03-04T10:30:00-05:00"}}',
+        },
+      },
+    ]);
+    checks.ok(
+      'the pre-normalization bytes travel with the call, so the audit trail keeps the model’s own words',
+      wrapped.toolCalls[0]?.argumentsNormalization?.rawArgumentsJson.includes('"tool_name":"schedule_meeting"') === true,
+    );
+
+    // ---- a nested wrapper is refused rather than unwrapped twice ----------
+    const nested = mapFixture(FIXTURE_AYA_NATIVE_NESTED_WRAPPED_CALL);
+    checks.equal('a NESTED wrapper is left exactly as the model sent it', nested.toolCalls, [
+      {
+        toolCallId: 'call_aya00003',
+        toolName: 'get_contact_context',
+        argumentsJson:
+          '{"tool_name":"get_contact_context","parameters":{"parameters":' +
+          '{"contact_id":"cmujjfinc005rr2bsq5780le3","tool_name":"get_contact_context"},' +
+          '"tool_name":"get_contact_context"}}',
+      },
+    ]);
+    checks.ok(
+      'and carries no normalization provenance, because nothing was normalized',
+      nested.toolCalls[0]?.argumentsNormalization === undefined,
+    );
+
+    // ---- unwrapping is not forgiveness -----------------------------------
+    const echoed = mapFixture(FIXTURE_AYA_NATIVE_WRAPPED_CALL_TOOL_NAME_ECHOED);
+    checks.equal(
+      'the container goes; the tool_name the model echoed INSIDE its arguments stays, for .strict() to refuse',
+      echoed.toolCalls[0]?.argumentsJson,
+      '{"contact_id":"cmujjfinc005rr2bsq5780le3","tool_name":"get_contact_context"}',
+    );
+
+    // ---- the negative set, stated as code --------------------------------
+    const mustNotFire: ReadonlyArray<[string, string, string]> = [
+      ['a third key beside the pair', 'get_contact_context', '{"tool_name":"get_contact_context","parameters":{"contact_id":"c_1"},"note":"hi"}'],
+      ['only one of the two keys', 'get_contact_context', '{"parameters":{"contact_id":"c_1"}}'],
+      ['the wrapper names another tool', 'get_contact_context', '{"tool_name":"check_availability","parameters":{"contact_id":"c_1"}}'],
+      ['a leading space in the name', 'get_contact_context', '{"tool_name":" get_contact_context","parameters":{"contact_id":"c_1"}}'],
+      ['a different case in the name', 'get_contact_context', '{"tool_name":"GET_CONTACT_CONTEXT","parameters":{"contact_id":"c_1"}}'],
+      ['parameters is an array', 'get_contact_context', '{"tool_name":"get_contact_context","parameters":[{"contact_id":"c_1"}]}'],
+      ['parameters is a string', 'get_contact_context', '{"tool_name":"get_contact_context","parameters":"{\\"contact_id\\":\\"c_1\\"}"}'],
+      ['a nested wrapper', 'get_contact_context', '{"tool_name":"get_contact_context","parameters":{"tool_name":"get_contact_context","parameters":{"contact_id":"c_1"}}}'],
+      ['the OpenAI envelope', 'get_contact_context', '{"name":"get_contact_context","arguments":{"contact_id":"c_1"}}'],
+    ];
+    const fired = mustNotFire.filter(([, tool, args]) => unwrapToolNameParametersWrapper(tool, args) !== null);
+    checks.equal(
+      `none of the ${mustNotFire.length} ambiguous shapes is normalized`,
+      fired.map(([why]) => why),
+      [],
+    );
+
+    // ---- the whole recorded population, counted --------------------------
+    const replayable = AYA_RECORDED_TOOL_CALLS.filter((call) => call.truncatedByTheRenderer !== true);
+    const unwrapped = replayable.filter(
+      (call) => unwrapToolNameParametersWrapper(call.toolName, call.argumentsJson) !== null,
+    );
+    checks.equal('the recorded population is all 44 of aya’s calls', AYA_RECORDED_TOOL_CALLS.length, 44);
+    checks.equal(
+      '31 of the 42 fully-recorded calls unwrap; the other 11 were flat (8) or nested (3)',
+      unwrapped.length,
+      31,
+    );
+    checks.equal(
+      'and every unwrapped call is one that arrived natively',
+      unwrapped.filter((call) => call.arrival !== 'native').length,
+      0,
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  heading('14. MISSION 2D: the Cohere action list stops being spoken');
+  {
+    const fenced = mapFixture(FIXTURE_AYA_FENCED_DIRECTLY_ANSWER);
+    checks.equal('`directly-answer` proposes nothing - it is not one of the nine', fenced.toolCalls, []);
+    checks.equal('and is still counted and still explained', fenced.metrics?.toolCallHealth, {
+      native: 0,
+      recoveredFromText: 0,
+      malformed: 1,
+    });
+    checks.equal('the refusal says why', fenced.refusals, [
+      'names "directly-answer", which was not offered this turn',
+    ]);
+    checks.ok(
+      'but the JSON no longer reaches the contact',
+      fenced.assistantText !== null &&
+        !fenced.assistantText.includes('tool_name') &&
+        !fenced.assistantText.includes('```'),
+    );
+    checks.ok(
+      'and the Hebrew the model actually wrote survives, untouched',
+      fenced.assistantText?.includes('שלום! אני עוזר וירטואלי') === true,
+    );
+
+    const unfenced = mapFixture(FIXTURE_AYA_UNFENCED_ACTION_LIST);
+    checks.equal('an UNFENCED action list is recovered rather than dropped in silence', unfenced.toolCalls, [
+      {
+        toolCallId: 'minted-0',
+        toolName: 'get_contact_context',
+        argumentsJson: '{"contact_id":"cmujjmzq4012cr2bse0sk818m"}',
+      },
+    ]);
+    checks.equal('counted as a recovery', unfenced.metrics?.toolCallHealth, {
+      native: 0,
+      recoveredFromText: 1,
+      malformed: 0,
+    });
+    checks.equal(
+      'all that is left of the turn is the model’s own label, which is a word and not ours to remove',
+      unfenced.assistantText,
+      'Action:',
+    );
+
+    const prose = mapFixture(FIXTURE_AYA_PROSE_ABOUT_A_TOOL_CALL);
+    checks.equal('prose about a tool call still proposes nothing', prose.toolCalls, []);
+    checks.equal('and is still not smeared as malformed', prose.metrics?.toolCallHealth, {
+      native: 0,
+      recoveredFromText: 0,
+      malformed: 0,
+    });
+    checks.ok(
+      'and is returned with the model’s JSON example intact - it was explaining, not calling',
+      prose.assistantText?.includes('"tool_name": "schedule_meeting"') === true,
+    );
+
+    // Every recorded action list, in both line-ending forms this repo produces.
+    const lists = AYA_RECORDED_ASSISTANT_TEXTS.filter((entry) => entry.shape === 'cohere-action-list');
+    const leaked: string[] = [];
+    for (const entry of lists) {
+      for (const text of [entry.assistantText, entry.assistantText.replace(/\n/g, '\r\n')]) {
+        const remaining = recoverToolCallsFromText(text, THE_NINE, mintId).remainingText ?? '';
+        if (remaining.includes('tool_name')) leaked.push(`${entry.scenario} turn ${entry.turn}`);
+      }
+    }
+    checks.equal(`all ${lists.length} recorded action lists, LF and CRLF, leak nothing`, leaked, []);
+    checks.ok(
+      'the reconstructions match the character counts the transcripts recorded',
+      AYA_RECORDED_ASSISTANT_TEXTS.every((entry) => entry.assistantText.length === entry.recordedChars),
     );
   }
 

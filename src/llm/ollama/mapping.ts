@@ -16,6 +16,16 @@
  * of what the model produced, because downstream it is evidence: it is stored
  * on `ConversationTurn.rawPayloadJson` and read by an auditor asking what the
  * model actually said.
+ *
+ * THE ONE DECLARED EXCEPTION, AND WHY IT IS STILL NOT INTERPRETATION
+ * ---------------------------------------------------------------------------
+ * `unwrapToolNameParametersWrapper` below removes ONE container - never a value,
+ * never a key inside the arguments, never a type. It fires only on a shape that
+ * has exactly one possible reading, it records the bytes it replaced on
+ * `ToolCallRequest.argumentsNormalization`, and what comes out of it faces the
+ * same strict Zod schema and the same nine dispatch checks as anything else.
+ * `docs/MISSION_2D_AYA_ROOT_CAUSE.md` is the evidence it was written from and
+ * `LOCAL_PROVIDER.md` states the rule for an operator.
  */
 import type {
   CompleteTurnResult,
@@ -24,6 +34,7 @@ import type {
   LlmToolCallHealth,
   LlmToolDefinition,
   LlmTurnMetrics,
+  ToolCallArgumentsNormalization,
   ToolCallRequest,
 } from '../../ports/llm.js';
 import { ConfigurationError } from '../../shared/errors.js';
@@ -162,6 +173,12 @@ export type ToolCallIdMinter = (index: number) => string;
  *
  * A call with no usable name is DROPPED, not repaired. Naming a tool is the
  * one thing this layer can never do on the model's behalf.
+ *
+ * This is also where the ONE declared normalization runs - see
+ * `unwrapToolNameParametersWrapper`. It runs here and nowhere else, because
+ * here is the only place a wrapper can reach the dispatcher: the text fallback
+ * already reads `parameters` as one of its two accepted argument keys, so a
+ * wrapper written into TEXT arrives unwrapped without any new rule.
  */
 export function mapNativeToolCalls(
   raw: ReadonlyArray<OllamaWireToolCall> | undefined,
@@ -174,13 +191,136 @@ export function mapNativeToolCalls(
     const name = call.function?.name;
     if (typeof name !== 'string' || name.trim().length === 0) continue;
 
+    const argumentsJson = stringifyArguments(call.function?.arguments);
+    const normalization = unwrapToolNameParametersWrapper(name, argumentsJson);
+
     calls.push({
       toolCallId: nonEmpty(call.id) ?? mintId(index),
       toolName: name,
-      argumentsJson: stringifyArguments(call.function?.arguments),
+      argumentsJson: normalization?.argumentsJson ?? argumentsJson,
+      ...(normalization ? { argumentsNormalization: normalization.provenance } : {}),
     });
   }
   return calls;
+}
+
+// ---------------------------------------------------------------------------
+// The one declared normalization: an outer object that names the tool.
+// ---------------------------------------------------------------------------
+
+/** The two keys, and ONLY these two, that constitute a recognised wrapper. */
+const WRAPPER_TOOL_NAME_KEY = 'tool_name';
+const WRAPPER_PARAMETERS_KEY = 'parameters';
+
+/** Stable id recorded on the port and in the audit trail when the rule fires. */
+export const TOOL_NAME_PARAMETERS_WRAPPER_RULE = 'ollama-tool-name-parameters-wrapper' as const;
+
+/**
+ * THE WRAPPER RULE, STATED IN FULL SO IT CAN BE ARGUED WITH.
+ *
+ * WHAT IT IS FOR
+ * ---------------------------------------------------------------------------
+ * `aya-expanse:8b` is trained on Cohere's tool protocol, in which a call is
+ * written as `{"tool_name": "<tool>", "parameters": {...}}`. Served through
+ * Ollama 0.34.3 the name half of that reached `tool_calls[].function.name`
+ * correctly and the arguments half did not: `function.arguments` came back as
+ * the WHOLE Cohere object, wrapper and all. Every one of its 36 native calls in
+ * the committed fair benchmark arrived that way, and the dispatcher refused
+ * every one with SCHEMA_VIOLATION naming `tool_name` and `parameters` as
+ * unrecognised keys and every required field as missing. Counts, per-call
+ * outcomes and the counterfactual are in `docs/MISSION_2D_AYA_ROOT_CAUSE.md`.
+ *
+ * The container is wrong. Nothing inside it is being judged.
+ *
+ * EVERY PRECONDITION, AND WHY EACH ONE IS THERE
+ * ---------------------------------------------------------------------------
+ * All five must hold. Any one failing means the arguments are passed through
+ * completely untouched and the call is refused or accepted downstream exactly
+ * as it would have been before this function existed.
+ *
+ *   1. The arguments string parses to a PLAIN JSON OBJECT. An array, a string,
+ *      a number or `null` is not a wrapper and is none of this rule's business.
+ *
+ *   2. Its own key set is EXACTLY {`tool_name`, `parameters`} - both present,
+ *      nothing else present. Key ORDER is irrelevant (the model emitted both
+ *      orders). Two keys and only two is what makes the shape unambiguous:
+ *      a wrapper carries no arguments of its own, so a third key means this is
+ *      an arguments object that merely happens to contain `tool_name`, and
+ *      unwrapping it would be a guess.
+ *
+ *      Note what is deliberately NOT accepted: `{name, arguments}`. That is the
+ *      OpenAI envelope, Ollama hands it to us already unwrapped, and a tool
+ *      whose own schema declared fields called `name` and `arguments` would be
+ *      silently mangled by a rule that recognised it. `tool_name` +
+ *      `parameters` is Cohere's pair and no tool in `TOOL_DEFINITIONS` declares
+ *      either name.
+ *
+ *   3. `tool_name` is a string EXACTLY equal to the tool this call already
+ *      names - no trimming, no case folding, no aliasing. A mismatch means the
+ *      model disagreed with itself about which tool it was calling, and
+ *      choosing a winner is a decision this layer has no authority to make.
+ *
+ *   4. `parameters` is a PLAIN JSON OBJECT. A string that happens to parse to
+ *      one is NOT accepted here, unlike in the text fallback: a native call's
+ *      arguments were already parsed by Ollama, so a string value at this depth
+ *      is the model having double-encoded something, and un-double-encoding is
+ *      repair rather than translation.
+ *
+ *   5. The `parameters` object is NOT ITSELF a wrapper by tests 2-4. A nested
+ *      wrapper - and the evidence has three of them - means the model produced
+ *      the shape more than once and there is no single reading of how many
+ *      layers were meant. Those stay refused, which is the correct and audited
+ *      outcome.
+ *
+ * WHAT IT DOES NOT DO
+ * ---------------------------------------------------------------------------
+ * It does not touch a single key or value inside `parameters`. It does not fix
+ * an enum, fill a required field, coerce a type, or drop an unrecognised key.
+ * On the committed evidence, of the 34 wrapped calls whose arguments the
+ * transcript recorded in full, 31 unwrap and 3 nested ones do not - and only 19
+ * of the 31 then pass strict Zod. The other 12 are separate model defects the
+ * wrapper was hiding (a free-text enum value, an omitted required field, an
+ * echoed `tool_name`), and they stay refused.
+ *
+ * Returns `null` when the rule does not fire, which means "change nothing".
+ */
+export function unwrapToolNameParametersWrapper(
+  toolName: string,
+  argumentsJson: string,
+): { readonly argumentsJson: string; readonly provenance: ToolCallArgumentsNormalization } | null {
+  const parsed = tryParseJson(argumentsJson);
+  if (parsed === PARSE_FAILED) return null;
+
+  const inner = wrapperPayload(parsed, toolName);
+  if (inner === null) return null;
+
+  // Precondition 5. A nested wrapper has no single reading, so nothing happens.
+  if (wrapperPayload(inner, toolName) !== null) return null;
+
+  return {
+    argumentsJson: JSON.stringify(inner),
+    provenance: { rule: TOOL_NAME_PARAMETERS_WRAPPER_RULE, rawArgumentsJson: argumentsJson },
+  };
+}
+
+/**
+ * Preconditions 1-4 in one place, so test 5 applies the identical test one
+ * level down rather than an approximation of it.
+ *
+ * Returns the `parameters` object when `value` is a wrapper for `toolName`, and
+ * `null` otherwise.
+ */
+function wrapperPayload(value: unknown, toolName: string): Record<string, unknown> | null {
+  if (!isPlainObject(value)) return null;
+
+  const keys = Object.keys(value);
+  if (keys.length !== 2) return null;
+  if (!keys.includes(WRAPPER_TOOL_NAME_KEY) || !keys.includes(WRAPPER_PARAMETERS_KEY)) return null;
+
+  if (value[WRAPPER_TOOL_NAME_KEY] !== toolName) return null;
+
+  const payload = value[WRAPPER_PARAMETERS_KEY];
+  return isPlainObject(payload) ? payload : null;
 }
 
 /**
@@ -257,6 +397,14 @@ export interface TextualToolCallRecovery {
  * counted as `malformed`, left in the assistant's text, and never converted.
  * The contact hears the model's words and nothing is proposed - which is the
  * safe failure, and a visible one.
+ *
+ * THE ONE EXCEPTION TO "LEFT IN THE ASSISTANT'S TEXT": AN ACTION LIST
+ * ---------------------------------------------------------------------------
+ * See `isActionList`. A span that is provably nothing but machine tool protocol
+ * is removed from the assistant text even when every call in it was refused,
+ * because the alternative is reading JSON down a phone line. The refusal itself
+ * is not softened: it is still counted in `malformed` and still explained in
+ * `refusals`.
  */
 export function recoverToolCallsFromText(
   text: string,
@@ -297,6 +445,9 @@ export function recoverToolCallsFromText(
     }
 
     const candidates = Array.isArray(parsed) ? parsed : [parsed];
+    // A span that is nothing but protocol carries no words, so removing it
+    // cannot remove anything the contact was meant to hear.
+    const protocolArtefact = isActionList(parsed);
     const accepted: ToolCallRequest[] = [];
     let spanRefused = false;
 
@@ -319,12 +470,13 @@ export function recoverToolCallsFromText(
 
     // A span is only removed from the text if EVERY tool-call-looking thing in
     // it was accepted. Leaving a refused call visible in the transcript is the
-    // point: the reader must be able to see what the model tried to do.
-    if (accepted.length > 0 && !spanRefused) {
-      toolCalls.push(...accepted);
+    // point: the reader must be able to see what the model tried to do - EXCEPT
+    // for an action list, which is machine protocol rather than something the
+    // model tried to say, and whose evidence lives in `malformed` and
+    // `refusals` instead.
+    toolCalls.push(...accepted);
+    if (protocolArtefact || (accepted.length > 0 && !spanRefused)) {
       consumed.push(span);
-    } else if (accepted.length > 0) {
-      toolCalls.push(...accepted);
     }
   }
 
@@ -396,7 +548,7 @@ function evaluateCandidate(candidate: unknown, offered: ReadonlySet<string>): Ca
 }
 
 /**
- * The four recognised span shapes, in priority order. The first that yields
+ * The five recognised span shapes, in priority order. The first that yields
  * anything wins, so a fenced block inside a whole-message JSON is never
  * double-counted.
  */
@@ -411,7 +563,88 @@ function findCandidateSpans(text: string): Span[] {
   if (marked.length > 0) return marked;
 
   const leading = leadingJsonSpan(text);
-  return leading ? [leading] : [];
+  if (leading) return [leading];
+
+  return actionListSpans(text);
+}
+
+/**
+ * IS THIS VALUE COHERE'S ACTION LIST, AND NOTHING ELSE?
+ *
+ * True only for a NON-EMPTY JSON ARRAY in which EVERY element is a plain object
+ * whose own key set is exactly {`tool_name`, `parameters`}, whose `tool_name` is
+ * a non-empty string, and whose `parameters` is a plain object.
+ *
+ * WHY THIS PARTICULAR TEST
+ * ---------------------------------------------------------------------------
+ * It is the shape `aya-expanse:8b` writes when its trained tool protocol does
+ * not reach the runtime's structured field - eleven turns of it in the committed
+ * fair benchmark, six fenced and five not. It matters because such a span is
+ * provably not speech: a sentence a contact could hear is not a JSON array of
+ * two-key objects, so the span can be removed from the spoken channel without
+ * any judgement about wording. Compare the shape this test deliberately does
+ * NOT match: `adversarial-guardrail` turn 1, where the same model wrote a
+ * single-backticked JSON OBJECT into a sentence explaining what the right format
+ * would be. That is prose about a tool call, it is not an array, it is not
+ * line-initial, and it stays exactly where the model put it.
+ *
+ * Note that `tool_name` is NOT required to be a tool that was offered. Whether
+ * it was offered decides whether the call is proposed or refused, and that is
+ * `evaluateCandidate`'s job. This test decides only whether the span is speech.
+ */
+function isActionList(value: unknown): boolean {
+  if (!Array.isArray(value) || value.length === 0) return false;
+  return value.every((element) => {
+    if (!isPlainObject(element)) return false;
+    const keys = Object.keys(element);
+    if (keys.length !== 2) return false;
+    if (!keys.includes(WRAPPER_TOOL_NAME_KEY) || !keys.includes(WRAPPER_PARAMETERS_KEY)) return false;
+    const name = element[WRAPPER_TOOL_NAME_KEY];
+    if (typeof name !== 'string' || name.trim().length === 0) return false;
+    return isPlainObject(element[WRAPPER_PARAMETERS_KEY]);
+  });
+}
+
+/** A `[` that opens a line, with only spaces or tabs before it. CRLF-tolerant. */
+const LINE_INITIAL_ARRAY_RE = /(?:^|\r?\n)[ \t]*(?=\[)/g;
+
+/**
+ * THE FIFTH SHAPE: an action list the model wrote on its own line, unfenced.
+ *
+ * WHY THIS IS NOT THE MID-PROSE BRACE HUNT THIS FILE FORBIDS
+ * ---------------------------------------------------------------------------
+ * The promise above is that braces are never hunted for mid-prose, because a
+ * model explaining a tool call is not calling one. This shape keeps that
+ * promise two ways at once: the value must OPEN A LINE, with nothing but
+ * horizontal whitespace before it, and it must be an action list by
+ * `isActionList` - so a JSON object mid-sentence, a JSON array of anything else,
+ * and an array of tool-call-ish objects carrying a third key are all still
+ * invisible here.
+ *
+ * It exists because without it five real tool calls in the committed evidence
+ * were dropped in silence AND their JSON was spoken to the contact, which is
+ * the worst of both outcomes. It is reached only when none of the four older
+ * shapes matched, so nothing that used to be recognised changes.
+ */
+function actionListSpans(text: string): Span[] {
+  const spans: Span[] = [];
+  let cursor = 0;
+
+  for (const match of text.matchAll(LINE_INITIAL_ARRAY_RE)) {
+    const start = match.index + match[0].length;
+    if (start < cursor) continue;
+
+    const balanced = balancedJsonFrom(text.slice(start));
+    if (balanced === null) continue;
+
+    const parsed = tryParseJson(balanced);
+    if (parsed === PARSE_FAILED || !isActionList(parsed)) continue;
+
+    spans.push({ start, end: start + balanced.length, json: balanced });
+    cursor = start + balanced.length;
+  }
+
+  return spans;
 }
 
 function wholeMessageSpan(text: string): Span | null {
