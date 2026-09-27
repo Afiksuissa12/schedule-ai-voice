@@ -102,6 +102,31 @@ export const HE_CLAIM_LEXICON: ClaimLexicon = {
     { forms: ['סגרנו', 'הכל מסודר', 'הכל סגור', 'זה סגור', 'מסודר', 'סידרתי', 'סידרנו'], family: 'ANY', mode: 'COMPLETED' },
   ],
 
+  // EMPTY, and that is the whole point of this file. The participle rule exists because
+  // English `booked` is ambiguous between a completion and an intention, so it cannot be
+  // a completion form on its own and every English form is therefore a defeatable
+  // FRAME. Hebrew has no such ambiguity: `נקבעה` IS the completion, it is already a
+  // `completionMarker` above, and it is one token - so there is nothing to disambiguate
+  // and nothing an adverb can get inside. Declaring participles here would add a second
+  // route to a claim Hebrew already detects directly, for no coverage and some risk.
+  //
+  // This is the same asymmetry the header argues, arriving a third time: English needs
+  // machinery that Hebrew's morphology provides for free.
+  completionParticiples: [],
+
+  // Objects ARE declared, and they are not for Hebrew's own use. The engine pools
+  // domain objects across every registered locale, so these are what let an ENGLISH
+  // participle pair with a Hebrew object: `הפגישה is now booked`, `קבעתי the meeting`
+  // and the rest of the code-switching the eval corpus actually contains. Definite and
+  // indefinite are both listed because the article is a ה- PREFIX in Hebrew and tokens
+  // are whole words.
+  domainObjects: [
+    { forms: ['פגישה', 'הפגישה', 'פגישות', 'הפגישות', 'מפגש', 'המפגש'], family: 'MEETING' },
+    { forms: ['שיחה', 'השיחה', 'שיחת', 'טלפון'], family: 'CALLBACK' },
+    { forms: ['אימייל', 'האימייל', 'מייל', 'הודעה', 'ההודעה', 'דוא"ל'], family: 'MESSAGE' },
+    { forms: ['יומן', 'היומן', 'תזכורת', 'התזכורת'], family: 'ANY' },
+  ],
+
   identifierMarkers: ['מספר אישור', 'קוד אישור', 'מספר הזמנה', 'מספר סידורי', 'מספר האישור', 'אסמכתא'],
 
   negators: ['לא', 'אין', 'אינה', 'איני', 'טרם', 'עדיין', 'בלי', 'ללא', 'אף'],
@@ -118,6 +143,48 @@ export const HE_CLAIM_LEXICON: ClaimLexicon = {
   // negation it belongs to (`לא X אלא Y`), so breaking the clause there would be
   // separating a negator from the thing it really negates.
   clauseBreakers: ['אבל', 'אך', 'אז', 'לכן', 'ולכן', 'כי'],
+
+  // The words that may not stand inside a completion frame. Hebrew needs far less
+  // of this than English does, and the reason is the reason this file exists at
+  // all: the Hebrew forms above are SINGLE WORDS, and a one-token form has no
+  // inside. Independent QA confirmed that directly - `הפגישה שלך כבר נקבעה` (with
+  // the adverb `כבר` inside it) was detected while every English frame with the same
+  // adverb inserted leaked, which is what localised that defect to English.
+  //
+  // So this list only guards the handful of multi-token forms - `אחזור אליך`,
+  // `תקבל שיחה`, `הכל מסודר`, `אשלח לך` - and it carries the modal and intention
+  // words that would turn one of those into a plan: "I can", "we can", "I need",
+  // "I want", "in order to", "let us".
+  //
+  // Hebrew's infinitive is a ל- PREFIX rather than a standing word, so there is no
+  // `to` to list here and no way to enumerate the infinitives; that is a stated
+  // shortfall of this list and not a claim of completeness. It costs precision only
+  // - `types.ts` explains why a missing blocker can never cost a leak.
+  frameBlockers: [
+    'יכול',
+    'יכולה',
+    'אוכל',
+    'נוכל',
+    'אפשר',
+    'צריך',
+    'צריכה',
+    'רוצה',
+    'מנסה',
+    'אנסה',
+    'ננסה',
+    'עומד',
+    'מתכוון',
+    'כדי',
+    'בוא',
+    'בואי',
+    'נתחיל',
+  ],
+
+  // Noun-phrase material: the accusative marker את and the standing possessives. The
+  // DEFINITE article is absent because in Hebrew it is a ה- prefix fused to the word
+  // it defines, so there is no token to list - which is the same reason
+  // `ordinalSuffixes` is empty here and `clauseBreakers` omits the ו- prefix.
+  frameDeterminers: ['את', 'של', 'שלי', 'שלך', 'שלו', 'שלה', 'שלנו', 'שלכם', 'אותו', 'אותה'],
 
   months: [
     { forms: ['ינואר'], month: 1 },

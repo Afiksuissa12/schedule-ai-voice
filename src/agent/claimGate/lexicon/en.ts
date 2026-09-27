@@ -17,6 +17,19 @@
  * that really does promise a callback before anything is booked, and that one is
  * a defect (`docs/MISSION_2D_CLAIM_GATE.md` names it).
  *
+ * THAT ARGUMENT IS UNCHANGED, AND IT MADE THE FRAMES BRITTLE UNTIL § 16
+ * ---------------------------------------------------------------------------
+ * Because every form here is a multi-token frame, and because the matcher only
+ * compared ADJACENT tokens, one word inside a frame used to defeat it completely:
+ * `Your meeting is booked for tomorrow at 3pm.` was caught and `Your meeting is NOW
+ * booked for tomorrow at 3pm.` was released to a real caller and persisted as a
+ * spoken agent turn. Hebrew was immune, because `נקבעה` is one word and has no
+ * inside - which is the diagnostic, not a coincidence. `../text.ts`
+ * (`FrameGapAllowance`) now lets a frame tolerate a bounded run of intervening
+ * tokens, and `frameBlockers` below is what keeps that from reaching the honest
+ * intention readings this section is about. The bare-participle exclusion is
+ * untouched by any of it: `Booked.` is still missed, still deliberately.
+ *
  * THE FIRST-PERSON PRETERITE IS A FRAME TOO, AND IT USED TO BE MISSING
  * ---------------------------------------------------------------------------
  * The first revision of this file carried only the perfect and the passive -
@@ -40,13 +53,21 @@
  * WHY THE FRAMES ARE GENERATED AND NOT TYPED OUT
  * ---------------------------------------------------------------------------
  * A model does not write `I booked`. It writes `I just booked`, `we've gone
- * ahead and booked`, `I already put you down`. The SUBJECT and the ADVERBIAL
- * vary independently of the VERB, so they are declared once each and crossed
- * (`firstPersonFrames` below) instead of being hand-listed as six hundred
- * strings that would drift apart at the first edit. The product contains a few
- * ungrammatical strings - `i gone ahead and booked` - which cost one array slot
- * each and match nothing; filtering them would mean encoding English morphology
- * in a data table, which is worse than carrying them.
+ * ahead and booked`, `I already put you down`. The SUBJECT varies independently of
+ * the VERB, so the two are declared once each and crossed (`firstPersonFrames`
+ * below) instead of being hand-listed as hundreds of strings that would drift apart
+ * at the first edit. The product contains a few ungrammatical strings -
+ * `i gone ahead and booked` - which cost one array slot each and match nothing;
+ * filtering them would mean encoding English morphology in a data table, which is
+ * worse than carrying them.
+ *
+ * THE ADVERBIAL IS NO LONGER ONE OF THE CROSSED AXES, AND THAT IS THE § 16 FIX.
+ * It used to be fused onto the subjects (`i just`, `i already`, `i've already`),
+ * which made the coverage exactly as wide as the eight spellings somebody typed and
+ * left every other adverb - and every PASSIVE frame, which no prefix list touches -
+ * open. It is now handled generally by the interruption rule above, so
+ * `FIRST_PERSON_PREFIXES` carries subjects only. Its own comment names what stayed
+ * and why.
  *
  * WHAT IS DELIBERATELY NOT HERE
  * ---------------------------------------------------------------------------
@@ -66,13 +87,35 @@
 import type { ClaimLexicon } from './types.js';
 
 /**
- * The subject-and-adverbial prefixes a first-person completion arrives behind.
+ * The SUBJECTS a first-person completion arrives behind.
  *
- * Hand-listed rather than crossed from a subject list and an adverbial list,
- * because the two do not combine freely: `i just`, `i've just` and `i have just`
- * are all real English and `i've went ahead and` is not. Sixteen wrong strings
- * are cheaper than one missing right one, but a list a reader can check is
- * cheaper still.
+ * THIS LIST USED TO CARRY THE ADVERBIAL TOO, AND THAT WAS THE MERGE BLOCKER
+ * ---------------------------------------------------------------------------
+ * It held eighteen entries, eight of which were a subject with an adverb already
+ * fused on: `i just`, `i've just`, `i have just`, `we just`, `i already`,
+ * `i've already`, `i have already`, `we already`. That is an enumeration of
+ * SPELLINGS, and its coverage was exactly the eight spellings somebody typed:
+ * `I already booked` was caught and `I now booked`, `I successfully booked`,
+ * `I have now booked` and every other adverb were released - to real callers, and
+ * persisted as spoken agent turns with nothing in the ledger. Measured on the pure
+ * detector, 8 adverbs crossed with 7 frames missed 53 of 56 sentences.
+ *
+ * The adverbial is now handled GENERALLY, one layer down: a completion frame
+ * tolerates a bounded run of skipped tokens (`../text.ts`, `FrameGapAllowance`),
+ * so `i booked` matches `I now booked`, `I finally booked` and `I, at last,
+ * booked` without any of them being written here. Every deleted entry is still
+ * detected - `tests/claimGate/claimGateCorpus.ts` asserts `I just booked it.` and
+ * the rest by name - and an adverb nobody anticipated is detected too, which is
+ * the whole difference.
+ *
+ * WHAT IS STILL HAND-LISTED, AND WHY IT HAS TO BE
+ * ---------------------------------------------------------------------------
+ * `went ahead and` is not an adverb, it is a clause. The `and` in it is an
+ * English `clauseBreaker`, and the engine refuses to skip a clause joiner inside a
+ * frame - deliberately, because `I have checked AND confirmed your details`
+ * asserts nothing and must not become `i have confirmed`. So the four
+ * `gone ahead and` spellings stay written out: they are the case where the general
+ * rule correctly declines, not the case it was hiding.
  */
 const FIRST_PERSON_PREFIXES: readonly string[] = [
   'i',
@@ -81,14 +124,6 @@ const FIRST_PERSON_PREFIXES: readonly string[] = [
   'i have',
   "we've",
   'we have',
-  'i just',
-  "i've just",
-  'i have just',
-  'we just',
-  'i already',
-  "i've already",
-  'i have already',
-  'we already',
   'i went ahead and',
   'we went ahead and',
   "i've gone ahead and",
@@ -375,6 +410,58 @@ export const EN_CLAIM_LEXICON: ClaimLexicon = {
     { forms: firstPersonFrames(UNNAMED_COMPLETION_VERBS), family: 'ANY', mode: 'COMPLETED' },
   ],
 
+  // The bare participles, which assert nothing alone and assert a completion beside a
+  // domain object. `lexicon/types.ts` carries the argument; what follows is why these
+  // words and not others.
+  //
+  // THESE ARE EXACTLY THE WORDS THE `completionMarkers` ABOVE EXCLUDE. The whole
+  // reason every form up there is a frame is that `booked` on its own appears in
+  // `let me get that booked`. That exclusion is not being reversed - `Booked.` as a
+  // whole turn is still missed, and `let me get that booked` is still clean, because
+  // neither names a thing this system creates. What changed is that the OBJECT is now
+  // read, so `I have finally and officially booked your MEETING` no longer depends on
+  // the words between `have` and `booked` being arrangeable into a frame.
+  //
+  // `saved`, `sorted` and `set` are DELIBERATELY ABSENT even though the frames above
+  // carry them with their objects. `I saved you some time by checking the diary`,
+  // `I sorted through the options with you` and `set a time` are honest, and `diary`
+  // IS a domain object - so a bare `saved` or `sorted` here would flag the first two.
+  // The framed spellings (`i saved the appointment`, `sorted that`) already catch what
+  // matters, and those two sentences are asserted clean in MUST_NOT_FLAG.
+  //
+  // `checked` is absent for the same reason and a sharper one: checking availability
+  // is not an effect at all, and `I have checked the diary` is the single most
+  // ordinary true sentence this agent says.
+  completionParticiples: [
+    {
+      forms: ['booked', 'scheduled', 'confirmed', 'reserved', 'rebooked'],
+      family: 'MEETING',
+      mode: 'COMPLETED',
+    },
+    { forms: ['moved', 'rescheduled', 'shifted'], family: 'RESCHEDULE', mode: 'COMPLETED' },
+    { forms: ['cancelled', 'canceled'], family: 'CANCELLATION', mode: 'COMPLETED' },
+    { forms: ['arranged'], family: 'CALLBACK', mode: 'COMPLETED' },
+    { forms: ['sent', 'emailed', 'texted', 'messaged'], family: 'MESSAGE', mode: 'COMPLETED' },
+    { forms: ['recorded', 'logged'], family: 'RECORD', mode: 'COMPLETED' },
+  ],
+
+  // What a participle has to stand near. Narrow on purpose - see the type. Every entry
+  // is a thing a tool in this system writes a row for, or a message family nothing in
+  // it can send.
+  //
+  // `details`, `options`, `time`, `price` and `number` are ABSENT and the first is the
+  // one that matters: `I have checked and confirmed your details.` is honest, and it is
+  // asserted clean in MUST_NOT_FLAG precisely so this list cannot quietly grow to
+  // include it.
+  domainObjects: [
+    { forms: ['meeting', 'meetings', 'appointment', 'appointments'], family: 'MEETING' },
+    { forms: ['slot', 'booking', 'reservation'], family: 'ANY' },
+    { forms: ['diary', 'calendar'], family: 'ANY' },
+    { forms: ['callback', 'callbacks', 'call back', 'follow-up', 'followup'], family: 'CALLBACK' },
+    { forms: ['email', 'e-mail', 'message', 'text'], family: 'MESSAGE' },
+    { forms: ['reminder', 'note'], family: 'RECORD' },
+  ],
+
   identifierMarkers: [
     'confirmation number',
     'confirmation code',
@@ -442,6 +529,100 @@ export const EN_CLAIM_LEXICON: ClaimLexicon = {
     'therefore',
     'while',
     'since',
+  ],
+
+  // The words that may NOT stand inside a completion frame, because they turn one
+  // back into an intention. `types.ts` argues why this is a list of BLOCKERS and
+  // not a list of skippable adverbs; what follows is what each entry actually buys.
+  //
+  // MODALS AND THE INFINITIVE are the load-bearing half. Without them, a frame that
+  // tolerates two skipped tokens reads `I can have that booked for you.` and `I
+  // will have that booked shortly.` as `i have booked` - two honest intentions, and
+  // exactly the wording `NEVER_CLAIM_BOOKED_WITHOUT_CONFIRMATION` asks the model
+  // for. `to` alone closes `I have to get that booked`, `I need to get that booked`
+  // and `I am happy to get that booked`.
+  //
+  // THE PROGRESSIVE is the other half and is easy to miss: `Your callback is being
+  // arranged.` and `Your meeting is getting booked now.` say the work is in FLIGHT,
+  // not done, and `is arranged` / `is booked` would otherwise read them as
+  // completions. `get` and `getting` are here for the same reason, and they are the
+  // verb of every honest intention form this lexicon deliberately excludes
+  // (`let me get that booked`, `get you in the diary`).
+  //
+  // The INTENTION VERBS (`want`, `need`, `hope`, `try`, `plan`, `intend`, `aim`)
+  // are the weakest entries and are included on the block-list logic: each costs
+  // one array slot and can only ever prevent a false positive.
+  //
+  // DELIBERATELY ABSENT: `just`, `already`, `now`, `successfully`, `officially`,
+  // `finally`, `all`, `still` and every other adverb. Those are precisely the
+  // tokens a frame MUST tolerate, and listing an adverb here would re-open the
+  // defect this field exists to close. `been` is absent too - it is a form token in
+  // `has been booked`, and blocking it would be blocking a frame's own word.
+  //
+  // `may` IS ABSENT ON PURPOSE, and it is the one entry a reader should check. An
+  // over-broad blocker costs the opposite of an incomplete one: it costs a MISS. And
+  // `may` is also a MONTH in this same lexicon, so blocking it would lose
+  // `I have May 5th booked for you.` - a real claim - to buy `it may be booked`,
+  // which `be` already blocks. Every other entry here has no such collision.
+  frameBlockers: [
+    'will',
+    'would',
+    'can',
+    'could',
+    'shall',
+    'should',
+    'might',
+    'must',
+    'to',
+    'be',
+    'going',
+    'gonna',
+    'about',
+    'being',
+    'get',
+    'gets',
+    'getting',
+    'let',
+    'want',
+    'wants',
+    'need',
+    'needs',
+    'hope',
+    'hoping',
+    'try',
+    'trying',
+    'plan',
+    'planning',
+    'intend',
+    'aim',
+  ],
+
+  // Noun-phrase material, which may not sit INSIDE a frame and is ordinary in front of
+  // one. `types.ts` argues the split; the sentence that forced this list is
+  // `I will have your call back booked shortly.`, where `i will call` closed across
+  // `have your` and read an honest intention as a callback promise.
+  //
+  // `the` and `that` are the two a reader should check, because both look like they
+  // might be needed INSIDE something. They are not: no English completion frame has a
+  // determiner interior to it, and `is in the diary` / `got that booked` carry theirs
+  // as FORM tokens, which this list never touches. On the other side, `The meeting is
+  // now booked.` and `That is now booked.` both still fire - a determiner in FRONT of
+  // a frame is tested against `moodTokens`, which this list is deliberately not part of.
+  frameDeterminers: [
+    'a',
+    'an',
+    'the',
+    'this',
+    'that',
+    'these',
+    'those',
+    'my',
+    'our',
+    'your',
+    'his',
+    'her',
+    'their',
+    'its',
   ],
 
   months: [

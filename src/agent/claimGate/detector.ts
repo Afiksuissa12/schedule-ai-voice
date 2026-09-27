@@ -23,7 +23,7 @@
  * five database reads - is only built when the detector has actually found
  * something to check.
  *
- * THE FOUR RULES, IN ORDER
+ * THE FIVE RULES, IN ORDER
  * ---------------------------------------------------------------------------
  * Per CLAUSE, because that is the scope a negation really has - see the section
  * after this one for why the sentence was too wide and what it cost:
@@ -41,6 +41,56 @@
  *     and identifier reading stay sentence-wide: `הפגישה נקבעה for Thursday, and
  *     the confirmation number is CONF998877.` has to keep reading Thursday onto
  *     the claim in the clause before the comma.
+ *  5. AND, in any clause rule 4 found nothing in, a bare completion PARTICIPLE
+ *     standing near a DOMAIN OBJECT produces one claim as well - `Right, meeting
+ *     booked for Thursday.` A participle alone is ambiguous between a completion
+ *     and an intention (`let me get that booked`), and what resolves it is whether
+ *     the sentence names a thing this system can actually create.
+ *     `matchParticiplesNearObjects` holds the rule and
+ *     `lexicon/types.ts` (`CompletionParticipleEntry`) holds the argument for why
+ *     this exists on top of rule 4 rather than instead of it.
+ *
+ * WHAT "A COMPLETION FORM MATCHES" MEANS, AND WHY IT IS NOT "ADJACENT TOKENS"
+ * ---------------------------------------------------------------------------
+ * Rule 4 says "every completion form that matches". For English that is a
+ * multi-token FRAME - `is booked`, `has been booked`, `i have booked` - because the
+ * bare participle is honest in `let me get that booked` (`lexicon/en.ts` argues it).
+ * Matching those frames as ADJACENT token sequences made ONE word inside a frame
+ * defeat the detector outright, and that was fail-OPEN in production:
+ *
+ *     Your meeting is booked for tomorrow at 3pm.       DETECTED
+ *     Your meeting is now booked for tomorrow at 3pm.   RELEASED   <- same claim
+ *     I have booked the callback for 3pm tomorrow.      DETECTED
+ *     I have now booked the callback for 3pm tomorrow.  RELEASED   <- same claim
+ *
+ * Independent QA drove seven wordings of that shape through the real
+ * `AgentTurnService` against a real database. Every one reached the caller with
+ * `outcome=NO_MATERIAL_CLAIM`, was persisted as a spoken AGENT turn, and left
+ * `meetings=0` and `futureActions=0`. The control - the same sentence with the
+ * adverb deleted - was blocked correctly in the same run. On the pure detector the
+ * class was 53 misses out of 56 adverb-by-frame combinations, over five families.
+ * Hebrew was never affected, because its passive past is one inflected word and has
+ * no inside; that asymmetry is what localises the defect to English FRAMES rather
+ * than to any of the scope rules below.
+ *
+ * So a frame tolerates a bounded run of skipped tokens
+ * (`MAX_TOKENS_SKIPPED_INSIDE_A_FRAME`, and `text.ts` holds the matcher). Two
+ * properties keep that from becoming a precision disaster, and both are argued where
+ * they live:
+ *
+ *  - WHAT MAY NOT BE SKIPPED is enumerated rather than what may. A missing entry
+ *    therefore costs one regeneration of a true sentence and never a leak, which is
+ *    the only form of enumeration the fail-safe rule below permits. The set is every
+ *    registered locale's negators, conditionals and clause joiners, plus
+ *    `ClaimLexicon.frameBlockers` - the modals and intention words.
+ *  - THE ADJACENT PASS RUNS FIRST and the interrupted pass only where it found
+ *    nothing, so wherever an adjacent form matched the result is byte-for-byte what
+ *    it was. Verified rather than reasoned about: all 634 committed corpus, e2e and
+ *    release-spec texts were run through both detectors, and NO claim was lost and
+ *    no family, mode or locale changed. One `matchedForm` STRING moved - `I just
+ *    booked it.` now quotes `i booked` rather than `i just booked` - and that is the
+ *    lexicon deletion below rather than this rule; it appears in an audit detail and
+ *    nowhere else. `docs/MISSION_2D_CLAIM_GATE.md` § 16.9 records it.
  *
  * WHY THE CLAUSE AND NOT THE SENTENCE, AND WHY "AT OR BEFORE"
  * ---------------------------------------------------------------------------
@@ -128,8 +178,15 @@ import {
   type ClaimAssertionMode,
   type ClaimEffectFamily,
   type ClaimLexicon,
+  type CompletionMarkerEntry,
 } from './lexicon/index.js';
-import { matchLongestForm, readSentences, type ClaimSentence, type ClaimToken } from './text.js';
+import {
+  matchLongestForm,
+  readSentences,
+  type ClaimSentence,
+  type ClaimToken,
+  type FrameGapAllowance,
+} from './text.js';
 
 /** What kind of thing the text asserted. */
 export type MaterialClaimKind = 'EFFECT_ASSERTED' | 'IDENTIFIER_ASSERTED';
@@ -211,6 +268,12 @@ export function detectMaterialClaims(text: string, options: DetectClaimsOptions 
   const sentences = readSentences(text);
   const out: DetectedClaim[] = [];
 
+  // WHAT MAY STAND INSIDE A FRAME is read from EVERY registered locale at once,
+  // for the reason `clauseIndices` reads the conjunctions that way: an English
+  // `and` inside a Hebrew sentence still joins two clauses, and a Hebrew `לא`
+  // inside an English frame still negates it.
+  const gap = frameGapAllowance(claimLexicons);
+
   for (const sentence of sentences) {
     const identifiers = identifierShapedTokens(sentence);
     const day = detectDay(sentence.tokens, schedulingLexicons, claimLexicons);
@@ -231,7 +294,23 @@ export function detectMaterialClaims(text: string, options: DetectClaimsOptions 
       // that a suppressed first match cannot swallow an asserted second one:
       // `הפגישה לא נקבעה, אבל הפגישה נקבעה למחר.` asserts the second.
       const seen = new Set<string>();
-      for (const match of matchCompletionMarkers(sentence, lexicon)) {
+      const clausesWithAFrame = new Set<number>();
+      for (const match of matchCompletionMarkers(sentence, lexicon, gap)) {
+        if (suppression.suppresses(match.position)) continue;
+        const key = `${match.claim.family}:${match.claim.mode}`;
+        clausesWithAFrame.add(clauses[match.position] ?? -1);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({ ...match.claim, assertedDay: day, assertedTime: time, identifiers });
+      }
+
+      // THE FALLBACK: a bare participle beside a domain object, in a clause no frame
+      // could read. `lexicon/types.ts` (`CompletionParticipleEntry`) carries the
+      // argument and `matchParticiplesNearObjects` carries the rules. It runs AFTER
+      // the frames and is skipped in any clause a frame already spoke for, so it can
+      // neither double-count a claim nor change a verdict a frame produced.
+      for (const match of matchParticiplesNearObjects(sentence, clauses, lexicon, claimLexicons, gap)) {
+        if (clausesWithAFrame.has(clauses[match.position] ?? -1)) continue;
         if (suppression.suppresses(match.position)) continue;
         const key = `${match.claim.family}:${match.claim.mode}`;
         if (seen.has(key)) continue;
@@ -300,26 +379,99 @@ interface CompletionMatch {
   readonly claim: Omit<DetectedClaim, 'assertedDay' | 'assertedTime' | 'identifiers'>;
 }
 
+/**
+ * How many tokens may be skipped inside ONE completion frame.
+ *
+ * WHY TWO, NAMED RATHER THAN TUNED
+ * ---------------------------------------------------------------------------
+ * TWO is what the wordings a model actually writes need. One covers the whole
+ * reported class - `is NOW booked`, `has NOW been booked`, `I have NOW booked`,
+ * `is SUCCESSFULLY booked`. The second is for the frames that carry an adverb at
+ * each of their two seams: `has NOW been SUCCESSFULLY booked`, `I have NOW
+ * SUCCESSFULLY booked`.
+ *
+ * THREE was rejected, and not on taste. At three, `i booked` reaches `I will get
+ * that booked for you.` and `I can get that booked for you.` through the modal -
+ * honest intentions, and the exact wording the prompt clause
+ * `NEVER_CLAIM_BOOKED_WITHOUT_CONFIRMATION` asks the model to use. Those two are
+ * also held off by `ClaimLexicon.frameBlockers` (`will`, `can`, `get`), so the two
+ * defences are independent and the bound is the one that does not depend on a word
+ * list being complete. A frame is a frame; at some width it is just two words in a
+ * sentence.
+ */
+const MAX_TOKENS_SKIPPED_INSIDE_A_FRAME = 2;
+
+/**
+ * The frame allowance for one set of lexicons - computed once per array.
+ *
+ * Keyed by array IDENTITY, exactly as `FORM_INDEX` in `text.ts` is and for the same
+ * reason: `REGISTERED_CLAIM_LEXICONS` is a frozen module constant, and a test that
+ * passes an ad-hoc array gets its entry collected with it.
+ */
+const FRAME_GAP_ALLOWANCES = new WeakMap<readonly ClaimLexicon[], FrameGapAllowance>();
+
+function frameGapAllowance(lexicons: readonly ClaimLexicon[]): FrameGapAllowance {
+  const cached = FRAME_GAP_ALLOWANCES.get(lexicons);
+  if (cached !== undefined) return cached;
+
+  // A negator, a conditional or a clause joiner inside a frame is blocked HERE
+  // rather than left to the suppression rules, and that is load-bearing rather
+  // than tidy. Suppression only applies a blocker that stands AT OR BEFORE the
+  // form's first token, so `I have NOT booked anything` - where `not` sits INSIDE
+  // the frame, after `i` - would be detected as a claim by a rule that let the
+  // frame swallow it. `tests/claimGate/claimGateCorpus.ts` asserts that sentence
+  // stays clean in MUST_NOT_FLAG.
+  //
+  // TWO SETS, because "may not be inside a frame" and "may not stand in front of
+  // one" are different questions - `FrameGapAllowance.moodTokens` argues it, and
+  // `I will have your call back booked shortly.` is the sentence that forced it.
+  const blockedTokens = new Set<string>();
+  const moodTokens = new Set<string>();
+  const add = (into: Set<string>, forms: readonly string[]): void => {
+    for (const form of forms) {
+      for (const token of form.split(' ')) {
+        if (token.length > 0) into.add(token);
+      }
+    }
+  };
+  for (const lexicon of lexicons) {
+    // MOOD: what makes a clause non-assertive. Used in front of a frame, and by the
+    // bare-participle rule for the whole clause.
+    add(moodTokens, lexicon.negators);
+    add(moodTokens, lexicon.conditionalMarkers);
+    add(moodTokens, lexicon.frameBlockers);
+    // INSIDE: the mood words, plus the two classes that are only ever wrong INTERIOR
+    // to a verb phrase - a clause joiner, and a determiner.
+    add(blockedTokens, lexicon.clauseBreakers);
+    add(blockedTokens, lexicon.frameDeterminers);
+  }
+  for (const token of moodTokens) blockedTokens.add(token);
+
+  const allowance: FrameGapAllowance = {
+    maxSkippedTokens: MAX_TOKENS_SKIPPED_INSIDE_A_FRAME,
+    blockedTokens,
+    moodTokens,
+  };
+  FRAME_GAP_ALLOWANCES.set(lexicons, allowance);
+  return allowance;
+}
+
 function matchCompletionMarkers(
   sentence: ClaimSentence,
   lexicon: ClaimLexicon,
+  gap: FrameGapAllowance,
 ): readonly CompletionMatch[] {
   const out: CompletionMatch[] = [];
 
   for (let position = 0; position < sentence.tokens.length; position += 1) {
-    // THE LONGEST FORM AT THIS POSITION WINS, ACROSS FAMILIES, AND CONSUMES ITS
-    // TOKENS. Without that, `the callback is booked` fires twice: once as
-    // CALLBACK (`callback is booked`, three tokens from position 1) and once as
-    // MEETING (`is booked`, two tokens from position 2) - so a correctly booked
-    // callback would be reported as an unsupported MEETING claim and a truthful
-    // sentence would be regenerated. Same rule, same reason, as the scheduling
-    // resolver's longest-match-at-a-position.
-    let best: { entry: (typeof lexicon.completionMarkers)[number]; length: number; form: string } | null = null;
-    for (const entry of lexicon.completionMarkers) {
-      const hit = matchLongestForm(sentence.tokens, position, entry.forms);
-      if (hit === null) continue;
-      if (best === null || hit.length > best.length) best = { entry, length: hit.length, form: hit.form };
-    }
+    // ADJACENT FIRST, INTERRUPTED ONLY IF NOTHING ADJACENT MATCHED. Two passes
+    // rather than one combined comparison, so that every text this detector
+    // already fired on fires identically - same family, same mode, same
+    // `matchedForm` - and the only behaviour this change can produce is a miss
+    // becoming a detection. A merge gate whose existing verdicts move is a merge
+    // gate that has to be re-argued from scratch.
+    const best = bestCompletionAt(sentence.tokens, position, lexicon)
+      ?? bestCompletionAt(sentence.tokens, position, lexicon, gap);
     if (best === null) continue;
 
     out.push({
@@ -334,10 +486,224 @@ function matchCompletionMarkers(
         excerpt: sentence.raw,
       },
     });
-    position += best.length - 1;
+    position += best.span - 1;
   }
 
   return out;
+}
+
+interface BestCompletion {
+  readonly entry: CompletionMarkerEntry;
+  /** Tokens the match COVERS, including any it skipped. Drives the cursor. */
+  readonly span: number;
+  /** Tokens the FORM itself has. Drives which form wins. */
+  readonly formTokens: number;
+  readonly form: string;
+}
+
+/**
+ * The best completion form at one token position, across every family.
+ *
+ * THE LONGEST FORM AT THIS POSITION WINS, ACROSS FAMILIES, AND CONSUMES ITS
+ * TOKENS. Without that, `the callback is booked` fires twice: once as CALLBACK
+ * (`callback is booked`, three tokens from position 1) and once as MEETING
+ * (`is booked`, two tokens from position 2) - so a correctly booked callback would
+ * be reported as an unsupported MEETING claim and a truthful sentence would be
+ * regenerated. Same rule, same reason, as the scheduling resolver's
+ * longest-match-at-a-position.
+ *
+ * "Longest" is counted in the FORM's own tokens rather than in the span it covers,
+ * because once a frame may be interrupted the two differ and only the first one is
+ * specificity: `callback is booked` has to keep beating `is booked` whether or not
+ * an adverb sits inside either of them.
+ */
+function bestCompletionAt(
+  tokens: readonly ClaimToken[],
+  position: number,
+  lexicon: ClaimLexicon,
+  gap?: FrameGapAllowance,
+): BestCompletion | null {
+  let best: BestCompletion | null = null;
+  for (const entry of lexicon.completionMarkers) {
+    const hit = matchLongestForm(tokens, position, entry.forms, gap);
+    if (hit === null) continue;
+    const formTokens = hit.length - hit.skipped;
+    if (
+      best === null ||
+      formTokens > best.formTokens ||
+      (formTokens === best.formTokens && hit.length > best.span)
+    ) {
+      best = { entry, span: hit.length, formTokens, form: hit.form };
+    }
+  }
+  return best;
+}
+
+// ---------------------------------------------------------------------------
+// The fallback: a bare participle beside a domain object
+// ---------------------------------------------------------------------------
+
+/**
+ * How far a domain object may stand from the participle it disambiguates.
+ *
+ * WHY EIGHT, NAMED RATHER THAN TUNED
+ * ---------------------------------------------------------------------------
+ * The two sentences this rule exists for set it. `I have finally and officially booked
+ * your meeting for Thursday.` puts the object two tokens after the participle, and
+ * `Your meeting has, at long last, finally been booked.` puts it SEVEN before. Eight
+ * covers both with one token to spare and still keeps the pair inside a single clause
+ * or its immediate neighbour.
+ *
+ * It is not the precision defence, which is why it can be this generous: what keeps
+ * `let me get that booked` clean is that the sentence names no domain object at all,
+ * and what keeps `Let me get your meeting booked for Thursday.` clean is that `let`
+ * and `get` are `frameBlockers` standing in front of the participle in its own clause.
+ * The distance bound is only here so that a participle in one half of a long sentence
+ * cannot be paired with an object in the other half that has nothing to do with it.
+ */
+const MAX_TOKENS_FROM_PARTICIPLE_TO_OBJECT = 8;
+
+/**
+ * Every bare participle in the sentence that stands near a domain object.
+ *
+ * THE FOUR CONDITIONS, AND EVERY ONE OF THEM IS A PRECISION DEFENCE
+ * ---------------------------------------------------------------------------
+ *  1. A DOMAIN OBJECT within `MAX_TOKENS_FROM_PARTICIPLE_TO_OBJECT`. This is the
+ *     condition that makes a bare participle readable at all: `let me get that booked`
+ *     names nothing this system creates, and `I have booked your MEETING` does.
+ *     Objects are pooled across every registered locale, so a Hebrew object can
+ *     disambiguate an English participle in a code-switched sentence.
+ *  2. NO `frameBlocker` AT OR BEFORE IT IN ITS OWN CLAUSE. This is what keeps the
+ *     intention readings clean - `Let me get your meeting booked`, `I can have your
+ *     meeting booked`, `your callback is being arranged`, `I need to get your meeting
+ *     booked`. Clause-scoped and at-or-before for the reason § 15 gives for negation:
+ *     a modal governs the verb phrase after it and stops at a comma.
+ *     Applied ONLY to this rule. A FRAME is explicit enough to survive a modal
+ *     elsewhere in its clause (`I can confirm your meeting is booked` must still
+ *     fire), and a bare participle is not.
+ *  3. The caller then applies rules 1-3 - interrogative, negator, conditional -
+ *     unchanged, so `Shall I get your meeting booked?` and `nothing is booked` need
+ *     nothing special here.
+ *  4. The caller skips any clause a FRAME already spoke for, so this cannot
+ *     double-count or relabel.
+ *
+ * THE OBJECT ALSO REFINES THE FAMILY, which is the one thing this rule does BETTER
+ * than the frames. § 8 limit 9 exists because `matchCompletionMarkers` reads a form
+ * from the position it starts at and cannot see the object that decides the family, so
+ * `I booked the callback` is read as MEETING and a real callback does not satisfy it.
+ * Here the object is in hand by construction, so a generic MEETING participle beside
+ * `callback` is reported as CALLBACK. It does not close limit 9 - that limit is about
+ * the FRAMES, which still win wherever they match, and `KNOWN_FALSE_POSITIVES` asserts
+ * it is still a false positive.
+ */
+function matchParticiplesNearObjects(
+  sentence: ClaimSentence,
+  clauses: readonly number[],
+  lexicon: ClaimLexicon,
+  allLexicons: readonly ClaimLexicon[],
+  gap: FrameGapAllowance,
+): readonly CompletionMatch[] {
+  if (lexicon.completionParticiples.length === 0) return [];
+
+  const objects = domainObjectMatches(sentence.tokens, allLexicons);
+  if (objects.length === 0) return [];
+
+  const out: CompletionMatch[] = [];
+  for (let position = 0; position < sentence.tokens.length; position += 1) {
+    const clause = clauses[position];
+    if (clause === undefined) continue;
+    if (blockerStandsBefore(sentence.tokens, clauses, position, gap)) continue;
+
+    for (const entry of lexicon.completionParticiples) {
+      const hit = matchLongestForm(sentence.tokens, position, entry.forms);
+      if (hit === null) continue;
+
+      // The TOKENS BETWEEN the two spans, in whichever order they appear, must be at
+      // most the bound. Written as two comparisons rather than an absolute difference
+      // so that a multi-token object (`call back`, `follow-up`) is measured from its
+      // near edge and not from its start.
+      const nearby = objects.find(
+        (object) =>
+          object.position + object.length + MAX_TOKENS_FROM_PARTICIPLE_TO_OBJECT >= position &&
+          position + hit.length + MAX_TOKENS_FROM_PARTICIPLE_TO_OBJECT >= object.position,
+      );
+      if (nearby === undefined) continue;
+
+      out.push({
+        position,
+        claim: {
+          kind: 'EFFECT_ASSERTED',
+          // A generic MEETING participle defers to the object; anything more specific
+          // keeps its own family, because `cancelled` is a CANCELLATION whatever it
+          // cancelled and the object cannot say otherwise.
+          family: entry.family === 'MEETING' && nearby.family !== 'ANY' ? nearby.family : entry.family,
+          mode: entry.mode,
+          locale: lexicon.locale,
+          // The audit quotes BOTH halves, because neither on its own is the finding.
+          matchedForm: `${hit.form} + ${nearby.form}`,
+          sentenceIndex: sentence.index,
+          excerpt: sentence.raw,
+        },
+      });
+      break;
+    }
+  }
+
+  return out;
+}
+
+/** One domain object that matched, with where it matched and what family it names. */
+interface DomainObjectMatch extends FormMatch {
+  readonly family: ClaimEffectFamily;
+}
+
+/** Every domain object in the sentence, from every registered locale. */
+function domainObjectMatches(
+  tokens: readonly ClaimToken[],
+  lexicons: readonly ClaimLexicon[],
+): readonly DomainObjectMatch[] {
+  const out: DomainObjectMatch[] = [];
+  for (const lexicon of lexicons) {
+    for (const entry of lexicon.domainObjects) {
+      for (const hit of formMatches(tokens, entry.forms)) {
+        out.push({ ...hit, family: entry.family });
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * True when a MOOD token stands at or before `position` in the same clause.
+ *
+ * `FrameGapAllowance.moodTokens` and deliberately NOT `blockedTokens`, for two
+ * reasons that were both found by running the precision and coverage halves of this
+ * rule rather than by reading it:
+ *
+ *  - A CLAUSE JOINER must not suppress. `I have finally AND officially booked your
+ *    meeting.` puts `and` at the head of the clause the participle sits in, because
+ *    `clauseIndices` gives a joiner to the clause it OPENS. Testing it as a blocker
+ *    silenced the sentence this whole fallback exists to catch.
+ *  - A DETERMINER must not suppress either, for the same reason it must not appear
+ *    inside a frame but may stand in front of one: `I have THE meeting booked for
+ *    Thursday.` is a claim.
+ *
+ * What is left is what actually changes a clause's mood: modals, intention verbs,
+ * negators and conditionals. The last two are redundant with the caller's own
+ * suppression and are kept because they cost nothing.
+ */
+function blockerStandsBefore(
+  tokens: readonly ClaimToken[],
+  clauses: readonly number[],
+  position: number,
+  gap: FrameGapAllowance,
+): boolean {
+  const clause = clauses[position];
+  for (let index = 0; index < position; index += 1) {
+    if (clauses[index] !== clause) continue;
+    if (gap.moodTokens.has((tokens[index] as ClaimToken).text)) return true;
+  }
+  return false;
 }
 
 // ---------------------------------------------------------------------------

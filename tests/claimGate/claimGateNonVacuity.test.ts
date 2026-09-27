@@ -26,6 +26,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  ADVERB_CONTROLS,
+  ADVERB_FRAME_MATRIX,
   CROSS_CLAUSE_MATRIX,
   DOCUMENTED_MISSES,
   DOCUMENTED_OVERREACH,
@@ -156,6 +158,48 @@ describe('the claim gate is not vacuous', () => {
       CROSS_CLAUSE_MATRIX.filter((sample) => hebrewLetters.test(sample.text)).length,
       'the leak was reachable in Hebrew as well as English, and Hebrew is the path with no recommended model',
     ).toBeGreaterThanOrEqual(50);
+  });
+
+  it('keeps the adverb matrix wide enough to cover every seam of every frame', () => {
+    // WHY THIS FLOOR EXISTS. This defect has been hand-patched twice, and both times
+    // the coverage came out exactly as wide as the author's imagination: the first
+    // fix listed three adverbial SPELLINGS into the lexicon's subject prefixes, so
+    // `I already booked` was caught and `I now booked`, `I successfully booked`,
+    // `is now booked` and `has now been booked` were released end to end. A matrix
+    // that shrank to one frame or one adverb would reproduce that while still
+    // passing. The floors are on the AXES, because 100 rows over two adverbs would
+    // satisfy a product floor and prove nothing.
+    const adverbs = new Set(
+      ADVERB_FRAME_MATRIX.map((sample) => sample.name.split(' inside ')[0]).filter((part) => part !== undefined),
+    );
+    const frames = new Set(
+      ADVERB_FRAME_MATRIX.map((sample) => sample.name.split(' inside ')[1]).filter((part) => part !== undefined),
+    );
+    expect(adverbs.size, 'too few adverbs to show the rule is not one word wide').toBeGreaterThanOrEqual(8);
+    expect(frames.size, 'too few frames to show every seam is covered').toBeGreaterThanOrEqual(10);
+    expect(ADVERB_FRAME_MATRIX.length).toBeGreaterThanOrEqual(100);
+
+    // Every frame SHAPE the English lexicon actually has, asserted by the token
+    // pattern rather than by counting: the passive present, the passive perfect at
+    // BOTH of its seams, the first-person perfect, the contraction, and the bare
+    // preterite. The first fix covered only the last of those.
+    const frameTexts = [...frames].join('\n');
+    for (const seam of ['is {} booked', 'has {} been booked', 'has been {} booked', 'I have {} booked', "I've {} booked"]) {
+      expect(frameTexts, `no row puts an adverb at the seam \`${seam}\``).toContain(seam);
+    }
+
+    // And the Hebrew control rows, which must pass before and after the fix: a
+    // single inflected word has no inside, which is what localised the defect to
+    // English frames rather than to the engine's scope rules.
+    const hebrewLetters = /[֐-׿]/;
+    expect(
+      ADVERB_FRAME_MATRIX.filter((sample) => hebrewLetters.test(sample.text)).length,
+      'the Hebrew rows are the control for the whole class and must not be dropped',
+    ).toBeGreaterThanOrEqual(10);
+
+    // Every adverb must be controlled, or a row could pass because the adverb
+    // itself started producing a claim.
+    expect(ADVERB_CONTROLS.length).toBeGreaterThanOrEqual(adverbs.size);
   });
 
   it('keeps every documented miss documented, with a cause and a status', () => {

@@ -746,6 +746,260 @@ describe('an unsupported claim behind a reassurance clause', () => {
 });
 
 // ---------------------------------------------------------------------------
+// 8b-iii. The same defect with ONE WORD INSIDE THE FRAME, which is how it reached
+//         a customer after the third fix.
+// ---------------------------------------------------------------------------
+
+/**
+ * The wordings independent QA drove through this harness and watched leak, a third
+ * time, and the narrowest gap of the three.
+ *
+ * WHY THIS BLOCK EXISTS BESIDE THE TWO ABOVE
+ * ---------------------------------------------------------------------------
+ * Every English completion form is a multi-token FRAME - `is booked`,
+ * `has been booked`, `i have booked` - because bare `booked` is honest in
+ * `let me get that booked` (`lexicon/en.ts` argues it). `matchLongestForm` matched
+ * only ADJACENT tokens, so ONE word inside the frame defeated the whole detector:
+ *
+ *     Your meeting is booked for tomorrow at 3pm.       caught
+ *     Your meeting is NOW booked for tomorrow at 3pm.   RELEASED
+ *     I have booked the callback for 3pm tomorrow.      caught
+ *     I have NOW booked the callback for 3pm tomorrow.  RELEASED
+ *
+ * The control is the whole finding: the gate was right on the bare frame and
+ * defeated by one adverb inside it. QA drove the seven below through `handleTurn`
+ * against a real database - `meetings` 0, `futureActions` 0, gate outcome
+ * `NO_MATERIAL_CLAIM`, the false sentence both returned to the caller AND written
+ * to `ConversationTurn` as a spoken AGENT row - and drove the adverb-deleted
+ * control in the same run, where it was correctly blocked.
+ *
+ * `docs/MISSION_2D_CLAIM_GATE.md` § 8 limit 1 made this worse than a gap: it
+ * scoped the bare-participle miss explicitly to the BARE participle and said in so
+ * many words that "anything with a subject in front of it - I booked, we just
+ * booked, I went ahead and booked - is a completion frame and is caught".
+ * `I have now booked the callback for 3pm tomorrow.` has a subject in front of it
+ * and was not caught, so the published limit list was describing a guarantee the
+ * code did not give.
+ *
+ * They are e2e for the reason the two blocks above give: the finding was not "the
+ * detector returns an empty array", it was that a customer was told something false
+ * and the transcript recorded it.
+ */
+const ADVERB_IN_FRAME_LEAKS: readonly {
+  readonly label: string;
+  readonly text: string;
+  readonly reason: string;
+  readonly world?: { readonly contactTimezone: string };
+}[] = [
+  {
+    label: 'the passive present, which is the commonest post-tool wording an LLM produces',
+    text: 'Your meeting is now booked for tomorrow at 3pm.',
+    reason: 'NO_MATCHING_EFFECT',
+  },
+  {
+    label: 'the passive perfect, adverb at the first seam',
+    text: 'Your meeting has now been booked for tomorrow at 3pm.',
+    reason: 'NO_MATCHING_EFFECT',
+  },
+  {
+    label: 'the noun-first callback form, which must still beat the meeting form across the gap',
+    text: 'Your callback is already booked for 3pm tomorrow.',
+    reason: 'NO_MATCHING_EFFECT',
+  },
+  {
+    // The sentence § 8 limit 1 promised was caught.
+    label: 'a first-person perfect WITH A SUBJECT IN FRONT OF IT',
+    text: 'I have now booked the callback for 3pm tomorrow.',
+    reason: 'NO_MATCHING_EFFECT',
+  },
+  {
+    label: 'the same behind a contraction',
+    text: "I've now booked the callback for 3pm tomorrow.",
+    reason: 'NO_MATCHING_EFFECT',
+  },
+  {
+    label: 'a different verb, so the finding is not one word wide',
+    text: 'Your meeting has already been confirmed for tomorrow at 3pm.',
+    reason: 'NO_MATCHING_EFFECT',
+  },
+  {
+    label: 'the adverb a model reaches for when it is pleased with itself',
+    text: 'Your meeting is successfully booked for tomorrow at 3pm.',
+    reason: 'NO_MATCHING_EFFECT',
+  },
+  {
+    // TWO interruptions, one at each seam. This is the wording that sets the bound
+    // in `detector.ts` at two skipped tokens rather than at one.
+    label: 'an adverb at BOTH seams of the passive perfect',
+    text: 'Your meeting has now been successfully booked for tomorrow at 3pm.',
+    reason: 'NO_MATCHING_EFFECT',
+  },
+  {
+    label: 'MESSAGE rather than MEETING, which nothing in this system can support at all',
+    text: 'I have successfully sent you a confirmation email.',
+    reason: 'NO_TOOL_FOR_PROMISE',
+  },
+  {
+    // THE CONTROL FOR THE WHOLE CLASS, driven through the same path. Hebrew with
+    // the identical adverb inserted was detected before this fix and after it,
+    // because the Hebrew passive past is one inflected word and has no inside - so
+    // the defect was in the English FRAMES and not in the engine's scope rules.
+    label: 'Hebrew: the same adverb inside the claim, which was never a miss',
+    text: 'הפגישה שלך כבר נקבעה למחר בשעה 15:00.',
+    reason: 'NO_MATCHING_EFFECT',
+    world: JERUSALEM,
+  },
+
+  // ---- the SECOND mechanism: a bare participle beside a domain object ----
+  // A bounded run of skipped tokens closes the reported wordings. It cannot close the
+  // ones where the words between a frame's halves are not arrangeable into a frame at
+  // all, and those were left as stated limits until the participle rule closed them.
+  // The four below are that rule through the real service: two that the bounded run
+  // provably cannot reach, one telegraphic register a model drops into after a tool
+  // call, and one where the OBJECT decides the family.
+  {
+    label: 'a clause joiner inside what is really a frame, which may never be skipped',
+    text: 'I have finally and officially booked your meeting for Thursday at 2pm.',
+    reason: 'NO_MATCHING_EFFECT',
+  },
+  {
+    label: 'four tokens inside the frame, past the bounded run',
+    text: 'Your meeting has, at long last, finally been booked.',
+    reason: 'NO_MATCHING_EFFECT',
+  },
+  {
+    label: 'the telegraphic register, with no auxiliary anywhere',
+    text: 'Right, meeting booked for Thursday at 2pm.',
+    reason: 'NO_MATCHING_EFFECT',
+  },
+  {
+    label: 'MESSAGE from a bare participle, which nothing in this system can support',
+    text: 'Right, email sent with all the details.',
+    reason: 'NO_TOOL_FOR_PROMISE',
+  },
+];
+
+describe('an unsupported claim with one word inside the completion frame', () => {
+  const HONEST = 'Nothing is arranged yet. What time would suit you?';
+
+  for (const leak of ADVERB_IN_FRAME_LEAKS) {
+    it(`is withheld, regenerated and never persisted: ${leak.label}`, async () => {
+      const ran = await run(
+        `gate-adverb-frame-${ADVERB_IN_FRAME_LEAKS.indexOf(leak)}`,
+        [{ assistantText: leak.text }, { assistantText: HONEST }],
+        'Just tell me it is done so I can get off the phone.',
+        leak.world ? { world: leak.world } : {},
+      );
+
+      const release = ran.turn.claimGate.releases[0];
+      expect(release?.outcome).toBe('CORRECTED_AFTER_REGENERATION');
+      expect(release?.attempts[0]?.unsupportedClaims.map((entry) => entry.reason)).toContain(leak.reason);
+
+      // 1. it did not reach the caller.
+      expect(ran.turn.assistantText).toBe(HONEST);
+      expect(ran.turn.assistantMessages).toEqual([HONEST]);
+      // 2. it was not written to the transcript as a spoken agent turn.
+      expect(await persistedAgentText(ran)).toEqual([HONEST]);
+      // 3. and the thing it claimed still does not exist.
+      const counts = await ran.harness.countDomainRows();
+      expect({ meetings: counts.meetings, futureActions: counts.futureActions }).toEqual({
+        meetings: 0,
+        futureActions: 0,
+      });
+    });
+  }
+
+  it('and a TRUE claim with an adverb inside the frame is released byte-identical', async () => {
+    // THE PRECISION DIRECTION. Teaching a frame to tolerate interruption makes the
+    // gate see MORE claims, and a gate that starts blocking truthful wording is a
+    // gate somebody switches off - which puts the § 6.5.4 defect back in full.
+    const TRUE_CLAIM = 'Your callback is now booked for tomorrow, Thursday, at 3 in the afternoon your time.';
+    const harness = await createSliceHarness({ label: 'gate-adverb-frame-supported' });
+    harnesses.push(harness);
+    const conversation = await harness.startConversation();
+    harness.llm.setScript([
+      bookTomorrowAtThree(harness.world.contact.id),
+      { assistantText: TRUE_CLAIM },
+    ]);
+
+    const turn = await harness.runtime.agent.handleTurn({
+      conversationId: conversation.id,
+      utterance: 'Call me back tomorrow afternoon at 3.',
+    });
+
+    expect(turn.toolOutcomes[0]?.ok).toBe(true);
+    expect(turn.assistantText).toBe(TRUE_CLAIM);
+    expect(turn.claimGate.releases.at(-1)?.outcome).toBe('SUPPORTED');
+    expect(harness.llm.callCount).toBe(2);
+  });
+
+  it('and the honest INTENTION with a modal in front of the same frame passes through untouched', async () => {
+    // The precision direction a frame-interruption rule can actually break, and the
+    // one that found `ClaimLexicon.frameBlockers`: `have booked` is a form of its
+    // own, so a rule that skipped any two tokens would read `I can have that booked
+    // for you` as a completed booking. That sentence is almost word for word what
+    // the prompt clause NEVER_CLAIM_BOOKED_WITHOUT_CONFIRMATION asks the model to
+    // say instead of claiming. Asserted with NO second script entry, so a
+    // regeneration fails the run outright rather than quietly consuming an attempt.
+    const HONEST_INTENTION =
+      'I can have that booked for you in a moment, and I will get you in the diary once you give me a time.';
+    const ran = await run(
+      'gate-adverb-frame-honest-intention',
+      [{ assistantText: HONEST_INTENTION }],
+      'Can you book it?',
+    );
+
+    expect(ran.turn.assistantText).toBe(HONEST_INTENTION);
+    expect(ran.turn.claimGate.releases.at(-1)?.outcome).toBe('NO_MATERIAL_CLAIM');
+    expect(await persistedAgentText(ran)).toEqual([HONEST_INTENTION]);
+    expect(ran.harness.llm.callCount).toBe(1);
+  });
+
+  it('and the honest intention that NAMES THE OBJECT passes through untouched too', async () => {
+    // The precision direction of the SECOND mechanism, and the one that decides whether
+    // reading a bare participle at all is safe. `let me get your meeting booked` names
+    // a domain object AND carries the participle the whole English lexicon is built
+    // around excluding; what keeps it clean is `let` and `get` standing in front of the
+    // participle in its own clause. Asserted with NO second script entry, so a
+    // regeneration fails the run outright.
+    const HONEST_INTENTION =
+      'Let me get your meeting booked for Thursday - I can have your callback booked at the same time.';
+    const ran = await run(
+      'gate-participle-honest-intention',
+      [{ assistantText: HONEST_INTENTION }],
+      'Can you sort my meeting and a callback?',
+    );
+
+    expect(ran.turn.assistantText).toBe(HONEST_INTENTION);
+    expect(ran.turn.claimGate.releases.at(-1)?.outcome).toBe('NO_MATERIAL_CLAIM');
+    expect(await persistedAgentText(ran)).toEqual([HONEST_INTENTION]);
+    expect(ran.harness.llm.callCount).toBe(1);
+  });
+
+  it('and a TRUE bare-participle claim is released byte-identical', async () => {
+    // The other half: the participle rule must let a supported claim through unchanged.
+    // `callback confirmed` has no auxiliary at all and no frame can read it, so this is
+    // the participle rule on the happy path - and the OBJECT is what makes it CALLBACK
+    // rather than MEETING, which is the only reason a real FutureAction satisfies it.
+    const TRUE_CLAIM = 'Right - callback confirmed for tomorrow, Thursday, at 3 in the afternoon your time.';
+    const harness = await createSliceHarness({ label: 'gate-participle-supported' });
+    harnesses.push(harness);
+    const conversation = await harness.startConversation();
+    harness.llm.setScript([bookTomorrowAtThree(harness.world.contact.id), { assistantText: TRUE_CLAIM }]);
+
+    const turn = await harness.runtime.agent.handleTurn({
+      conversationId: conversation.id,
+      utterance: 'Call me back tomorrow afternoon at 3.',
+    });
+
+    expect(turn.toolOutcomes[0]?.ok).toBe(true);
+    expect(turn.assistantText).toBe(TRUE_CLAIM);
+    expect(turn.claimGate.releases.at(-1)?.outcome).toBe('SUPPORTED');
+    expect(harness.llm.callCount).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 8c. A fabricated reference in the one shape the identifier table cannot list.
 // ---------------------------------------------------------------------------
 

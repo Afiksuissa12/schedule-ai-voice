@@ -254,11 +254,24 @@ describe('the detector holds no language-specific literal', () => {
   const SYNTHETIC: ClaimLexicon = {
     locale: 'zz',
     displayName: 'Synthetic',
-    completionMarkers: [{ forms: ['grobbled'], family: 'MEETING', mode: 'COMPLETED' }],
+    completionMarkers: [
+      { forms: ['grobbled'], family: 'MEETING', mode: 'COMPLETED' },
+      // A multi-token FRAME, so the interrupted-frame rule has something in this
+      // language to work on. English is the language that needed it; the rule
+      // itself must not know that.
+      { forms: ['zis grobbled'], family: 'CANCELLATION', mode: 'COMPLETED' },
+    ],
+    // The bare participle rule, in a language the engine has never heard of: `grobbelt`
+    // asserts nothing alone and asserts a completion beside `vorpen`, this locale's
+    // word for a meeting.
+    completionParticiples: [{ forms: ['grobbelt'], family: 'MEETING', mode: 'COMPLETED' }],
+    domainObjects: [{ forms: ['vorpen'], family: 'ANY' }],
     identifierMarkers: ['snerk kod'],
     negators: ['nix'],
     conditionalMarkers: ['iffen'],
     clauseBreakers: ['ond'],
+    frameBlockers: ['kanna'],
+    frameDeterminers: ['dez'],
     months: [{ forms: ['zzmarch'], month: 3 }],
     ordinalSuffixes: ['xx'],
   };
@@ -273,6 +286,53 @@ describe('the detector holds no language-specific literal', () => {
   it('and honours that language own negator and its own conditional', () => {
     expect(detectMaterialClaims('Vorp nix grobbled.', { lexicons: [SYNTHETIC] })).toEqual([]);
     expect(detectMaterialClaims('Iffen vorp grobbled.', { lexicons: [SYNTHETIC] })).toEqual([]);
+  });
+
+  it('tolerates an interruption inside a frame of a language it has never heard of', () => {
+    // The generalised half of the adverb fix. `flooby` is an adverb in no language
+    // and is in no list anywhere; the rule is that an unlisted token may be
+    // skipped, so it is skipped here exactly as `now` is in English.
+    const claims = detectMaterialClaims('Vorp zis flooby grobbled.', { lexicons: [SYNTHETIC] });
+    expect(claims.map((claim) => claim.family)).toEqual(['CANCELLATION']);
+    expect(claims[0]?.matchedForm).toBe('zis grobbled');
+  });
+
+  it('and honours that language own frame blockers inside the same frame', () => {
+    // `kanna` is this locale's `can`. Blocked, so the frame does not close - and
+    // the single-token form still fires, which is the honest reading of a sentence
+    // that contains the completion word without the frame around it.
+    const claims = detectMaterialClaims('Vorp zis kanna grobbled.', { lexicons: [SYNTHETIC] });
+    expect(claims.map((claim) => claim.family)).toEqual(['MEETING']);
+    expect(claims[0]?.matchedForm).toBe('grobbled');
+  });
+
+  it('and refuses to skip that language own negator inside a frame', () => {
+    // The direction that matters: a negator INSIDE a frame stands after the frame's
+    // first token, so the suppression rules - which only look at or before it -
+    // cannot see it. The frame has to decline to swallow it, in every language.
+    expect(detectMaterialClaims('Vorp zis nix grobbled.', { lexicons: [SYNTHETIC] })).toEqual([]);
+  });
+
+  it('reads a BARE PARTICIPLE beside that language own domain object', () => {
+    // `grobbelt` is in no `completionMarkers` list, so nothing in the frame rules can
+    // see it. The participle rule reads it because `vorpen` - this locale's word for a
+    // meeting - stands beside it.
+    const claims = detectMaterialClaims('Vorp grobbelt dez vorpen.', { lexicons: [SYNTHETIC] });
+    expect(claims.map((claim) => claim.family)).toEqual(['MEETING']);
+    expect(claims[0]?.matchedForm).toBe('grobbelt + vorpen');
+  });
+
+  it('and declines that same participle when nothing names a domain object', () => {
+    // The whole precision argument of the rule, in a language the engine holds no
+    // literal of: a participle with nothing this system creates beside it asserts
+    // nothing. This is the synthetic form of `let me get that booked`.
+    expect(detectMaterialClaims('Vorp grobbelt snerk.', { lexicons: [SYNTHETIC] })).toEqual([]);
+  });
+
+  it("and declines it when that language own mood word stands in front of it", () => {
+    // `kanna` is this locale's `can`. The synthetic form of `I can have your meeting
+    // booked for you`, which must stay clean.
+    expect(detectMaterialClaims('Vorp kanna grobbelt dez vorpen.', { lexicons: [SYNTHETIC] })).toEqual([]);
   });
 
   it('and its own clause breaker, which bounds that negator to its own clause', () => {
