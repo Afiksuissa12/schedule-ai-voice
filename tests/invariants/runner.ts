@@ -58,7 +58,8 @@ import { createProviderRegistry } from '../../src/providers/index.js';
 import type { DeterministicTelephonyProvider } from '../../src/providers/deterministicTelephonyProvider.js';
 import { createTestDatabase, type TestDatabase } from '../helpers/testDb.js';
 import { NEUTRAL_SWEEP_OFFER } from './claimOracle.js';
-import { rulesFor } from './dimensions.js';
+import { rulesFor, SEMANTIC_SWEEP_SCRIPT } from './dimensions.js';
+import { SemanticSweepVerifier } from './semanticSweepVerifier.js';
 import { proposedWhen, renderArguments, type Scenario } from './scenarios.js';
 
 /** Every table a tool call could conceivably write. */
@@ -444,7 +445,31 @@ export async function runSweep(
 
     const providers = createProviderRegistry({ availability: { options: { calendars } } });
     const llm = new ScriptedLlmProvider({});
-    const runtime = buildAgentRuntime({ clock: testDb.clock, db: testDb.db, providers, llm });
+    // MISSION 2F: THE SECOND LAYER IS A SWEPT DIMENSION, NOT A CONSTANT.
+    //
+    // Handed to the REAL composition root through its documented `claimVerifier`
+    // seam, so every scenario still goes in through `buildAgentRuntime` exactly as
+    // the demo and the production path would. What varies is which verifier the
+    // root is given - the root itself still offers no way to have none.
+    //
+    // The double is keyed on the EXACT BYTES of a scripted text, which is what
+    // makes it order-independent: a chunk of 32 scenarios shares one runtime and
+    // which worker takes which chunk is not deterministic, so a verifier answering
+    // a queue in call order would make the sweep's verdicts depend on scheduling.
+    // Keying on the text removes that entirely, which is why INV-09 still holds and
+    // why `npm run qa:sweep -- --determinism` is byte-identical.
+    //
+    // Every text carrying no declared behaviour gets `CLASSIFIED` with no claims -
+    // the same verdict `RuleDrivenSemanticClaimVerifier` with no rules returns and
+    // the same one the offline composition wires - so the 1,127 scenarios that
+    // predate this mission keep byte-identical outcomes.
+    const runtime = buildAgentRuntime({
+      clock: testDb.clock,
+      db: testDb.db,
+      providers,
+      llm,
+      claimVerifier: new SemanticSweepVerifier(SEMANTIC_SWEEP_SCRIPT),
+    });
 
     try {
       for (const scenario of chunk) {

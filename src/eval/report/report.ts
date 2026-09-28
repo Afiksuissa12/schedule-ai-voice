@@ -36,6 +36,7 @@ import { JUDGE_MODELS } from '../rubric/judge.js';
 import { JUDGE_PROMPT_VERSION } from '../rubric/judgePrompt.js';
 import {
   GATES,
+  LAYERED_CLAIM_MEASURE,
   RUBRIC_CATEGORIES,
   RUBRIC_VERSION,
   TIMESTAMP_FABRICATION_GATE,
@@ -103,7 +104,17 @@ export function buildReport(input: ReportInput): Report {
     // level, a third entry in `gates`, and `models[].unsupportedClaims`. A reader
     // written against @1 or @2 keeps working; the identifier moves because the
     // shape grew, not because it was restructured.
-    schema: 'schedule-ai-voice/eval-results@3',
+    //
+    // BUMPED AGAIN TO @4 FOR MISSION 2F, on the same rule. `@4` is a strict
+    // SUPERSET of `@3`: every key is still here, unmoved and unrenamed, and what
+    // it adds is `layeredClaimMeasure` at the top level (the FOUR quantities,
+    // declared as data, with the PROVENANCE of each), `models[].claimLayers` and
+    // `models[].layeredLatency`, plus `turns[].latency` and
+    // `turns[].checks.claimLayers` inside the per-run records. No gate was added,
+    // which is why `gates` still has three entries - `layeredClaimMeasure` is a
+    // measure, and only its fourth quantity gates, and that fourth quantity IS
+    // the third entry in `gates`.
+    schema: 'schedule-ai-voice/eval-results@4',
     generatedAtIso: input.generatedAtIso,
     harnessVersion: HARNESS_VERSION,
     corpusVersion: corpus.corpusVersion,
@@ -124,6 +135,18 @@ export function buildReport(input: ReportInput): Report {
      * attempts count had failed something. It has not.
      */
     unsupportedClaimAttemptsMeasure: UNSUPPORTED_CLAIM_ATTEMPTS_MEASURE,
+    /**
+     * ADDED IN results@4 - MISSION 2F. The FOUR claim quantities, declared as
+     * data with the PROVENANCE of each, so a reader gets "this number comes from
+     * the harness's own detector" or "this number comes from the gate's own
+     * report" next to the number rather than having to find the argument in a
+     * source file.
+     *
+     * It is NOT in `gates` either, and for the same reason the attempts measure
+     * is not: only ONE of its four quantities gates, and that one already IS the
+     * third entry in `gates`.
+     */
+    layeredClaimMeasure: LAYERED_CLAIM_MEASURE,
     rubric: RUBRIC_CATEGORIES.map((category) => ({
       key: category.key,
       label: category.label,
@@ -650,6 +673,183 @@ function renderUnsupportedClaims(p: Emit, ranked: readonly ModelScore[]): void {
     );
     p();
   }
+
+  renderLayerAttribution(p, ranked);
+  renderLayeredLatency(p, ranked);
+}
+
+/**
+ * WHICH LAYER CAUGHT WHICH CLAIM - MISSION 2F.
+ *
+ * Rendered as its own block, immediately after the two numbers above and
+ * immediately BEFORE the paragraph saying where it comes from, because the
+ * provenance of these two columns is different from the provenance of the two
+ * above them and a reader must not have to go looking for that.
+ */
+function renderLayerAttribution(p: (line?: string) => void, ranked: readonly ModelScore[]): void {
+  p('### 1.4 Which LAYER caught it - and where this number comes from');
+  p();
+
+  const observed = ranked.filter((score) => score.claimLayers.observed);
+  if (observed.length === 0) {
+    p(
+      `\`${NOT_MEASURED}\` **for every model.** No recorded turn carried a layer attribution, which means these ` +
+        'runs were produced either before harness 1.3.0 or by a claim gate that predates Mission 2F. **That is ' +
+        'not a zero and not a pass**: it means nobody can say which layer caught anything, including whether a ' +
+        'second layer ran at all. The LEAK gate in § 1.3 above is unaffected - it never consults this field.',
+    );
+    p();
+    return;
+  }
+
+  p(
+    '| Model | Turns w/ report | Union claims | Deterministic | **ONLY semantic** | Both | Verifier wired | Fail-closed attempts |',
+  );
+  p('| --- | ---: | ---: | ---: | ---: | ---: | --- | ---: |');
+  for (const score of ranked) {
+    const layers = score.claimLayers;
+    if (!layers.observed) {
+      p(`| \`${score.modelId}\` | ${NOT_MEASURED} | ${NOT_MEASURED} | ${NOT_MEASURED} | ${NOT_MEASURED} | ${NOT_MEASURED} | ${NOT_MEASURED} | ${NOT_MEASURED} |`);
+      continue;
+    }
+    const wiring =
+      layers.verifierUnwiredTurns > 0
+        ? `**NO on ${layers.verifierUnwiredTurns} turn(s)**`
+        : layers.verifierNotReportedTurns > 0
+          ? `nobody said on ${layers.verifierNotReportedTurns}`
+          : `yes (${layers.verifierNames.join(', ') || 'unnamed'})`;
+    p(
+      `| \`${score.modelId}\` | ${layers.turnsWithLayerReport} | ${layers.unionClaims} | ` +
+        `${layers.deterministicClaims} | **${layers.semanticOnlyClaims}** | ${layers.bothLayersClaims} | ` +
+        `${wiring} | ${layers.failClosedAttempts} |`,
+    );
+  }
+  p();
+  p(
+    '> **THESE TWO COLUMNS COME FROM THE CLAIM GATE\'S OWN REPORT, AND THE LEAK COLUMN IN § 1.3 DOES NOT.** ' +
+      'Which layer found a claim is an event inside `ClaimGate.review`; by the time this harness sees a turn ' +
+      'result the union is a list with no memory of who found what, and the only alternative would be running ' +
+      'a second copy of the detector AND a second copy of the verifier here - which proves that two copies of ' +
+      'the same idea agree. That is acceptable for a DIAGNOSTIC about the internal division of labour: the ' +
+      'worst a gate that misreported itself could do is misattribute credit between its own halves. It would ' +
+      'NOT be acceptable for the LEAK number, which is a must-be-zero safety claim, and that is why the leak ' +
+      'number is re-computed here from the released text against this harness\'s own ledger.',
+  );
+  p();
+
+  const unwired = ranked.filter((score) => score.claimLayers.verifierUnwiredTurns > 0);
+  if (unwired.length > 0) {
+    p(
+      `**A SECOND LAYER WAS NOT WIRED on some turns:** ` +
+        `${unwired.map((s) => `\`${s.modelId}\` (${s.claimLayers.verifierUnwiredTurns} turn(s))`).join(', ')}. ` +
+        '**This is a finding, not a configuration.** `buildAgentRuntime` always constructs a verifier and ' +
+        'offers no way to remove one, so `wired: false` means the production composition root changed. The ' +
+        'sweep treats it as an INV-19 violation for the same reason INV-18 treats `claimGate.enabled === ' +
+        'false` as one.',
+    );
+    p();
+  }
+
+  const allOutcomes: Record<string, number> = {};
+  for (const score of observed) {
+    for (const [outcome, count] of Object.entries(score.claimLayers.semanticOutcomes)) {
+      allOutcomes[outcome] = (allOutcomes[outcome] ?? 0) + count;
+    }
+  }
+  if (Object.keys(allOutcomes).length > 0) {
+    p(
+      `Second-layer outcomes across every attempt: ${Object.entries(allOutcomes)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([outcome, count]) => `\`${outcome}\` ${count}`)
+        .join(', ')}. ` +
+        'Every one of `MALFORMED`, `TIMED_OUT`, `UNAVAILABLE`, `EMPTY` and `ABSENT` is FAIL-CLOSED: the text ' +
+        'is withheld, the ledger is read, regeneration runs, and exhaustion hands off to a human. A run with ' +
+        'a non-trivial count in any of them is a run in which the verifier was partly unavailable, and its ' +
+        'conversation-quality numbers should be read knowing that.',
+    );
+    p();
+  }
+
+  const totalSemanticOnly = observed.reduce((n, s) => n + s.claimLayers.semanticOnlyClaims, 0);
+  if (totalSemanticOnly === 0) {
+    p(
+      '**Zero claims were caught by the semantic layer alone, and that is NOT a failure.** It means the ' +
+        'deterministic layer independently saw everything the second layer did - which is what eight rounds ' +
+        'of fixes were for. It is ALSO exactly what an offline run reports, because `npm test` and ' +
+        '`npm run qa:sweep` wire a rule-less verifier double that returns `CLASSIFIED` with an empty claim ' +
+        'list for every text. **Read this zero together with the wiring column and the outcome counts above ' +
+        'before concluding anything about a real model.**',
+    );
+    p();
+  }
+}
+
+/**
+ * WHAT THE SECOND LAYER COSTS THE CALLER - MISSION 2F.
+ *
+ * The mission asks for verifier latency, total turn latency and the impact on
+ * time to user response, and the last of those is a subtraction that is only
+ * honest if both terms were observed.
+ */
+function renderLayeredLatency(p: (line?: string) => void, ranked: readonly ModelScore[]): void {
+  p('### 1.5 What the second layer costs the caller');
+  p();
+
+  const observed = ranked.filter((score) => score.layeredLatency.observedTurns > 0);
+  if (observed.length === 0) {
+    p(
+      `\`${NOT_MEASURED}\` for every model: no recorded turn carried a latency decomposition, so these runs ` +
+        'predate harness 1.3.0. The `totalLatency` figures in § 6 are unaffected and still mean what they say.',
+    );
+    p();
+    return;
+  }
+
+  p('| Model | Turns | Generation p50 | Verifier p50 | Verifier calls | Total turn p50 | **Impact p50** | Impact p95 | Mean ratio |');
+  p('| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |');
+  for (const score of ranked) {
+    const l = score.layeredLatency;
+    if (l.observedTurns === 0) {
+      p(`| \`${score.modelId}\` | ${NOT_MEASURED} | | | | | | | |`);
+      continue;
+    }
+    p(
+      `| \`${score.modelId}\` | ${l.observedTurns} | ${msOrNa(l.generation.p50Ms)} | ${msOrNa(l.verifier.p50Ms)} | ` +
+        `${l.verifierCalls} | ${msOrNa(l.total.p50Ms)} | **${msOrNa(l.impact.p50Ms)}** | ${msOrNa(l.impact.p95Ms)} | ` +
+        `${l.meanImpactRatio === null ? NOT_MEASURED : `${l.meanImpactRatio.toFixed(2)}x`} |`,
+    );
+  }
+  p();
+  p(
+    '**IMPACT is `total turn - generation`**: what the caller waits for beyond the generation they would have ' +
+      'waited for anyway. It contains the verifier round trip, any regeneration round trips, the deterministic ' +
+      'detector, the union, the ledger\'s repository reads and every audit insert. It is NOT "the gate\'s cost" ' +
+      'and is not labelled as one — `docs/MISSION_2D_CLAIM_GATE_ASSURANCE.md` § 4.3 measured the pre-2F gate\'s ' +
+      'real per-turn cost as ONE DURABLE AUDIT INSERT rather than as the detector, and Mission 2F adds a ' +
+      'provider round trip plus 2-4 more audit events per attempt on top of that.',
+  );
+  p();
+  p(
+    '**VERIFIER CALLS should equal the number of customer-facing texts, not the number of claims.** The ' +
+      'Founder\'s order is that the verifier runs on every customer-facing text, so the previous "no material ' +
+      'claim, no cost" fast path is gone: a turn asserting nothing still pays one classification. A fast path ' +
+      'conditioned on the deterministic detector would let the layer whose gaps this exists to cover decide ' +
+      'whether to cover them. `docs/MISSION_2F_SEMANTIC_VERIFIER.md` § 8.',
+  );
+  p();
+  p(
+    '**How the verifier calls were identified**, because it matters to how much weight this table can carry: ' +
+      'they are classified STRUCTURALLY from the request - no tools offered, the verifier\'s own JSON Schema, ' +
+      'and its pinned seed, both constants imported from `src/agent/claimGate/semantic/` rather than copied. ' +
+      'It is a classification and not an identity check on a caller, and a future caller sending that exact ' +
+      'shape would be counted here. Nothing in the repository does. See ' +
+      '`src/eval/runner/metricsCapturingProvider.ts`.',
+  );
+  p();
+}
+
+function msOrNa(value: number | null): string {
+  return value === null ? NOT_MEASURED : `${Math.round(value)} ms`;
 }
 
 // ---------------------------------------------------------------------------

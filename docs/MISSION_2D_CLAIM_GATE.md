@@ -11,6 +11,36 @@ this task's own runs on this host and the method is stated beside it.
 
 ---
 
+> ## THERE IS A SECOND LAYER NOW. READ THIS BEFORE THE LIMIT LISTS BELOW.
+>
+> **Everything in this document describes the DETERMINISTIC claim detector, and it
+> is no longer the only reader in front of the gate.** Mission 2F added a SEMANTIC
+> second check — one model call, no tools, classification only, unioned with this
+> detector so that it may **only ADD** suspicion and can never clear, suppress or
+> override anything this detector found.
+>
+> **[`docs/MISSION_2F_SEMANTIC_VERIFIER.md`](MISSION_2F_SEMANTIC_VERIFIER.md)** is
+> the mission document: the five-step order, the authority boundaries with the type
+> and the test that enforce each, the schema, the fail-closed matrix, the
+> determinism controls in effect and NOT guaranteed, the latency measurement, and
+> the residual limits of the layered design.
+>
+> **What that does and does not change for a reader of this file.** Every limit
+> recorded in §§ 8, 16.6b, 17.8, 18.6, 19.6, 20.7 and 21.8 is still a limit **of
+> this detector**, and every one of them is still true as written. What changed is
+> that a phrasing which defeats this detector now has to defeat a second reader of a
+> completely different kind before it reaches a caller. **What did NOT change is
+> that the layered design cannot be shown complete either** — and a green
+> `npm test` or `npm run qa:sweep` is evidence about the PIPELINE and not about the
+> semantic layer's accuracy, because every offline path wires a rule-less double
+> that finds nothing in every text. Mission 2F § 12 residual 1 says so in those
+> words.
+>
+> The Founder directive that ordered it is `docs/DECISIONS.md` § 0A. § 21 of this
+> file is Mission 2F's own deterministic half.
+
+---
+
 ## 0. The short answer
 
 **The defect is closed.** `docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 13
@@ -507,6 +537,25 @@ through the mailbox.
 ## 8. What this gate does NOT catch — read this before trusting it
 
 A check whose limits are undocumented reads as a guarantee it cannot give.
+
+> **MISSION 2F: EVERY LIMIT IN THIS LIST IS NOW COVERED BY A SECOND READER — AND
+> "COVERED" IS NOT "CLOSED".** A semantic claim verifier reads the same text and
+> its findings are UNIONED with this detector's, so a phrasing in any limit below
+> has to get past a model as well as past a lexicon.
+> [`docs/MISSION_2F_SEMANTIC_VERIFIER.md`](MISSION_2F_SEMANTIC_VERIFIER.md).
+>
+> **Three limits in this list are the ones where that matters most, because for
+> them the semantic layer is not defence in depth — it is the ONLY layer:** limit 1
+> (`Booked.` with no object beside it), limit 10's remaining case (*"I took your
+> meeting off the calendar."*), and § 19.6 point 1 (`**Status**` on one line and
+> `booked for Thursday at 2pm` on the next). All three are rows in the labelled
+> verifier corpus at `src/eval/verifier/cases.en.ts` so that an operator run
+> measures them by name.
+>
+> **What the second layer does NOT do to this list.** It does not make any limit
+> below false, it does not make this detector see more, and **nobody has measured
+> whether a real model recognises any of them** — `npm run eval:verifier`
+> (EVAL_HARNESS.md § 11) is how that gets measured and it has not been run.
 
 > **Read §§ 14, 15, 16 and 17 first if you are checking this list against the code.**
 > Independent QA found FOUR fail-open defects in September 2026 that were NOT
@@ -2738,6 +2787,28 @@ already written down" is part of an honest attack report.
 
 ### 17.8 The residual limits of this design, plainly
 
+> **MISSION 2F ADDRESSED THE QUESTION THIS SUBSECTION PUTS TO THE FOUNDER, AND THE
+> ANSWER WAS YES.** The closing subsection here asks whether a model-assisted
+> second opinion is worth a second provider round trip; `docs/DECISIONS.md` § 1.9
+> carried the question and `docs/DECISIONS.md` § 0A is the directive that answered
+> it. The layer is built, wired by default, with no off switch:
+> [`docs/MISSION_2F_SEMANTIC_VERIFIER.md`](MISSION_2F_SEMANTIC_VERIFIER.md).
+>
+> **Residual 1 below — *the oracle is not a second detector* — is UNCHANGED and is
+> the one to carry forward.** Mission 2F changed the GATE's coverage, not the
+> ASSURANCE's: a novel false sentence nobody declared is still invisible to the
+> independent oracle. What Mission 2F added on the assurance side is INV-19, which
+> bounds the WIRING rather than the vocabulary — an unwired verifier, an unknown
+> outcome, a union that shrank, or a text released while the second layer failed
+> are all sweep violations now. **None of that makes the oracle able to read a
+> sentence**, and Mission 2F § 12 residual 2 restates it one layer out.
+>
+> **And the same over-reading is now available one level up.** The sweep runs a
+> RULE-LESS verifier double that finds nothing in every text, so a green sweep
+> proves the layered PIPELINE and says nothing about whether a real verifier reads
+> a sentence correctly. That is Mission 2F § 12 residual 1, and it is this
+> subsection's residual 1 wearing a different hat.
+
 A reader who needs a guarantee should be able to finish this subsection knowing
 exactly what they are and are not getting. § 8 limit 1 says of itself that a limit
 list which overstates a guarantee is worse than an undocumented gap, and it says it
@@ -3593,6 +3664,17 @@ of any of those words.
 
 ### 18.6 What § 18 does NOT close, stated rather than discovered
 
+> **MISSION 2F: every item below is now COVERED BY A SECOND READER, and none of
+> them is CLOSED.** In particular items 1 and 2 — the suppressed identifier marker,
+> and `לא צריך יותר meeting booked for Thursday at 2pm.` in `DOCUMENTED_MISSES` —
+> are exactly the shape a semantic reader can judge and a carrier-reach rule cannot:
+> a person reading either sentence has no difficulty saying what it asserts. Whether
+> a model does has not been measured.
+> [`docs/MISSION_2F_SEMANTIC_VERIFIER.md`](MISSION_2F_SEMANTIC_VERIFIER.md), and
+> EVAL_HARNESS.md § 11 is how it gets measured. **Item 4 is the one that is
+> unchanged:** everything in § 17.8's "not guaranteed" list still stands, residual 1
+> included.
+
 1. **An identifier MARKER behind an all-carrier filler is still suppressed.**
    `governs` exempts markers from both rules, because a marker is a noun phrase in
    object position and `I cannot give you a confirmation number for that.` is
@@ -4147,6 +4229,19 @@ state, with every other witness silent.
 
 ### 19.6 What § 19 does NOT close, stated rather than discovered
 
+> **MISSION 2F: point 1 below is one of the THREE wordings in this whole file for
+> which the semantic layer is not defence in depth — it is the ONLY layer.**
+> `**Status**` on one line and `booked for Thursday at 2pm` on the next is asserted
+> as a miss in `DOCUMENTED_MISSES` and will stay one: closing it at the
+> deterministic layer means either flagging a bare participle with nothing to anchor
+> it, or enumerating the nouns a model might use as a label, and § 16.6 has punished
+> enumeration six times. It is row `en-s19-bold-status-label` in the labelled
+> verifier corpus so that an operator run measures it by name.
+> [`docs/MISSION_2F_SEMANTIC_VERIFIER.md`](MISSION_2F_SEMANTIC_VERIFIER.md),
+> EVAL_HARNESS.md § 11. **Point 4 — the flattened view is a fixed list of layout
+> conventions — is covered in the same way and is equally not closed**, and point 6
+> is unchanged: § 17.8's corrected list still stands.
+
 1. **`**Status**\nbooked for Thursday at 2pm` is still missed.** `status` is in no
    locale's `domainObjects`, so the participle is as bare here as in `Booked.` —
    § 16.6b point 1, in layout form. It is the one of QA's thirteen probe lines that
@@ -4650,6 +4745,32 @@ direction every list in `he.ts` is written in, and it is the same shortfall
 `frameBlockers` and `suppressionCarriers` already record for Hebrew infinitives.
 
 ### 20.7 What § 20 does NOT close, stated rather than discovered
+
+> **MISSION 2F: the second layer covers these, AND IT IS ALSO THE PLACE THIS
+> SECTION'S RULE COSTS SOMETHING.** Two things a reader needs, in order.
+>
+> **First, the coverage.** Items 1, 2 and 4 below are open temporal enumerations,
+> and a semantic reader has no enumeration to be missing from — it quotes a
+> when-phrase VERBATIM and never parses it.
+> [`docs/MISSION_2F_SEMANTIC_VERIFIER.md`](MISSION_2F_SEMANTIC_VERIFIER.md). All
+> eleven § 20.1 wordings, the four Hebrew ones and both A/B controls are rows in the
+> labelled verifier corpus.
+>
+> **Second, the cost, and it is the sharpest residual of the layered design.** THE
+> SEMANTIC LAYER MAY NOT PARSE A DAY OR AN HOUR — that is the scheduling resolver's
+> vocabulary and a second reader of it is the § 20 defect waiting to happen twice.
+> So a claim only the semantic layer sees, which QUOTES a when-phrase, is emitted
+> with `unreadTemporal = [thatPhrase]` and lands on this section's own
+> `UNREADABLE_WHEN` path. **`Your meeting's booked for Thursday at 2pm.` against a
+> REAL Thursday 2pm booking is therefore REGENERATED rather than released
+> byte-identical.** A semantic-only claim quoting NO time is SUPPORTED and released
+> byte-identical with no regeneration. That asymmetry is the documented price of the
+> fail-safe direction, it is asserted rather than left to be discovered, and it is
+> **the same price this section already pays** for a temporal phrase the readers
+> cannot parse. Mission 2F § 12.1.
+>
+> Item 6 is unchanged: everything in §§ 8, 16.6b, 17.8 and 19.6 that is not about
+> the temporal phrase is untouched.
 
 1. **The opener list is fail-open (§ 20.6).** `to` is out by measurement,
    `after`/`before` by design, and any preposition nobody thought of is out by

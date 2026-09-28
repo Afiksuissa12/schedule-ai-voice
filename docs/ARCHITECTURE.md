@@ -23,6 +23,7 @@ itself out of.
 |---|---|---|
 | One chokepoint from model to effect | `src/agent/tools/dispatcher.ts` | A model-originated action nobody checked |
 | **One chokepoint from model text to a customer** | `src/agent/claimGate/` | A sentence asserting an effect that never happened |
+| **TWO readers in front of that chokepoint, unioned** | `src/agent/claimGate/detector.ts` + `src/agent/claimGate/semantic/`, joined by `semantic/union.ts` | A phrasing the deterministic lexicon does not recognise being read as *no claim*. The semantic layer may only **ADD**; it can never clear what the detector found, and a verifier that fails, times out or is absent is UNSUPPORTED rather than clean. `docs/MISSION_2F_SEMANTIC_VERIFIER.md` |
 | Tool schemas are `.strict()`, JSON Schema **generated** from Zod | `src/agent/tools/definitions.ts`, `jsonSchema.ts` | Telling the model one contract and judging it by another |
 | `validationProvenanceJson` is `NOT NULL` and structurally validated on write | `prisma/schema.prisma`, `src/db/repositories/scheduling.ts`, `src/domain/provenance.ts` | A scheduling decision with no record of what justified it |
 | History rebuilt from the database each turn | `src/conversation/conversationService.ts` | Business-critical state living in a context window |
@@ -50,6 +51,11 @@ src/agent/        src/conversation/  src/followup/
  prompt, tools,    durable turns      FutureActionService
  dispatcher,                          DueActionRunner
  AgentTurnService
+ claimGate/        <-- the TEXT chokepoint. TWO readers, unioned:
+   detector.ts         deterministic lexicon  --+
+   semantic/           model-assisted, ADD-only  >-- union.ts --> verifier.ts
+                                              --+   (deterministic reconciliation
+                                                     against the ActionLedger)
    |                   |                |
    +---------+---------+----------------+
              |
@@ -59,11 +65,23 @@ src/agent/        src/conversation/  src/followup/
              |
          src/db/           Prisma repositories, mappers, transactions
              |
-        src/ports/         Clock, Availability, Calendar, Telephony, Llm, Validation
-             ^
+        src/ports/         Clock, Availability, Calendar, Telephony, Llm, Validation,
+             ^             SemanticClaimVerifier
              |  implements
    src/providers/  (deterministic doubles)     src/llm/ (OpenAI adapter)
 ```
+
+**The semantic layer is inside `src/agent/claimGate/` and behind a port, and both
+facts are load-bearing.** `SemanticClaimVerifier`
+(`src/ports/claimVerifier.ts`) has ONE method, `classify`, and its result type has
+no vocabulary for *supported* at all - no `ok`, no `verified`, no `clean`. The
+decision about whether a claim is TRUE is made by deterministic code in
+`src/agent/claimGate/verifier.ts` against the `ActionLedger`, which is the only
+module entitled to that vocabulary.
+`tests/invariants/verifierAuthorityBoundary.test.ts` asserts the boundary as an
+IMPORT property over the whole of `src/agent/claimGate/semantic/`, so it holds for
+anything added there later. `docs/MISSION_2F_SEMANTIC_VERIFIER.md` is the mission
+document.
 
 Dependencies point **inwards and downwards only**. `src/ports` is types plus the
 two `Clock` implementations and imports nothing from the layers above it.
@@ -203,9 +221,11 @@ email the agent has no tool to send.
 
 | # | Step | On failure |
 |---|---|---|
-| 1 | `detectMaterialClaims(text)` — **pure**, no I/O | no claim → released unchanged, `NO_MATERIAL_CLAIM` |
-| 2 | `buildActionLedger(...)` — **only now**, five repository reads | — |
-| 3 | `verifyClaims({ text, ledger })` | all supported → released **byte-identical**, `SUPPORTED` |
+| 1 | `detectMaterialClaims(text)` — **pure**, no I/O | the deterministic reading of the text, and it is never discarded |
+| 1b | **MISSION 2F.** `SemanticClaimVerifier.classify({ text, correlationId })` — one provider call, **no tools**, JSON-Schema-constrained, temperature 0, fixed seed, bounded deadline. Runs **unconditionally**, on every customer-facing text | MALFORMED / TIMED_OUT / UNAVAILABLE / EMPTY / no verifier wired → `failClosed`, which is **UNSUPPORTED**, never clean |
+| 1c | `unionClaims(...)` — the deterministic list entire and in order, then the semantic-only claims appended. **Additive by construction**; the semantic layer can only append or re-tag `DETERMINISTIC` → `BOTH` | union empty and the second layer answered → released unchanged, `NO_MATERIAL_CLAIM` |
+| 2 | `buildActionLedger(...)` — **only now**, five repository reads. Still lazy: read when the union is non-empty **or** the second layer failed closed | — |
+| 3 | `verifyClaims({ text, ledger })` — **deterministic code**, the only thing entitled to decide *supported* | all supported → released **byte-identical**, `SUPPORTED` |
 | 4 | `buildStateInstruction(...)` → the **same** `LlmProvider`, offered **no tools** | verified → `CORRECTED_AFTER_REGENERATION` |
 | 5 | Bound reached (`MAX_CLAIM_GATE_REGENERATION_ATTEMPTS = 2`) | no text, a `Task`, `WITHHELD_HANDED_OFF` |
 
@@ -237,11 +257,15 @@ with a *frame* (`has been booked`); Hebrew asserts it with one inflected word
 reads `REGISTERED_LEXICONS` from the scheduling resolver, so the gate cannot
 disagree with the resolver about what `מחר` means.
 
-**Four audit events**, on the turn's own `correlationId`:
+**Eight audit events**, on the turn's own `correlationId`. The original four:
 `CLAIM_GATE_CLAIM_VERIFIED`, `CLAIM_GATE_CLAIM_REJECTED`,
-`CLAIM_GATE_REGENERATION_REQUESTED`, `CLAIM_GATE_TEXT_WITHHELD`.
-`src/app/auditReport.ts` renders them as a sixth question — *what was the agent
-allowed to say* — beside the original five.
+`CLAIM_GATE_REGENERATION_REQUESTED`, `CLAIM_GATE_TEXT_WITHHELD`. Mission 2F adds
+four more, interleaved in sequence: `CLAIM_GATE_SEMANTIC_REQUESTED`,
+`CLAIM_GATE_SEMANTIC_CLASSIFIED`, `CLAIM_GATE_SEMANTIC_FAILED` and
+`CLAIM_GATE_CLAIM_LAYERED`. `src/app/auditReport.ts` renders them as a sixth
+question — *what was the agent allowed to say* — and a seventh, *which layer
+caught it*, beside the original five. `AuditEvent.type` is a `String` column, so
+no migration was needed and `prisma/schema.prisma` is unchanged.
 
 **What it does not do.** It never edits, trims or substitutes text: either the
 model's own bytes go out or nothing does. It contains no customer-facing string,
@@ -250,9 +274,17 @@ echo — the failed attempt's own wording is deliberately withheld from it and k
 in the audit trail instead. It never executes a tool: a regeneration is offered
 an empty tool list, so the gate cannot cause an effect even by accident.
 
-**The one honest cost.** The gate needs the whole text before release, so a caller
-cannot speak a token before it is verified. `docs/MISSION_2D_CLAIM_GATE.md` § 7
-has the measured numbers and what they mean for the voice milestone.
+**The honest costs, and Mission 2F added one.** The gate needs the whole text
+before release, so a caller cannot speak a token before it is verified;
+`docs/MISSION_2D_CLAIM_GATE.md` § 7 has the measured numbers and what they mean
+for the voice milestone. **And since Mission 2F the previous "no material claim,
+no cost" fast path is gone**: a turn that asserts nothing still pays one verifier
+round trip, because the Founder's order is that the verifier runs on every
+customer-facing text and a fast path conditioned on the deterministic detector
+would let the layer whose gaps this exists to cover decide whether to cover them.
+What survives of the fast path is the DATABASE half — the ledger is still lazy.
+`docs/MISSION_2F_SEMANTIC_VERIFIER.md` § 8 has the latency arithmetic and states
+plainly that a verifier outage hands off every claiming turn to a human.
 
 ---
 
@@ -467,7 +499,7 @@ UTTERANCE_RECEIVED -> AGENT_TURN_STARTED -> PROVIDER_INVOKED -> AGENT_DECISION
 | `tests/scheduling/` | Resolver grammar, the nine ordered checks, DST, policy from the persisted row, provider boundary, runner restart/backoff, and the locale regression net: Hebrew/English parity, timezone and DST boundaries in Israel and the US, date-only vs date-plus-time, refusals across thirteen scripts |
 | `tests/agent/` | Prompt composition, the nine-tool contract, dispatcher ordering, conversation durability, qualification rubric |
 | `tests/e2e/` | The slice end to end, 13 adversarial turns, the bounded turn loop |
-| `tests/invariants/` | **The sweep**: 1,127 generated scenarios x 16 per-scenario invariants, plus determinism and the network trap |
+| `tests/invariants/` | **The sweep**: 1,171 generated scenarios x 17 per-scenario invariants, plus determinism and the network trap |
 
 ### The invariant sweep
 
@@ -479,9 +511,9 @@ writing one test per example.
 |---|---|
 | `dimensions.ts` | The axes: 5 contact timezones (plus 3 locale zones for family L), 7 model-ASSERTED timezones, 10 `now` instants (plus 5 sub-minute ones for the lead-time boundary and 2 for family L), 35 expressions of which 19 are Hebrew, code-switched or in a language no lexicon covers, 10 Hebrew/English parity pairs, 4 policies, 4 availability states. Pure data. |
 | `dimensions.test.ts` | Re-derives every factual claim the dimensions make (that a local time really is in a DST gap, that Kolkata really has a half-hour offset) so a comment can never quietly become a lie |
-| `scenarios.ts` | Crosses them into **1,127** scenarios in 13 named families. Pure function, fixed seed, stable ids |
+| `scenarios.ts` | Crosses them into **1,171** scenarios in 13 named families. Pure function, fixed seed, stable ids |
 | `runner.ts` | Drives each scenario through `AgentTurnService.handleTurn` - the real front door |
-| `invariants.ts` | The 16 per-scenario properties. INV-15/16/17 are the locale-aware ones: no accepted resolution ignores an unconsumed token; a translated Hebrew/English pair resolves to the same instant; the resolved calendar day is the day the phrase named, read in the contact's zone. INV-18 is the claim gate's: no customer-facing text the system released asserts an effect absent from the action ledger, and family `M-claim-release` is the axis that stops it being vacuous |
+| `invariants.ts` | The 17 per-scenario properties. INV-15/16/17 are the locale-aware ones: no accepted resolution ignores an unconsumed token; a translated Hebrew/English pair resolves to the same instant; the resolved calendar day is the day the phrase named, read in the contact's zone. INV-18 is the claim gate's: no customer-facing text the system released asserts an effect absent from the action ledger, and family `M-claim-release` is the axis that stops it being vacuous. **INV-19 is the LAYERED pipeline's** (Mission 2F): every customer-facing text was read by **both** claim layers, the union never shrank below the deterministic claim set, and a second layer that produced nothing usable released nothing - a missing or unwired verifier is a violation exactly as `claimGate.enabled === false` is. It asks the question no amount of reading rows can answer: *did this system run the check it says it runs* |
 | `claimOracle.ts` | **The independent oracle for INV-18.** Every scripted model text declares, as hand-authored data, whether it asserts a material effect and of which kind; INV-18 judges the declaration against observed rows. It imports NOTHING, so it cannot consult the detector it is policing - which is what stops the assurance layer certifying a detector gap as zero leaks. `docs/MISSION_2D_CLAIM_GATE.md` § 17.5 |
 | `releaseTexts.ts`, `pastFindingTexts.ts` | The declarations themselves: family M's sentences, and the verbatim wordings of the four Mission 2D fail-open findings |
 | `networkTrap.ts` | Patches `fetch`/`http`/`https`/`net` and records any outbound attempt |

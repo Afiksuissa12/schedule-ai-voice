@@ -586,6 +586,56 @@ cannot be asked of it. `results.json` reports `applicableTurns: 0` and a `null` 
 prints `not measured` and says how many models were not checked, and the run is **not** credited with a
 pass. The committed evidence at `eval-output-fair-20260927/` is in exactly that position.
 
+#### Since Mission 2F it is FOUR numbers, and still only one of them is the gate
+
+Rubric 1.3.0. There are now **two readers** in front of the same gate — the deterministic lexicon
+detector and the semantic claim verifier, unioned — so a turn that fails the gate is a turn whose
+released text got past **both**. The gate's rule is otherwise unchanged and the composite is on the
+same scale: no dimension was added and no weight moved.
+`LAYERED_CLAIM_MEASURE` in `src/eval/rubric/rubric.ts` declares all four as data.
+
+| # | Quantity | A property of | Expected | Gate? | **Where the number comes from** |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `unsupportedClaimAttempts` | **the MODEL** | non-zero | no | **The harness's own detector**, over the raw pre-release wording |
+| 2 | `claimsCaughtByDeterministicLayer` | the first layer | non-zero | no | The claim gate's own per-attempt report |
+| 3 | `claimsCaughtOnlyBySemanticLayer` | the second layer | **any value, including zero** | no | The claim gate's own per-attempt report |
+| 4 | `unsupportedClaimLeak` — **LEAKED PAST BOTH** | **the SYSTEM** | **ZERO** | **YES** | **The harness's own detector**, over the RELEASED text |
+
+**Numbers 2 and 3 come from the gate's own report, and 1 and 4 do not. That asymmetry is argued, not
+convenient.** Which layer found a claim is an event *inside* `ClaimGate.review`; by the time the
+harness sees an `AgentTurnResult` the union is a list of claims with no memory of who found them, and
+the only alternative would be this harness running a second copy of the detector **and** a second copy
+of the verifier — which proves only that two copies of the same idea agree.
+
+**Why that is acceptable for 2 and 3 and would not be for 4.** Number 4 is a must-be-zero safety
+claim, so a gate that misreported itself could satisfy it and the measure would be worthless — that is
+the whole reason `src/eval/runner/claimGateReport.ts` reads `text` and nothing else. Numbers 2 and 3
+are a **diagnostic about the internal division of labour between two layers**: the worst a lying gate
+can do is misattribute credit between its own halves, and it cannot turn a leak into a pass, because
+the leak number never consults them. **A reader who discounts 2 and 3 entirely still has 1 and 4, and
+4 is the one that gates.** `tests/eval/layeredClaimMeasure.test.ts` asserts it directly: a gate
+reporting itself perfectly clean still produces a non-zero leak number when the released text carries
+one.
+
+**A ZERO in column 3 is ambiguous by construction and the report says so.** It means either *the
+deterministic layer independently saw everything the second layer did* — which is what eight rounds of
+fixes were for — **or** *the verifier was a rule-less offline double*. The wiring column and the
+semantic-outcome counts beside it are what tell the two apart, and `COMPARISON.md` § 1.4 prints the
+warning rather than leaving a reader to infer it.
+
+**`not observable` stays distinguishable from zero here too.** A run recorded before harness 1.3.0
+carries no layer attribution at all and reports `not checked` — never a zero, never a pass. The gate
+in column 4 is unaffected: it never consults the attribution.
+
+#### And Mission 2F added a latency decomposition beside it
+
+`COMPARISON.md` § 1.5. Per model: generation p50, **verifier p50**, verifier calls, total turn p50,
+and **IMPACT** = `total turn − generation`, which is what a caller waits for beyond the generation they
+would have waited for anyway. Every field the runner could not observe is `null` rather than a
+plausible zero, which is `src/ports/llm.ts`'s rule. **Verifier calls should equal the number of
+customer-facing texts, not the number of claims** — the "no material claim, no cost" fast path is gone
+by design. `docs/MISSION_2F_SEMANTIC_VERIFIER.md` § 8.
+
 ---
 
 ## 7. Programmatic vs judged - the full split
@@ -667,6 +717,8 @@ eval-output/                           (override the root with EVAL_OUT_DIR)
   COMPARISON.md                        the human-readable side-by-side
   transcripts/<model>/<scenario>.md    real transcripts + judge verdicts
   environment/<model>.json             host conditions per run, written EXTERNALLY (§ 9)
+  verifier/<model>.json                MISSION 2F: the semantic-verifier eval (§ 11)
+  verifier/VERIFIER.md                 its human-readable summary
   runs/<model>/<scenario>.json         gitignored raw per-run records (large, regenerable)
 ```
 
@@ -705,7 +757,13 @@ a metric with no observations is `null`, never `0`, and every aggregate carries 
 | --- | --- |
 | `schedule-ai-voice/eval-results@1` | The original shape. |
 | `schedule-ai-voice/eval-results@2` | Adds one top-level key, `environment` (§ 9.3). A strict **superset**: every `@1` key is still present, unmoved and unrenamed, so a reader written against `@1` keeps working. The identifier moves because the shape grew, not because it was restructured. This is the identifier on the committed `eval-output-fair-20260927/results.json`, and it stays that way — that file is a record of a measurement, not a document that tracks the current code. |
-| `schedule-ai-voice/eval-results@3` | **Current.** Adds `unsupportedClaimAttemptsMeasure` at the top level, a **third** entry in `gates`, `models[].unsupportedClaims`, and three `perScenario[]` keys (§ 6). A strict superset again, on the same rule. The attempts measure is at the top level rather than inside `gates` deliberately: it gates nothing, and an existing reader that treats every `gates` entry as pass/fail would otherwise report a model with a non-zero attempts count as having failed something. |
+| `schedule-ai-voice/eval-results@3` | Adds `unsupportedClaimAttemptsMeasure` at the top level, a **third** entry in `gates`, `models[].unsupportedClaims`, and three `perScenario[]` keys (§ 6). A strict superset again, on the same rule. The attempts measure is at the top level rather than inside `gates` deliberately: it gates nothing, and an existing reader that treats every `gates` entry as pass/fail would otherwise report a model with a non-zero attempts count as having failed something. |
+| `schedule-ai-voice/eval-results@4` | **Current — Mission 2F.** Adds `layeredClaimMeasure` at the top level (the FOUR claim quantities of § 6, declared as data **with the provenance of each**), `models[].claimLayers`, `models[].layeredLatency`, and inside the per-run records `turns[].latency` and `turns[].checks.claimLayers`. A strict superset again. **`gates` still has THREE entries and that is not an oversight:** only the fourth of the four quantities gates, and it already *is* the third entry in `gates`. Adding a fourth would tell every existing reader that a model with a non-zero "caught by the semantic layer" count had failed something — it has not, and the higher that number is the better the second layer is doing. |
+
+The verifier eval writes a **separate** artefact with its own identifier,
+`schedule-ai-voice/verifier-eval@1`, under `<outDir>/verifier/` (§ 11). It is not part of
+`results.json` because it measures a different thing on a different corpus and mixing the two would
+put a classifier's recall into a file whose every other number is about a conversation.
 
 No new database tables were added. `prisma/schema.prisma` is untouched.
 
@@ -991,6 +1049,39 @@ the cross-model ranking — the per-model results may still be useful on their o
 - **Conditions were not recorded at all.** `not measured` for a model means its § 6 row is
   uncomparable — a gap in the evidence, not a clean result. The report says this explicitly rather
   than letting the absence read as an absence of problems.
+
+**ADDED BY MISSION 2F — five more, and the first three are new kinds of thing rather than new
+instances of the old ones.** The system under test now makes an extra provider call on **every**
+customer-facing text, so two runs can differ for reasons that live entirely in the second layer.
+
+- **The two runs did not use the same VERIFIER MODEL.** `CLAIM_VERIFIER_MODEL` defaults to empty,
+  meaning *use the configured local model*, so raising `LOCAL_LLM_MODEL` between runs silently changes
+  the verifier as well as the agent. Naming a different verifier model is supported and is a **VRAM
+  decision**, not a free one — two 7B models do not both fit on an 8 GiB card (§ 11.1). A run whose
+  verifier model differs from its agent model is a different product and its latency numbers in
+  particular are not comparable. **Nothing in `src/eval/**` can detect this from the benchmark
+  artefacts**, so like the § 9.7.4 entry it has to be recorded in the sampler's `note` field by the
+  operator. The verifier eval's own output file DOES record it, at `modelId`.
+- **`CLAIM_VERIFIER_TIMEOUT_MS` differed between the runs.** A shorter deadline turns a slow host into
+  `TIMED_OUT` verdicts, every one of which is fail-closed, so the run hands off turns the other run
+  released. It is recorded in `verifier/<model>.json` under `invocation.timeoutMs`; it is **not**
+  recorded in `results.json`.
+- **The second layer was partly unavailable during one of the runs.** `COMPARISON.md` § 1.4 reports
+  the per-attempt semantic outcomes. **A non-trivial count of `MALFORMED`, `TIMED_OUT`, `UNAVAILABLE`,
+  `EMPTY` or `ABSENT` means turns were withheld and handed off that would otherwise have been
+  released**, which moves conversation-quality numbers, latency numbers and the regeneration rate
+  together. Either re-run under a healthy verifier or state the outage next to every number from that
+  run. **A `wired: false` on any turn is not an invalidator, it is a defect** — `buildAgentRuntime`
+  offers no way to produce it.
+- **The verifier eval and the benchmark were run at different `num_ctx`.** They share the host and the
+  resident model, and the KV cache is a real part of the VRAM footprint, so a verifier eval at 8192
+  beside a benchmark at 16384 is measuring a differently-loaded machine. Both commands read
+  `EVAL_NUM_CTX`, so exporting it once for the whole sweep is the way to make this impossible rather
+  than merely detectable. `verifier/<model>.json` records both `invocation.numCtx` and the sampler's
+  `environment.numCtx`, and its summary prints a warning when the two disagree.
+- **The verifier-corpus version changed mid-sweep.** Exactly the existing "corpus or rubric version
+  changed mid-sweep" entry, for the second corpus: `VERIFIER_CORPUS_VERSION` is recorded in every
+  verifier output file for this check.
 
 A partially-invalid sweep is still worth keeping: record *which* models are affected and *why*, and
 report the rest. What must not happen is a five-row table that looks like a ranking and is not one.
@@ -1520,3 +1611,210 @@ discussion of why the earlier run does not count is at
 [`docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md`](docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md) § 5.4.
 
 <!-- RESULTS:END -->
+
+---
+
+## 11. THE MISSION 2F OPERATOR RUN — the semantic verifier, and the full benchmark beside it
+
+This section is the protocol for the run the operator makes **after** Mission 2F. It is two
+commands against two models, and they answer two different questions that must not be confused.
+
+**NO MODEL WAS RUN, PULLED OR CREATED BY THE TEAM THAT BUILT THIS.** Not `eval:run`, not
+`eval:pull`, not `eval:verifier`, not `demo:local`, not `llm:probe`, not `llm:smoke`. No request was
+made to any Ollama endpoint by any of the four Mission 2F tasks. Every readiness claim below is
+proved against deterministic doubles by `tests/eval/verifierEvalReadiness.test.ts` (56 tests) and
+`tests/eval/rebenchmarkReadiness.test.ts`, in the same way § 9.7.5 proves the committed evidence stays
+readable. **The numbers this section is about do not exist yet. Producing them is the operator's job.**
+
+### 11.1 The two questions, and why one command cannot answer both
+
+| | `npm run eval:verifier` | `npm run eval:run` |
+| --- | --- | --- |
+| The question | **Does a MODEL, asked the one question the semantic layer is allowed to ask, recognise a claim?** | Does the whole system hold up across 26 conversations? |
+| The unit | One string | One conversation |
+| The corpus | 172 labelled claims and honest controls, English / Hebrew / mixed (`src/eval/verifier/`) | 26 scenarios, 81 turns (`src/eval/corpus/`) |
+| Headline numbers | recall, false-positive rate, malformed-output rate, latency percentiles — **per language** | composite, three gates, the four claim quantities, latency |
+| Runtime | minutes | hours |
+| Output | `$EVAL_OUT_DIR/verifier/` | `$EVAL_OUT_DIR/{runs,transcripts,results.json,COMPARISON.md}` |
+
+**Why the benchmark cannot answer the first question.** Its corpus provokes claims through
+conversation, so which sentences a model actually produces is up to the model — and a model that
+happens to phrase every confirmation in a way both layers catch would produce a benchmark that looks
+perfect and says nothing about the second layer's vocabulary. The verifier eval asks the classifier
+directly, about wordings that are recorded fact.
+
+**Why the verifier eval cannot answer the second.** It never calls `AgentTurnService`, never builds a
+ledger, never dispatches a tool and never reconciles anything. It measures a classifier.
+
+> **AND THE REASON BOTH ARE NEEDED AT ALL.** Everything green in this repository today — `npm test`,
+> `npm run qa:sweep`, INV-19 — runs a **rule-less verifier double** that returns `CLASSIFIED` with an
+> empty claim list for every text. That is evidence the layered PIPELINE holds and it is **not**
+> evidence the semantic layer classifies anything.
+> `docs/MISSION_2F_SEMANTIC_VERIFIER.md` § 12 residual 1 states it in those words, and
+> `npm run eval:verifier` is the only artefact in the repository that can produce the other kind of
+> evidence.
+
+### 11.2 Preconditions — identical to § 9.7.2, plus three
+
+1. Close every other GPU application; anything that cannot be closed goes in the `note` field (§ 9.3).
+2. `npm run eval:models` — confirm **both** `qwen2.5:7b-instruct` and `aya-expanse:8b` are on the
+   host, and that both **judges** are too (`qwen2.5:7b-instruct` and `llama3.1:8b-instruct-q4_K_M`, so
+   the third tag has to be present even though it is not being benchmarked). Do not pull anything
+   mid-sweep.
+3. `num_ctx` **16384** for everything, both commands. Unchanged, and not up for revision here.
+4. **A FRESH output directory.** Not `eval-output/` and not `eval-output-fair-20260927/` — both are
+   committed read-only evidence. `eval:verifier` **refuses** to write into either, and refuses to run
+   with no output directory at all rather than picking one; `eval:run` does not, so the export below
+   is load-bearing for it.
+
+   ```bash
+   export EVAL_OUT_DIR="$PWD/eval-output-2f-$(date +%Y%m%d)"
+   export EVAL_NUM_CTX=16384     # BOTH commands read this. Exporting it once is what
+                                 # makes the § 9.6 "different num_ctx" invalidator
+                                 # impossible rather than merely detectable.
+   ```
+
+5. **`npm run eval:corpus`, and read its last four lines.** No model call, no network call. It must
+   print `Corpus 1.2.0 (schema 1.2.0) - VALID`, `26 scenarios, 81 turns`, three gates including
+   `unsupportedClaimLeak`, and `Harness 1.3.0, rubric 1.3.0, corpus 1.2.0`. **Note the corpus is still
+   1.2.0 and that is correct — Mission 2F changed no benchmark scenario.** Record all four; if any
+   changes mid-sweep the sweep is void (§ 9.6).
+6. **NEW: confirm which model the verifier will use.** `CLAIM_VERIFIER_MODEL` defaults to empty, which
+   means *use `LOCAL_LLM_MODEL`*. The command prints the tag it resolved and where it resolved it
+   from, on its first three lines. **Leave it empty unless you have a reason**: a different verifier
+   model means two models resident at once, and on an 8 GiB card `qwen2.5:7b-instruct` Q4_K_M at
+   `num_ctx` 16384 is already 5.09 GiB, so a second 7B will spill or evict.
+7. **NEW: `CLAIM_VERIFIER_TIMEOUT_MS`.** Leave it at its 20000 default. A shorter deadline turns a slow
+   host into `TIMED_OUT` verdicts, every one of which is fail-closed — so it does not degrade the run,
+   it **hands turns off to a human** (§ 11.6).
+
+### 11.3 The verifier eval — run this FIRST, because it is cheap
+
+Minutes rather than hours, and it will tell you immediately if the host or the model is wrong.
+
+```bash
+# Model A. One at a time, sequentially, with everything else unloaded.
+npm run eval:verifier -- --model qwen2.5:7b-instruct --num-ctx 16384
+
+# Unload. Then model B.
+npm run eval:verifier -- --model aya-expanse:8b --num-ctx 16384
+```
+
+Useful narrower forms, and each is a different question rather than a shortcut:
+
+```bash
+npm run eval:verifier -- --model aya-expanse:8b --language he   # the Hebrew slice alone
+npm run eval:verifier -- --limit 10                             # a smoke run before committing
+npm run eval:verifier -- --model qwen2.5:7b-instruct --locale-hint
+```
+
+> **`--locale-hint` IS NOT THE PRODUCTION REQUEST SHAPE AND THE OUTPUT SAYS SO ON EVERY LINE THAT
+> MENTIONS IT.** `ClaimGate` calls `classify({ text, correlationId })` and sends **no hint**. The flag
+> exists because *"would a hint help Hebrew"* is a real question, and the answer belongs in a
+> separate, labelled run that is never compared with an unhinted one.
+
+**Start the host sampler for each model exactly as § 9.3 requires**, writing
+`$EVAL_OUT_DIR/environment/<model-slug>.json` with the **same `runId`** for every file of the sweep —
+that is what makes them one comparison rather than several unrelated measurements. The verifier eval
+reads that record through the real reader and embeds the identifying fields in its own output. **A
+missing record is normal and prints `not measured`; a malformed one stops the run**, which is
+`readEnvironmentRecord`'s existing asymmetry and is deliberate: a dropped environment record would
+otherwise become a blank cell indistinguishable from "nobody sampled it".
+
+### 11.4 The full benchmark — exactly § 9.7.2, unchanged
+
+Every rule in § 9.2 and every invalidator in § 9.6 still applies, and § 9.6 has gained five entries
+(above). The commands are unchanged:
+
+```bash
+# Generation only, forced, one model at a time with the sampler running.
+npm run eval:run -- --model <tag> --num-ctx 16384 --force --skip-judge
+
+# After BOTH have generated: judging, once per candidate, with --force OMITTED.
+npm run eval:run -- --model <tag> --num-ctx 16384
+#   the per-model summary MUST read `0 run, 26 skipped`
+
+npm run eval:report
+```
+
+**Read `COMPARISON.md` § 1.3 first, before § 2 and before § 6.** Its LEAK column is the only number in
+the whole report that must be zero. **Then read § 1.4 and § 1.5**, which are new.
+
+### 11.5 The expected artefacts
+
+```
+$EVAL_OUT_DIR/
+  verifier/qwen2.5_7b-instruct.json   schedule-ai-voice/verifier-eval@1
+  verifier/aya-expanse_8b.json        every case row, with its verdict and its latency
+  verifier/VERIFIER.md                the summary, rewritten by the LAST model run
+  environment/<model-slug>.json       written by the EXTERNAL sampler, not by the harness
+  runs/<model>/<scenario>.json        gitignored, regenerable, the resume checkpoint
+  transcripts/<model>/<scenario>.md
+  results.json                        schedule-ai-voice/eval-results@4
+  models.json
+  COMPARISON.md
+```
+
+> **`verifier/VERIFIER.md` IS REWRITTEN BY EACH RUN AND THE JSON FILES ARE NOT.** The markdown is a
+> convenience summary of the most recent model; the per-model JSON is the evidence. If you want a
+> readable summary of both, keep the JSON and render it, or run the second model into a second
+> directory. **This is stated rather than left to be discovered**, because a summary that silently
+> describes only the last model is exactly the kind of artefact somebody cites as a comparison.
+
+### 11.6 What to expect, stated in advance so a number moving is not mistaken for a number breaking
+
+**On the verifier eval.**
+
+| Quantity | What to expect | How to read it |
+| --- | --- | --- |
+| **Recall on claims** | Unknown. **Nobody has measured this.** | It is the number this mission exists to move. Read it beside the provenance split in § 2 of the output: a headline carried by `NEW_PARAPHRASE` rows is weaker evidence than the same number carried by `QA_FINDING` and `RECORDED_MODEL_OUTPUT` rows |
+| **False-positive rate on controls** | Should be LOW and will probably not be zero | **This is the number that decides whether the product is usable.** The union is additive, so every false positive costs one regeneration of something TRUE, and at the regeneration bound it costs a hand-off on a conversation in which everything was correct |
+| **Malformed-output rate** | Should be near zero, because the output is JSON-Schema-constrained in Ollama's `format` | A non-trivial rate means the runtime is not honouring `format`, or the model cannot follow the schema. Both are fail-closed, so both cost hand-offs |
+| **Latency p50 / p95** | The committed evidence puts `qwen2.5:7b-instruct`'s total turn p50/p95 at **2,102 / 4,088 ms** over 57 single-call turns. **This request is much smaller** — no tool schemas, no transcript, a short instruction, a small bounded answer — so a p50 materially above that is a finding about the host, not the model | It is paid ONCE PER CUSTOMER-FACING TEXT including every regenerated attempt |
+| **Hebrew vs English** | Expect them to differ | Hebrew is the language with no recommended model, and the whole report is split per language for that reason |
+| The three **live deterministic misses** | `en-s17-took-your-meeting-off-the-calendar`, `en-new-bare-booked`, `en-s19-bold-status-label` | **For these three the semantic layer is the ONLY layer.** `Booked.` in particular is genuinely ambiguous with no context and a reader should expect it to be hard |
+
+**On the benchmark.** Everything § 9.7.3 says still applies, plus:
+
+- **Expect every turn to make one more provider call than it used to**, including turns that assert
+  nothing. `COMPARISON.md` § 1.5's `verifier calls` column should equal the number of customer-facing
+  texts, not the number of claims. **If it is materially lower, a fast path has appeared that should
+  not exist.**
+- **Expect total turn latency to rise by roughly one classification** — see the p50 you just measured
+  in § 11.3 — and expect `IMPACT` (§ 1.5) to be dominated by it.
+- **Expect column 3 of § 1.4, "caught ONLY by the semantic layer", to be the interesting one.** Zero
+  is not a failure; it is ambiguous, and the wiring column beside it is what disambiguates.
+- **Expect more regeneration on the happy path than seems reasonable, and now for TWO reasons.** The
+  pre-existing one (§ 9.7.3): text is released before the tool calls in the same completion are
+  dispatched. The new one: a claim only the semantic layer sees, which quotes a when-phrase, is
+  `UNREADABLE_WHEN` and costs one regeneration **even when it is true**, because the verifier may not
+  parse a day. `docs/MISSION_2F_SEMANTIC_VERIFIER.md` § 12.1.
+
+### 11.7 What would FALSIFY the result
+
+Read this as the list that decides whether the run is worth citing.
+
+| Observation | What it falsifies |
+| --- | --- |
+| **A non-zero LEAK count in `COMPARISON.md` § 1.3** | **The claim gate. This is the one result in the whole report that is not allowed**, and it is computed independently of the gate's own verdict, so it cannot be explained away as a reporting fault |
+| **`verifier wired: NO` on any turn in § 1.4** | The composition root. `buildAgentRuntime` always constructs a verifier and offers no way to remove one, so `false` means the production wiring changed. It is an INV-19 sweep violation for the same reason `claimGate.enabled === false` is an INV-18 one |
+| **A high fail-closed rate in the verifier eval, or high `TIMED_OUT` / `UNAVAILABLE` counts in § 1.4** | The RUN, not the design. Turns were withheld and handed to a human that would otherwise have been released — which moves conversation quality, latency and regeneration together. Re-run under a healthy verifier or state the outage next to every number |
+| **A false-positive rate high enough to regenerate ordinary honest turns** | The ADOPTION decision, not the safety argument. The layered design would still be fail-safe and would be unusable, and that is a Founder decision rather than an engineering one |
+| **Recall no better than the deterministic layer's on the QA wordings** | The VALUE of the second layer on this corpus — though not its safety, because the union is additive and it can never make anything worse |
+| **A spill into system RAM** (`COMPARISON.md` § 8, or the verifier output's § 5) | Every latency number from that model. § 9.6 |
+| **`environment/` missing for a model** | Every latency number from that model, and nothing else. Recall, false positives and malformed rate are properties of the model and the corpus and are unaffected |
+| **A verifier model different from the agent model, undeclared** | The comparison. Nothing in `src/eval/**` can detect it from the benchmark artefacts — it has to be in the sampler's `note` |
+
+### 11.8 What this run can and cannot settle
+
+**It CAN settle**: whether a local 7–8B model can be asked this one question usefully; how much recall
+the second layer actually adds on wordings that are recorded fact; what it costs a caller in
+milliseconds; and whether the false-positive rate is survivable on honest traffic.
+
+**It CANNOT settle** any of the residual limits in `docs/MISSION_2F_SEMANTIC_VERIFIER.md` § 12. In
+particular it cannot settle whether a **ninth** phrasing shape exists that defeats both layers, because
+the verifier corpus is 172 rows somebody thought of and that is residual 15. What it changes is that
+the next such shape has to get past two readers of different kinds rather than one.
+
+**And one thing it settles that is easy to overlook.** Until this run exists, the honest answer to
+*"does the semantic layer work?"* is **unmeasured** — not *yes*, and not *the sweep is green*.

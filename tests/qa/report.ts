@@ -238,6 +238,61 @@ export interface ClaimGateSummary {
     readonly text: string;
     readonly count: number;
   }[];
+  /**
+   * THE TWO LAYERS, AS NUMBERS - MISSION 2F, and INV-19's subject.
+   *
+   * INV-18 asks whether a released sentence was TRUE. These numbers answer the
+   * different question INV-19 exists for: DID THE SYSTEM RUN THE CHECK IT SAYS IT
+   * RUNS. A turn can be perfectly safe and still have skipped the second layer, and
+   * a turn that skipped it is a turn nobody classified - which is the state
+   * `docs/MISSION_2D_CLAIM_GATE.md` § 21.2 reason 3 describes as "silence is not
+   * safety".
+   *
+   * `releasedWhileFailClosed` is the one that must be zero, and it is printed
+   * beside `CLAIMS THAT LEAKED PAST THE GATE` rather than further down, because
+   * the two are the same kind of fact: the first is a customer told something
+   * false, the second is a customer told something nobody checked.
+   *
+   * `scenariosWithoutAVerifier` is a VIOLATION and not a configuration, exactly as
+   * `scenariosWithoutAGate` is. `buildAgentRuntime` always resolves a verifier and
+   * offers no way to remove one.
+   */
+  readonly layered: LayeredSummary;
+}
+
+export interface LayeredSummary {
+  readonly scenariosWithAVerifier: number;
+  /** MUST BE 0. The runtime said no second layer was wired. */
+  readonly scenariosWithoutAVerifier: number;
+  /** MUST BE 0. Nobody said whether one was wired, which is not the same as "yes". */
+  readonly scenariosWithWiringNotReported: number;
+  /** Every attempt of every release, which is what the second layer ran on. */
+  readonly attempts: number;
+  readonly attemptsBySemanticOutcome: readonly { readonly outcome: string; readonly count: number }[];
+  readonly attemptsFailClosed: number;
+  /**
+   * MUST BE 0. Text reached a caller on an attempt whose second layer produced
+   * nothing usable - malformed, timed out, unavailable, empty, or absent.
+   */
+  readonly releasedWhileFailClosed: number;
+  /** MUST BE 0. A union smaller than the deterministic set it is a superset of. */
+  readonly unionsSmallerThanDeterministic: number;
+  /** One row per source tag, so a reader can see which layer caught what. */
+  readonly claimsBySource: readonly { readonly source: string; readonly count: number }[];
+  /**
+   * Claims ONLY the semantic layer saw. Every one is a claim that would have
+   * leaked before this mission - which is why it is reported rather than summed
+   * into a total.
+   */
+  readonly semanticOnlyClaims: number;
+  /**
+   * NON-VACUITY: attempts on which the second layer actually ANSWERED.
+   *
+   * Counts answers, never claims. A sweep in which the layer never answered would
+   * report a clean INV-19 having examined nothing - the same way INV-18 reported
+   * 1,710 green checks having examined no claim before family M existed.
+   */
+  readonly attemptsTheSecondLayerAnswered: number;
 }
 
 export function claimGateSummary(observations: readonly ScenarioObservation[]): ClaimGateSummary {
@@ -260,9 +315,50 @@ export function claimGateSummary(observations: readonly ScenarioObservation[]): 
   };
   const disagreements = new Map<string, { agreement: WitnessAgreement; text: string; count: number }>();
 
+  // ---- MISSION 2F: the two layers ----------------------------------------
+  const semanticOutcomes = new Map<string, number>();
+  const claimSources = new Map<string, number>();
+  let scenariosWithAVerifier = 0;
+  let scenariosWithoutAVerifier = 0;
+  let scenariosWithWiringNotReported = 0;
+  let layeredAttempts = 0;
+  let attemptsFailClosed = 0;
+  let releasedWhileFailClosed = 0;
+  let unionsSmallerThanDeterministic = 0;
+  let semanticOnlyClaims = 0;
+  let attemptsAnswered = 0;
+
   for (const observation of observations) {
     if (observation.claimGate.enabled) scenariosWithAGate += 1;
     else scenariosWithoutAGate += 1;
+
+    // `verifier` is OPTIONAL on the report, and `undefined` is NOT `wired: false`.
+    // It means nobody said, which is its own row: defaulting an unknown to safe is
+    // the silence § 17.5 exists to remove.
+    const verifier = observation.claimGate.verifier;
+    if (verifier === undefined) scenariosWithWiringNotReported += 1;
+    else if (verifier.wired) scenariosWithAVerifier += 1;
+    else scenariosWithoutAVerifier += 1;
+
+    for (const release of observation.claimGate.releases) {
+      for (const attempt of release.attempts) {
+        layeredAttempts += 1;
+        const layers = attempt.layers;
+        semanticOutcomes.set(layers.semanticOutcome, (semanticOutcomes.get(layers.semanticOutcome) ?? 0) + 1);
+        if (layers.semanticOutcome === 'CLASSIFIED') attemptsAnswered += 1;
+        if (layers.failClosed) attemptsFailClosed += 1;
+        if (layers.unionClaimCount < layers.deterministicClaimCount) unionsSmallerThanDeterministic += 1;
+        for (const source of layers.sources) {
+          claimSources.set(source, (claimSources.get(source) ?? 0) + 1);
+          if (source === 'SEMANTIC') semanticOnlyClaims += 1;
+        }
+        // THE ONE THAT MUST BE ZERO. Text that reached a caller on an attempt
+        // whose second layer produced nothing usable.
+        if (layers.failClosed && release.releasedText !== null && attempt.text === release.releasedText) {
+          releasedWhileFailClosed += 1;
+        }
+      }
+    }
 
     for (const release of observation.claimGate.releases) {
       releases += 1;
@@ -327,6 +423,23 @@ export function claimGateSummary(observations: readonly ScenarioObservation[]): 
       .map(([reason, count]) => ({ reason, count }))
       .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason)),
     releasesUndeclared,
+    layered: {
+      scenariosWithAVerifier,
+      scenariosWithoutAVerifier,
+      scenariosWithWiringNotReported,
+      attempts: layeredAttempts,
+      attemptsBySemanticOutcome: [...semanticOutcomes.entries()]
+        .map(([outcome, count]) => ({ outcome, count }))
+        .sort((a, b) => b.count - a.count || a.outcome.localeCompare(b.outcome)),
+      attemptsFailClosed,
+      releasedWhileFailClosed,
+      unionsSmallerThanDeterministic,
+      claimsBySource: [...claimSources.entries()]
+        .map(([source, count]) => ({ source, count }))
+        .sort((a, b) => b.count - a.count || a.source.localeCompare(b.source)),
+      semanticOnlyClaims,
+      attemptsTheSecondLayerAnswered: attemptsAnswered,
+    },
     witnessAgreement,
     witnessDisagreements: [...disagreements.values()].sort(
       (a, b) => b.count - a.count || a.text.localeCompare(b.text),
@@ -506,6 +619,88 @@ export function renderReport(sweep: SweepResult, options: RenderOptions = {}): s
     `  CLAIMS THAT LEAKED PAST THE GATE    : ${gate.leakedClaims}` +
       (gate.leakedClaims === 0 ? '   (must be 0)' : '   <- MUST BE 0. A customer was told something false.'),
   );
+  // MISSION 2F. PRINTED RIGHT HERE, BESIDE THE LEAK COUNT, AND NOT FURTHER DOWN.
+  //
+  // The two are the same kind of fact and they fail in the same direction: the line
+  // above is a customer told something FALSE, and the line below is a customer told
+  // something NOBODY CHECKED. For eight QA rounds the only number a reader was given
+  // was the first one, and eight times it was zero while a false sentence was being
+  // spoken - because the check that would have seen it did not exist yet. A reader
+  // who quotes one of these should see the other on the same screen.
+  lines.push(
+    `  TEXTS RELEASED WITHOUT PASSING BOTH LAYERS : ${gate.layered.releasedWhileFailClosed}` +
+      (gate.layered.releasedWhileFailClosed === 0
+        ? '   (must be 0, INV-19)'
+        : '   <- MUST BE 0. Released while the second layer produced nothing usable.'),
+  );
+  lines.push('');
+  lines.push('  THE TWO LAYERS, PER ATTEMPT (INV-19)');
+  lines.push(
+    `    scenarios with a verifier wired     : ${gate.layered.scenariosWithAVerifier}` +
+      (gate.layered.scenariosWithoutAVerifier === 0 && gate.layered.scenariosWithWiringNotReported === 0
+        ? ''
+        : '   <- see the two rows below'),
+  );
+  lines.push(
+    `    scenarios with NO verifier wired    : ${gate.layered.scenariosWithoutAVerifier}` +
+      (gate.layered.scenariosWithoutAVerifier === 0
+        ? '   (must be 0)'
+        : '   <- INV-19 VIOLATION. buildAgentRuntime offers no way to remove one.'),
+  );
+  lines.push(
+    `    scenarios where NOBODY SAID         : ${gate.layered.scenariosWithWiringNotReported}` +
+      (gate.layered.scenariosWithWiringNotReported === 0
+        ? '   (must be 0; unstated is not the same as wired)'
+        : '   <- INV-19 VIOLATION. ClaimGateTurnReport.verifier was absent.'),
+  );
+  lines.push(`    attempts both layers read           : ${gate.layered.attempts}`);
+  lines.push(
+    `    ...on which the 2nd layer ANSWERED  : ${gate.layered.attemptsTheSecondLayerAnswered}` +
+      (gate.layered.attemptsTheSecondLayerAnswered === 0
+        ? '   <- VACUOUS: the second layer never answered, so INV-19 examined nothing'
+        : ''),
+  );
+  lines.push(`    ...on which it FAILED CLOSED        : ${gate.layered.attemptsFailClosed}`);
+  lines.push(
+    `    unions smaller than deterministic   : ${gate.layered.unionsSmallerThanDeterministic}` +
+      (gate.layered.unionsSmallerThanDeterministic === 0
+        ? '   (must be 0; the union may only ADD)'
+        : '   <- MUST BE 0. The second layer REMOVED a claim the first one found.'),
+  );
+  lines.push(
+    `    claims ONLY the 2nd layer saw       : ${gate.layered.semanticOnlyClaims}` +
+      '   (each one would have leaked before Mission 2F)',
+  );
+  lines.push('    what the second layer did, per attempt');
+  for (const row of gate.layered.attemptsBySemanticOutcome) {
+    lines.push('    ' + bar(row.outcome, row.count, Math.max(gate.layered.attempts, 1)));
+  }
+  if (gate.layered.claimsBySource.length === 0) {
+    lines.push('    No claim was found by either layer anywhere in this sweep, so the layering is unexercised.');
+  } else {
+    lines.push('    which layer caught each claim');
+    const tagged = gate.layered.claimsBySource.reduce((sum, row) => sum + row.count, 0);
+    for (const row of gate.layered.claimsBySource) {
+      lines.push('    ' + bar(row.source, row.count, Math.max(tagged, 1)));
+    }
+  }
+  lines.push('');
+  lines.push('    WHAT THIS ZERO IS BOUNDED BY, AND IT IS A DIFFERENT BOUND FROM THE ONE ABOVE.');
+  lines.push('    INV-19 bounds the WIRING, not the vocabulary. It proves that both layers ran on every');
+  lines.push('    customer-facing text, that the union only ever grew, and that nothing was released while the');
+  lines.push('    second layer produced nothing usable. It proves NOTHING about whether the second layer is');
+  lines.push('    any good at reading a sentence - and it cannot, because the sweep runs a DETERMINISTIC');
+  lines.push('    DOUBLE. tests/invariants/semanticSweepVerifier.ts contains no classification logic at all:');
+  lines.push('    it is a lookup on exact bytes, and every verdict it returns was written down by a person');
+  lines.push('    beside the sentence in tests/invariants/dimensions.ts. Nobody may read these numbers as');
+  lines.push('    evidence that the semantic layer WORKS. They are evidence that the PIPELINE does.');
+  lines.push('      - tests/claimGate/layeredClaimCorpus.ts is where the second layer is shown to catch a');
+  lines.push('        class the deterministic one misses, over 912 adversarial rows and 295 honest controls,');
+  lines.push('        with the premise re-measured on every run and a LOUD failure if the detector improves.');
+  lines.push('      - tests/e2e/claimGateFailClosed.test.ts drives every fail-closed variant through the real');
+  lines.push('        AgentTurnService, the real ToolDispatcher and real SQLite.');
+  lines.push('      - and how often a real model writes any of these sentences is a BENCHMARK question. No');
+  lines.push('        model was called by this sweep, and INV-10 asserts that rather than assuming it.');
   lines.push('');
   // WHAT THAT ZERO IS WORTH, STATED WHERE IT IS PRINTED.
   //

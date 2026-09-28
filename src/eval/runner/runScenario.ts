@@ -46,7 +46,7 @@ import {
 } from '../rubric/programmatic.js';
 import type { RecordedToolCall, RecordedToolOutcome, ScenarioRun, TurnChecks, TurnRecord } from '../types.js';
 import { readClaimGateAttemptTexts, NO_CLAIM_GATE_REPORT, type ClaimGateAttemptTexts } from './claimGateReport.js';
-import { foldTurnMetrics, MetricsCapturingProvider } from './metricsCapturingProvider.js';
+import { foldTurnLatency, foldTurnMetrics, MetricsCapturingProvider } from './metricsCapturingProvider.js';
 import { prepareWorld } from './world.js';
 
 /**
@@ -57,8 +57,22 @@ import { prepareWorld } from './world.js';
  * 1.1.0 file does not. Reading an older file is unaffected - the field is optional
  * and its absence is treated as "not applicable" - but a 1.1.0 file cannot be
  * scored on the new gate, and the report says so rather than printing a zero.
+ *
+ * 1.3.0 - MISSION 2F - adds TWO more per-turn records that no earlier version
+ * carries, and both are additive:
+ *
+ *   - `checks.claimLayers`, WHICH LAYER CAUGHT WHICH CLAIM, read from the gate's
+ *     own per-attempt report (and the only thing in this harness that is - see
+ *     `./claimGateReport.ts` for why that is acceptable for this number and not
+ *     for the leak number);
+ *   - `turns[].latency`, the VERIFIER / GENERATION / REGENERATION / OVERHEAD
+ *     decomposition and the impact on time to user response.
+ *
+ * Reading an older file is again unaffected: both fields are optional and both
+ * are reported as NOT OBSERVED rather than as zero. A 1.2.0 file cannot be scored
+ * on the layered gate, because the attribution it would need was never recorded.
  */
-export const HARNESS_VERSION = '1.2.0';
+export const HARNESS_VERSION = '1.3.0';
 
 export interface RunScenarioOptions {
   readonly runtime: AgentRuntime;
@@ -219,6 +233,9 @@ export async function runScenario(options: RunScenarioOptions): Promise<Scenario
       metrics,
       turnLatencyMs,
       providerCalls,
+      // MISSION 2F. Folded from the SAME captured window the metrics come from,
+      // so the two can never describe different calls.
+      latency: foldTurnLatency(capturedCalls, turnLatencyMs),
       checks,
       error,
     });
@@ -347,6 +364,12 @@ function buildChecks(input: BuildChecksInput): TurnChecks {
     passthrough: checkPassthrough(input.turn, calls),
     resolvedDay: checkResolvedDay(input.turn, input.recordedOutcomes),
     unsupportedClaims: buildUnsupportedClaims(input),
+    // MISSION 2F. Copied straight through from the structural reader, which is
+    // the ONLY thing in this harness that reads the gate's own verdict - and it
+    // is kept in its own field so nothing can confuse it with the two numbers
+    // above, which are this harness's own detector over this harness's own
+    // ledger. `buildUnsupportedClaims` does not see this value.
+    claimLayers: { ...input.claimGateAttempts.layers },
     text: checkText(input.turn, input.assistantText, input.contactUtterancesSoFar),
     repetition: checkRepetition(input.assistantText, input.earlierAssistantTexts),
     language: checkLanguage(input.assistantText, input.turn.replyLanguage ?? input.scenario.language),

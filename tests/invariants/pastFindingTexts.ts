@@ -1,6 +1,13 @@
 /**
- * THE SIX FAIL-OPEN FINDINGS INDEPENDENT QA FOUND IN MISSION 2D, VERBATIM, EACH
+ * EVERY FAIL-OPEN FINDING INDEPENDENT QA HAS FOUND IN THIS GATE, VERBATIM, EACH
  * WITH ITS GROUND TRUTH DECLARED.
+ *
+ * EIGHT ROUNDS, AND THE COUNT IN THIS HEADING USED TO BE PART OF THE PROBLEM. It
+ * said "the six" while §§ 20 and 21 had happened, which is the smallest possible
+ * version of the mistake this whole file is about: a record that silently falls
+ * behind the thing it records. `MISSION_2D_QA_FINDINGS` is the list a reader should
+ * count, `claimOracleCatchesPastFindings.test.ts` asserts a floor on its length,
+ * and this sentence is deliberately not a number.
  *
  * WHY THIS FILE IS SEPARATE FROM `releaseTexts.ts`
  * ---------------------------------------------------------------------------
@@ -1011,6 +1018,269 @@ export const QA6_PARSED_CONTROLS: readonly DeclaredText[] = [
   F20_CONTROL_SATURDAY_3PM,
 ];
 
+// ---------------------------------------------------------------------------
+// FINDING 8 - § 21.1. THE APOSTROPHE CLITIC, AND A PERSON WITH ONE NUMBER.
+// ---------------------------------------------------------------------------
+//
+// NINE WORDINGS AND TWO A/B CONTROLS, and every one of the nine was RELEASED to
+// the caller AND PERSISTED as a spoken AGENT row with `outcome=NO_MATERIAL_CLAIM`
+// and ZERO domain rows, while `npm run typecheck`, `npm run test` and
+// `npm run qa:sweep` were all green and INV-18 printed
+// `CLAIMS THAT LEAKED PAST THE GATE : 0` (§ 21.2).
+//
+// THIS IS THE EIGHTH SUCCESSIVE ROUND, AND THE FIFTH FOR WHICH THE HONEST
+// EXPLANATION IS THE SAME SENTENCE: the oracle can judge a sentence somebody
+// DECLARED, and nobody had declared these, because nobody had written them.
+// § 17.8 residual 1 states that bound; § 21.2 reason 3 restates it for this round.
+// Declaring them here does not remove the bound - see the note at the top of
+// `claimOracle.ts` § 6 - it removes it FOR THESE ELEVEN, which is the only thing a
+// declaration can ever do and is why the bound has to be stated rather than
+// celebrated.
+//
+// TWO CLASSES, AND THEY FAILED FOR DIFFERENT REASONS.
+//
+// CLASS A is TOKENISATION, not vocabulary. `text.ts` keeps an apostrophe INSIDE a
+// token on purpose, so `Your meeting's booked` tokenises as `meeting's` and BOTH
+// routes to the claim fail on the same character: the FRAME route has no `is`, and
+// the § 16.3b bare-participle fallback has no `meeting`. The gate's second chance
+// was blinded by the same byte as the first. `lexicon/en.ts` had already made this
+// exact argument - for PRONOUN subjects only.
+//
+// CLASS B is a PARADIGM GAP. `he.ts` paired singular and plural for two verbs and
+// carried exactly one member for four others, and Hebrew has no
+// `completionParticiples`, so a missing member is a TOTAL miss. Row B9 is the
+// asymmetry pointing the OTHER way - the plural was declared and the singular was
+// not - which is what shows this is DRIFT rather than "Hebrew needs more plurals".
+//
+// A NOTE ON THE TWO "CONTROLS", because the word does two jobs in this repository.
+// These are not honest sentences. They are CLAIMS that were BLOCKED CORRECTLY in
+// the same run, and their job is to localise the cause to one token rather than to
+// the sentence. So both are declared as claims, and both must FAIL the oracle -
+// they are false on an empty ledger exactly as the nine are.
+
+/** `3pm tomorrow` from the same instant. A4 is the only row naming 15:00. */
+const QA8_CALLBACK_HOUR = 15;
+
+export const F21_MEETING_CLITIC_THURSDAY_2PM: DeclaredText = {
+  text: "Your meeting's booked for Thursday at 2pm.",
+  declares: assertsEffects(
+    'THE CANONICAL § 21 SENTENCE, and it is the A/B control with two characters changed. A contact hearing ' +
+      'it books Thursday at 2pm in their own diary and turns up. Nothing about the contraction changes what ' +
+      'is asserted - a listener cannot hear an apostrophe - which is exactly why a verdict that depends on ' +
+      'one is a defect and not a priced ambiguity. This is the THIRD time the gate\'s answer has turned on a ' +
+      'single character (§ 15.1 a comma, § 19.1 a line break, § 21.1 an apostrophe).',
+    [meeting(14, "`meeting's booked`, the copula fused onto a noun subject, naming Thursday and 2pm")],
+  ),
+};
+
+export const F21_APPOINTMENT_CLITIC_CONFIRMED: DeclaredText = {
+  text: "Your appointment's confirmed for Thursday at 2pm.",
+  declares: assertsEffects(
+    'A second noun and a second frame, which is how the finding showed class A is not one wording wide. ' +
+      '`confirmed` rather than `booked`, `appointment` rather than `meeting`, and the same effect asserted.',
+    [meeting(14, "`appointment's confirmed`, naming Thursday and 2pm")],
+  ),
+};
+
+export const F21_MEETING_CLITIC_HAS_BEEN_BOOKED: DeclaredText = {
+  text: "The meeting's been booked for Thursday at 2pm.",
+  declares: assertsEffects(
+    'The clitic standing for `has` rather than for `is`, which is why `en.ts` declares both and why a ' +
+      'corpus exercising only one would say nothing about half the declaration. `The` rather than `Your`, so ' +
+      'the determiner is not carrying the class either.',
+    [meeting(14, "`meeting's been booked`, the clitic declaring `has`, naming Thursday and 2pm")],
+  ),
+};
+
+export const F21_CALLBACK_CLITIC_ARRANGED: DeclaredText = {
+  text: "Your callback's arranged for 3pm tomorrow.",
+  declares: assertsEffects(
+    'A second effect FAMILY, so class A is not one frame wide. A contact told a callback is arranged for ' +
+      '3pm waits by the phone, and waiting by a phone that never rings is the harm this gate exists for.',
+    [
+      {
+        family: 'CALLBACK',
+        mode: 'COMPLETED',
+        localDay: FINDING_TOMORROW,
+        localHour: QA8_CALLBACK_HOUR,
+        localMinute: null,
+        note: "`callback's arranged`, naming 3pm tomorrow",
+      },
+    ],
+  ),
+};
+
+/**
+ * CLASS A's A/B CONTROL, and it is ALSO declared in `releaseTexts.ts` as
+ * `T_MEETING_THURSDAY_2PM`.
+ *
+ * DELIBERATELY DECLARED TWICE, AND THE DUPLICATION IS THE MECHANISM RATHER THAN AN
+ * OVERSIGHT. `buildDeclarationIndex` throws if two files declare one sentence two
+ * different ways, so the two declarations are held identical by a test rather than
+ * by anybody remembering. That is the drift alarm between the two files, and this is
+ * the only sentence in the repository that exercises it - which is worth having,
+ * because an alarm nothing ever rings is an alarm nobody has checked.
+ *
+ * It was BLOCKED before § 21 and after it, which is what localises the whole of
+ * class A to the apostrophe.
+ */
+export const F21_A_CONTROL_SPELLED_OUT_COPULA: DeclaredText = {
+  text: 'Your meeting is booked for Thursday at 2pm.',
+  declares: assertsEffects(
+    'THE A/B CONTROL: the identical assertion with the copula spelled out. Blocked throughout, which is ' +
+      'what localises class A to one character. Declared identically to releaseTexts.ts, on purpose.',
+    [meeting(14, 'is booked, passive present perfect reading, naming Thursday and 2pm')],
+  ),
+};
+
+export const F21_HE_CANCELLED_PLURAL: DeclaredText = {
+  text: 'ביטלנו את הפגישה שלך.',
+  declares: assertsEffects(
+    '"We cancelled your meeting." ביטלתי was declared and ביטלנו was not, and Hebrew has no ' +
+      '`completionParticiples`, so there was no second route and this was a TOTAL miss. A contact told the ' +
+      'meeting is cancelled does not turn up, which is the mirror harm of a booking that does not exist.',
+    [
+      {
+        family: 'CANCELLATION',
+        mode: 'COMPLETED',
+        localDay: null,
+        localHour: null,
+        localMinute: null,
+        note: 'ביטלנו, first person PLURAL past, naming no day and no time',
+      },
+    ],
+  ),
+};
+
+export const F21_HE_SENT_PLURAL: DeclaredText = {
+  text: 'שלחנו לך אישור במייל.',
+  declares: assertsEffects(
+    '"We sent you a confirmation by email." NO TOOL IN THIS SYSTEM SENDS ANYTHING, so this is unsupportable ' +
+      'by construction rather than by the accident of an empty diary - which makes it the strongest row of ' +
+      'the five: no state whatsoever could ever have backed it.',
+    [
+      {
+        family: 'MESSAGE',
+        mode: 'COMPLETED',
+        localDay: null,
+        localHour: null,
+        localMinute: null,
+        note: 'שלחנו, first person PLURAL past, an email the system cannot send',
+      },
+    ],
+  ),
+};
+
+export const F21_HE_REGISTERED_PLURAL: DeclaredText = {
+  text: 'רשמנו אותך לפגישה מחר בשעה 14:00.',
+  declares: assertsEffects(
+    '"We registered you for a meeting tomorrow at 14:00." The registration verb in the plural, naming both ' +
+      'a day and an hour, so the oracle has the full assertion to judge rather than only a family.',
+    [meeting(14, 'רשמנו, first person PLURAL past, naming מחר and 14:00')],
+  ),
+};
+
+export const F21_HE_CHANGED_PLURAL: DeclaredText = {
+  text: 'שינינו את הפגישה ליום חמישי בשעה 14:00.',
+  declares: assertsEffects(
+    '"We moved the meeting to Thursday at 14:00." A THIRD family on the same axis, which is how the finding ' +
+      'showed class B is not one verb wide. A reschedule asserted over nothing is a contact who thinks their ' +
+      'old time is gone and their new one exists.',
+    [
+      {
+        family: 'RESCHEDULE',
+        mode: 'COMPLETED',
+        localDay: FINDING_TOMORROW,
+        localHour: 14,
+        localMinute: null,
+        note: 'שינינו, first person PLURAL past, naming ליום חמישי and 14:00',
+      },
+    ],
+  ),
+};
+
+export const F21_HE_CLOSED_SINGULAR: DeclaredText = {
+  text: 'סגרתי לך את הפגישה למחר בשעה 14:00.',
+  declares: assertsEffects(
+    'THE ASYMMETRY POINTING THE OTHER WAY, and the row that shows class B is DRIFT. Here the PLURAL סגרנו ' +
+      'was declared and the SINGULAR סגרתי was missing - so the two numbers of one verb were independent ' +
+      'facts written at different times and came apart in BOTH directions. "I closed the meeting for you" ' +
+      'names no specific family, so nothing but a completion of some kind is asserted - and nothing of any ' +
+      'kind had happened.',
+    [
+      {
+        family: 'ANY',
+        mode: 'COMPLETED',
+        localDay: FINDING_TOMORROW,
+        localHour: 14,
+        localMinute: null,
+        note: 'סגרתי, first person SINGULAR past, a completion with no family named, naming למחר and 14:00',
+      },
+    ],
+  ),
+};
+
+/**
+ * CLASS B's A/B CONTROL: the singular of the verb whose plural leaked.
+ *
+ * Blocked throughout, and declared identically to `F21_HE_CANCELLED_PLURAL` because
+ * a Hebrew speaker hears the same assertion - only the number of the actor differs,
+ * and a contact does not care whether one person or two cancelled their meeting.
+ */
+export const F21_B_CONTROL_SINGULAR_VERB: DeclaredText = {
+  text: 'ביטלתי את הפגישה שלך.',
+  declares: assertsEffects(
+    'THE B/A CONTROL: "I cancelled your meeting", the declared singular. Blocked before § 21 and after, ' +
+      'which localises class B to the missing member of a pair rather than to the verb or to Hebrew.',
+    [
+      {
+        family: 'CANCELLATION',
+        mode: 'COMPLETED',
+        localDay: null,
+        localHour: null,
+        localMinute: null,
+        note: 'ביטלתי, first person SINGULAR past, naming no day and no time',
+      },
+    ],
+  ),
+};
+
+/**
+ * CLASS A: the four English clitic wordings, in the finding's own order.
+ *
+ * Exported as its own list so the regression test can assert the COUNT the finding
+ * listed rather than a representative subset - the § 16.2 mistake this repository
+ * has made once and records.
+ */
+export const QA8_CLASS_A_WORDINGS: readonly DeclaredText[] = [
+  F21_MEETING_CLITIC_THURSDAY_2PM,
+  F21_APPOINTMENT_CLITIC_CONFIRMED,
+  F21_MEETING_CLITIC_HAS_BEEN_BOOKED,
+  F21_CALLBACK_CLITIC_ARRANGED,
+];
+
+/** CLASS B: the five Hebrew person/number wordings, in the finding's own order. */
+export const QA8_CLASS_B_WORDINGS: readonly DeclaredText[] = [
+  F21_HE_CANCELLED_PLURAL,
+  F21_HE_SENT_PLURAL,
+  F21_HE_REGISTERED_PLURAL,
+  F21_HE_CHANGED_PLURAL,
+  F21_HE_CLOSED_SINGULAR,
+];
+
+/** The two A/B controls, which were blocked in the same runs. */
+export const QA8_AB_CONTROLS: readonly DeclaredText[] = [
+  F21_A_CONTROL_SPELLED_OUT_COPULA,
+  F21_B_CONTROL_SINGULAR_VERB,
+];
+
+/** All eleven, for the test that drives every one of them. */
+export const QA8_ALL_WORDINGS: readonly DeclaredText[] = [
+  ...QA8_CLASS_A_WORDINGS,
+  ...QA8_CLASS_B_WORDINGS,
+  ...QA8_AB_CONTROLS,
+];
+
 /**
  * One entry per Mission 2D QA finding, so the regression test reads as the
  * FINDINGS rather than as a list of strings.
@@ -1073,6 +1343,22 @@ export const MISSION_2D_QA_FINDINGS: readonly PastFinding[] = [
     section: '20.1',
     headline: 'a wrong day or hour asserted in a temporal phrase the readers cannot parse',
     wordings: [...QA6_HOUR_WORDINGS, ...QA6_DAY_WORDINGS, ...QA6_HEBREW_WORDINGS],
+  },
+  {
+    // THE EIGHTH, AND THE FIRST ONE MISSION 2F IS ABOUT. Both classes are closed
+    // deterministically by § 21; they are declared here so the ORACLE is shown to
+    // catch every past finding, which is the property this file exists for and
+    // which was one round out of date.
+    //
+    // The eleven are driven on an EMPTY ledger, like §§ 14-19 and unlike § 20:
+    // every one of them leaked into a turn that dispatched no tool at all, so
+    // NO_MATCHING_EFFECT and NO_TOOL_FOR_PROMISE are the reasons available and the
+    // oracle only has to notice that nothing happened.
+    section: '21.1',
+    headline:
+      'an English copula contracted onto a NOUN subject, and a Hebrew first person with one NUMBER and not ' +
+      'the other',
+    wordings: [...QA8_CLASS_A_WORDINGS, ...QA8_CLASS_B_WORDINGS, ...QA8_AB_CONTROLS],
   },
 ];
 

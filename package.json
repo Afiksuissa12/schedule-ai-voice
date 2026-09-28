@@ -32,6 +32,7 @@
     "eval:run": "tsx src/eval/cli/run.ts",
     "eval:report": "tsx src/eval/cli/report.ts",
     "eval:corpus": "tsx src/eval/cli/corpus.ts",
+    "eval:verifier": "tsx src/eval/cli/verifier.ts",
     "verify": "npm run typecheck && npm run test",
     "llm:probe": "tsx src/llm/cli/probe.ts",
     "llm:smoke": "tsx src/llm/cli/smoke.ts",

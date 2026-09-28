@@ -13,6 +13,7 @@
 import type { LlmTurnMetrics } from '../ports/llm.js';
 import type { CoverageKey, ScenarioLanguage } from './corpus/schema.js';
 import type { JudgeResult } from './rubric/judge.js';
+import type { TurnLatencyBreakdown } from './runner/metricsCapturingProvider.js';
 
 /** One proposed tool call, exactly as the model produced it. */
 export interface RecordedToolCall {
@@ -126,6 +127,37 @@ export interface TurnChecks {
     /** Set when a claim-gate report was present but the wrong shape. */
     readonly reportMalformedReason: string | null;
   };
+  /**
+   * MISSION 2F. WHICH LAYER CAUGHT WHAT, and it is a different KIND of number
+   * from `unsupportedClaims` above.
+   *
+   * `unsupportedClaims.attempts` and `unsupportedClaims.leaks` are computed by
+   * this harness's OWN detector against this harness's OWN ledger, and never read
+   * from the gate. This field IS read from the gate's per-attempt report, because
+   * nothing outside `ClaimGate.review` observes which layer found a claim - by
+   * the time an `AgentTurnResult` exists the union is a list with no memory of who
+   * found what. The full argument for why that is acceptable here and would not be
+   * for the leak number is in `src/eval/runner/claimGateReport.ts`.
+   *
+   * Optional for the same reason the two above it are: a results file written
+   * before harness 1.3.0 does not carry it, and `observed: false` inside it means
+   * the gate on that tree predated Mission 2F. Absent is NOT CHECKED - never zero,
+   * and never a pass.
+   */
+  readonly claimLayers?: {
+    readonly observed: boolean;
+    readonly attemptsWithLayerReport: number;
+    readonly deterministicClaims: number;
+    /** **The headline of this field.** Claims ONLY the semantic verifier saw. */
+    readonly semanticOnlyClaims: number;
+    readonly bothLayersClaims: number;
+    readonly unionClaims: number;
+    /** `null` means the report did not say, which is not the same as `false`. */
+    readonly verifierWired: boolean | null;
+    readonly verifierName: string | null;
+    readonly semanticOutcomes: Readonly<Record<string, number>>;
+    readonly failClosedAttempts: number;
+  };
   readonly text: {
     readonly applicable: boolean;
     readonly passed: boolean;
@@ -165,9 +197,22 @@ export interface TurnRecord {
   readonly stopReason: string;
   /** Provider telemetry for the LAST provider call of this turn. */
   readonly metrics: LlmTurnMetrics | null;
-  /** Summed across every provider call this turn made. */
+  /** Wall clock around the whole turn, as the runner measured it. */
   readonly turnLatencyMs: number;
   readonly providerCalls: number;
+  /**
+   * MISSION 2F. VERIFIER latency, TOTAL TURN latency, and the IMPACT ON TIME TO
+   * USER RESPONSE - gate plus verifier overhead versus generation alone.
+   *
+   * Optional because a results file written before harness 1.3.0 does not carry
+   * it. Every field inside it that the runner could not observe is `null` rather
+   * than a plausible zero: a turn with no verifier call has an UNMEASURED verifier
+   * cost, not a free one. `src/ports/llm.ts` states the rule this follows.
+   *
+   * `src/eval/runner/metricsCapturingProvider.ts` has the derivation and, more
+   * importantly, what `overheadMs` does and does not contain.
+   */
+  readonly latency?: TurnLatencyBreakdown;
   readonly checks: TurnChecks;
   /** Set when the turn threw. The scenario continues to be recorded. */
   readonly error: string | null;
