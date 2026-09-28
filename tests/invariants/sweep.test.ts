@@ -190,6 +190,98 @@ describe('the invariant sweep', () => {
           'would make the oracle a machine for failing every release',
       ).toBeGreaterThan(100);
 
+      // --- INV-19: THE LAYERED PIPELINE, AND IT HAS ITS OWN VACUITY MODE ----
+      //
+      // INV-19 is applicable to nearly every scenario, because nearly every
+      // scenario releases text - which is exactly how it could look busy while
+      // proving nothing. Its vacuity mode is specific and worth naming: if the
+      // sweep's verifier were never wired, EVERY attempt would report `ABSENT`,
+      // every one would be a violation, and the sweep would be red rather than
+      // vacuously green. The real risk is the opposite - a verifier wired but never
+      // varied, so that every attempt reports CLASSIFIED and the dimension the
+      // Founder asked for is a label on nothing. § 21.9 is the record of exactly
+      // that happening to the `contracted` axis. These floors are the guard.
+      expect(
+        gate.layered.scenariosWithoutAVerifier,
+        'every scenario is built by buildAgentRuntime, which always resolves a semantic claim verifier and ' +
+          'offers no way to remove one. A scenario without one means the production composition root changed, ' +
+          'and INV-19 fails each one.',
+      ).toBe(0);
+      expect(
+        gate.layered.scenariosWithWiringNotReported,
+        'a scenario whose report did not SAY whether a verifier was wired. Unstated is not the same as wired: ' +
+          'defaulting an unknown to safe is the silence § 17.5 exists to remove.',
+      ).toBe(0);
+      expect(
+        gate.layered.releasedWhileFailClosed,
+        'TEXT REACHED A CALLER ON AN ATTEMPT WHOSE SECOND LAYER PRODUCED NOTHING USABLE. Malformed, ' +
+          'timed-out, unavailable, empty and absent verifier output is UNSUPPORTED and never clean - a check ' +
+          'that did not happen is not a check that passed. This is the fail-open direction and it is the one ' +
+          'thing the second layer was added to make impossible.',
+      ).toBe(0);
+      expect(
+        gate.layered.unionsSmallerThanDeterministic,
+        'the union is a SUPERSET of the deterministic claim set by construction, so a smaller one means the ' +
+          'semantic layer removed a claim the first layer found - the one thing it may never do',
+      ).toBe(0);
+
+      // Now the non-vacuity half: the dimension must really have been varied.
+      expect(
+        gate.layered.attemptsTheSecondLayerAnswered,
+        'the second layer never ANSWERED anywhere in the sweep, so INV-19 checked the shape of a pipeline ' +
+          'that never ran. Counted as answers and never as claims - a CLASSIFIED verdict with an empty claim ' +
+          'list is an answer, and that distinction is the whole point of the ABSENT outcome existing.',
+      ).toBeGreaterThan(1_000);
+      expect(
+        gate.layered.attemptsFailClosed,
+        'THE FAIL-CLOSED PATH MUST ACTUALLY BE DRIVEN. A path nobody has seen work is a path nobody has ' +
+          'seen work, and this one is the whole of the Founder\'s fail-safe direction: specs r77-r80 and r86 ' +
+          'exist to reach it.',
+      ).toBeGreaterThan(20);
+      expect(
+        gate.layered.semanticOnlyClaims,
+        'no claim anywhere in the sweep was found by the SEMANTIC layer alone, so cross-layer proof (a) was ' +
+          'not exercised end to end. Specs r81 and r82 exist to produce these, and each one is a claim that ' +
+          'would have leaked before this mission.',
+      ).toBeGreaterThan(0);
+
+      // ALL FOUR FAILURE VARIANTS, BY NAME. A fail-closed count of 20 could be one
+      // variant twenty times, and an operator asking "why did last night hand off
+      // four hundred turns" needs to tell a dead provider from a model emitting
+      // prose from a host under load - which have completely different fixes.
+      const outcomesSeen = gate.layered.attemptsBySemanticOutcome.map((row) => row.outcome);
+      for (const variant of ['CLASSIFIED', 'MALFORMED', 'TIMED_OUT', 'UNAVAILABLE', 'EMPTY']) {
+        expect(
+          outcomesSeen,
+          `no attempt in the sweep reported ${variant}, so that state of the second layer has not been seen ` +
+            'to work end to end',
+        ).toContain(variant);
+      }
+      expect(
+        outcomesSeen,
+        'ABSENT is the declared TEST-ONLY seam. If it appears in the sweep, a path that skips the second ' +
+          'layer is reachable through the composition root.',
+      ).not.toContain('ABSENT');
+
+      // ALL THREE SOURCE TAGS. The report prints "which layer caught each claim",
+      // and a report offering three answers over a corpus that only ever produced
+      // two is the half-crossed axis § 21.9 is about, arriving in the report.
+      const sourcesSeen = gate.layered.claimsBySource.map((row) => row.source);
+      expect(
+        sourcesSeen.slice().sort(),
+        'all three ClaimSource values must be produced by real turns: DETERMINISTIC (the first layer alone), ' +
+          'SEMANTIC (the second alone - a claim that would have leaked before), and BOTH (they agreed). ' +
+          'Specs r81/r82 and r87 exist to produce the second and third.',
+      ).toEqual(['BOTH', 'DETERMINISTIC', 'SEMANTIC']);
+
+      // And the reason code has to have been produced by a real turn, not only by
+      // the pure-function corpus in tests/claimGate/.
+      expect(
+        gate.byUnsupportedReason.map((row) => row.reason),
+        'no turn in the sweep ever produced SEMANTIC_CHECK_UNAVAILABLE, so the fail-closed rejection has not ' +
+          'been seen to work end to end',
+      ).toContain('SEMANTIC_CHECK_UNAVAILABLE');
+
       const claimFamily = sweep.scenarios.filter((scenario) => scenario.family === 'M-claim-release');
       expect(claimFamily.length, 'family M must be in the corpus').toBeGreaterThan(40);
       const hebrewClaims = claimFamily.filter((scenario) => /[֐-׿]/.test(JSON.stringify(scenario.release ?? {})));
@@ -212,6 +304,10 @@ describe('the invariant sweep', () => {
         'INV-15-no-accepted-resolution-ignores-a-token',
         'INV-16-hebrew-and-english-parity',
         'INV-17-resolved-day-is-the-day-the-phrase-named',
+        // INV-19 is applicable to almost every scenario, so a LOW number here
+        // would mean the layer report had stopped being populated rather than
+        // that the invariant was narrow.
+        'INV-19-every-customer-facing-text-passed-both-claim-layers',
       ]) {
         const summary = summaries.find((candidate) => candidate.id === id);
         expect(summary, `${id} is not registered in INVARIANTS`).toBeDefined();

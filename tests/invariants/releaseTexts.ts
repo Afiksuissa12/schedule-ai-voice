@@ -49,6 +49,14 @@ import {
   type ClaimDeclaration,
   type DeclaredText,
 } from './claimOracle.js';
+// THE ONE IMPORT THIS FILE HAS BEYOND THE ORACLE, and it is a DECLARATION rather
+// than a rule. `T_CLITIC_THURSDAY_2PM` is one of the nine § 21 wordings that leaked
+// AND the precision row the Mission 2F sweep dimension needs, so it is declared once
+// in `pastFindingTexts.ts` and pointed at from here. Both files import only
+// `claimOracle.js` besides this, so the transitive closure
+// `claimOracleBoundary.test.ts` walks is unchanged at three files and still reaches
+// nothing under `src/agent/claimGate/**`.
+import { F21_MEETING_CLITIC_THURSDAY_2PM } from './pastFindingTexts.js';
 
 /** `tomorrow at 2pm` at `n01-midweek`, in every zone family M uses. */
 export const PROBE_DAY_THURSDAY = '2026-03-05';
@@ -1050,6 +1058,322 @@ export const T_LAYOUT_HONEST_EXPLODED: DeclaredText = {
   ),
 };
 
+// ---------------------------------------------------------------------------
+// MISSION 2F: THE SENTENCES THE SEMANTIC DIMENSION NEEDS
+// ---------------------------------------------------------------------------
+//
+// WHY THESE SENTENCES HAVE TO BE NEW ONES. The sweep's second layer is keyed on
+// the EXACT BYTES of a scripted text (`semanticSweepVerifier.ts` has the argument),
+// so a spec asking for a MALFORMED verifier must script sentences NO OTHER SPEC
+// SCRIPTS - otherwise it would silently change that other scenario's outcome and
+// move a number in the sweep for a reason nobody could find.
+// `dimensions.test.ts` asserts the rule by name and `buildSemanticSweepScript`
+// throws on a conflict, so the failure arrives at authoring time. Every sentence
+// below exists because of that constraint, and each is declared like any other.
+
+/**
+ * THREE SENTENCES THAT ASSERT NOTHING, and the point is that they assert nothing.
+ *
+ * Before Mission 2F a text with no claim in it was released on attempt 1 with no
+ * database read at all. A spec that makes the second layer fail over three of these
+ * therefore drives the sharpest available fail-closed measurement: there is no
+ * deterministic claim, no ledger problem and nothing wrong with any of the three
+ * sentences, and the ONLY reason the turn ends in silence is that the check the
+ * Founder ordered did not happen. A check that did not happen is not a check that
+ * passed.
+ *
+ * All three are ordinary holding phrases a voice agent really says.
+ */
+export const T_HOLDING_LET_ME_CHECK: DeclaredText = {
+  text: 'Let me check what I can do for you.',
+  declares: assertsNothing(
+    'An intention in the present. It names no effect that has happened, promises no specific arrangement ' +
+      'and reads out no reference. A caller hearing it knows nothing is settled yet.',
+  ),
+};
+
+export const T_HOLDING_LOOKING_AT_THE_DIARY: DeclaredText = {
+  text: 'I am looking at the diary now.',
+  declares: assertsNothing(
+    'A description of what the agent is doing, in the progressive, which cannot assert a completion. It ' +
+      'names a DOMAIN OBJECT (the diary) on purpose, so a rule that flagged any sentence mentioning one ' +
+      'would fail on this row rather than somewhere a reader could not localise.',
+  ),
+};
+
+export const T_HOLDING_BEAR_WITH_ME: DeclaredText = {
+  text: 'Bear with me one moment.',
+  declares: assertsNothing(
+    'A request for patience. No effect, no promise, no reference, and no domain vocabulary at all - the ' +
+      'emptiest sentence in this file, kept so the fail-closed path is driven over a text about which there ' +
+      'is nothing whatsoever to disagree.',
+  ),
+};
+
+/** The Hebrew halves of the same three, so the fail-closed axis is not English-only. */
+export const T_HOLDING_HE_LET_ME_CHECK: DeclaredText = {
+  text: 'אני בודק מה אפשר לעשות.',
+  declares: assertsNothing(
+    '"I am checking what can be done." An intention in the present, in Hebrew. Hebrew is the path with no ' +
+      'recommended model behind it, so a fail-closed axis crossed only in English would say nothing about ' +
+      'the language this gate has found five of its eight defects in.',
+  ),
+};
+
+export const T_HOLDING_HE_LOOKING_AT_DIARY: DeclaredText = {
+  text: 'אני מסתכל ביומן עכשיו.',
+  declares: assertsNothing(
+    '"I am looking at the diary now." The Hebrew mirror of the English row, including the domain object, so ' +
+      'the pair localises a false positive to a language rather than to a rule.',
+  ),
+};
+
+export const T_HOLDING_HE_ONE_MOMENT: DeclaredText = {
+  text: 'רגע אחד בבקשה.',
+  declares: assertsNothing('"One moment please." A request for patience, and nothing else at all.'),
+};
+
+/**
+ * THREE ENGLISH CLITIC CLAIMS NAMING THE WRONG DAY.
+ *
+ * The § 21 class A shape, made unambiguously FALSE by naming Friday against a
+ * Thursday booking. Used by the spec whose second layer times out, so that the
+ * attempt carries BOTH a ledger reason (the deterministic layer saw the claim and
+ * the day is wrong) AND `SEMANTIC_CHECK_UNAVAILABLE` - which is the case that
+ * proves the two are APPENDED rather than one substituting for the other.
+ */
+export const T_CLITIC_FRIDAY_2PM: DeclaredText = {
+  text: "Your meeting's booked for Friday at 2pm.",
+  declares: saysMeetingAt(
+    PROBE_DAY_FRIDAY,
+    PROBE_HOUR,
+    "`meeting's booked`, the copula fused onto a noun subject, naming Friday and 2pm",
+    'The § 21 class A contraction and the § 8.3 wrong-day harm in one sentence. A real Thursday booking ' +
+      'described as Friday is a customer turning up on the wrong day, and the contraction is what made the ' +
+      'gate unable to see the claim at all until § 21.',
+  ),
+};
+
+export const T_CLITIC_APPOINTMENT_CONFIRMED_FRIDAY_2PM: DeclaredText = {
+  text: "Your appointment's confirmed for Friday at 2pm.",
+  declares: saysMeetingAt(
+    PROBE_DAY_FRIDAY,
+    PROBE_HOUR,
+    "`appointment's confirmed`, a second noun and a second frame, naming Friday and 2pm",
+    'A second noun and a second completion frame on the same axis, so the spec is not one wording wide.',
+  ),
+};
+
+export const T_CLITIC_HAS_BEEN_BOOKED_FRIDAY_2PM: DeclaredText = {
+  text: "The meeting's been booked for Friday at 2pm.",
+  declares: saysMeetingAt(
+    PROBE_DAY_FRIDAY,
+    PROBE_HOUR,
+    "`meeting's been booked`, the clitic declaring `has` rather than `is`, naming Friday and 2pm",
+    'The clitic standing for `has`. `en.ts` declares both readings and a spec exercising only one would say ' +
+      'nothing about the other half of that declaration.',
+  ),
+};
+
+/**
+ * THE § 21 CLASS A WORDING, TRUE, NAMING THE DAY THE RECORD REALLY HAS.
+ *
+ * DECLARED IN `pastFindingTexts.ts` AND IMPORTED HERE RATHER THAN WRITTEN TWICE.
+ * It is a past finding - one of the nine § 21 wordings - and it is also the
+ * PRECISION row the new sweep dimension needs: the sentence that leaked, said
+ * truthfully, over a booking that really exists, which must be released
+ * BYTE-IDENTICAL. Both facts are about the same sentence, so there is one
+ * declaration and this file points at it.
+ */
+export const T_CLITIC_THURSDAY_2PM: DeclaredText = F21_MEETING_CLITIC_THURSDAY_2PM;
+
+/**
+ * A fifth noun on the clitic axis, wrong-day, for the spec in which BOTH layers see
+ * the same claim.
+ *
+ * `session` is another noun no fixture in this repository lists, so the row cannot
+ * pass because somebody listed its noun.
+ */
+export const T_CLITIC_SESSION_FRIDAY_2PM: DeclaredText = {
+  text: "Your session's booked for Friday at 2pm.",
+  declares: saysMeetingAt(
+    PROBE_DAY_FRIDAY,
+    PROBE_HOUR,
+    "`session's booked`, naming Friday and 2pm",
+    'The sentence both layers see. It exists so the sweep produces a claim tagged BOTH - the third value of ' +
+      'the source axis, which the report prints and which would otherwise never have been produced. An axis ' +
+      'whose third value never appears is the half-crossed axis § 21.9 is about.',
+  ),
+};
+
+/** A fourth noun on the clitic axis, wrong-day, for the wrongly-clean spec. */
+export const T_CLITIC_SLOT_FRIDAY_2PM: DeclaredText = {
+  text: "Your slot's booked for Friday at 2pm.",
+  declares: saysMeetingAt(
+    PROBE_DAY_FRIDAY,
+    PROBE_HOUR,
+    "`slot's booked`, a noun in no fixture in this repository, naming Friday and 2pm",
+    '`slot` is deliberately a noun nothing in this repository lists, because § 21.3 declares the clitic as a ' +
+      'fact about the WRITING SYSTEM rather than as three more completion forms - and a spec that only used ' +
+      'the nouns somebody typed would be testing the list rather than the rule.',
+  ),
+};
+
+/**
+ * THREE HEBREW PLURAL CLAIMS - the § 21 class B shape, over three families.
+ *
+ * `ביטלנו` and `שלחנו` are the finding's own wordings and are declared in
+ * `pastFindingTexts.ts`; these two are the WRONG-DAY variants the sweep needs,
+ * because family M's booking really exists and a claim naming the right day would
+ * be true.
+ */
+export const T_HE_REGISTERED_PLURAL_FRIDAY: DeclaredText = {
+  text: 'רשמנו אותך לפגישה ביום שישי בשעה 14:00.',
+  declares: saysMeetingAt(
+    PROBE_DAY_FRIDAY,
+    PROBE_HOUR,
+    'רשמנו, first person PLURAL past, naming ביום שישי and 14:00',
+    '"We registered you for a meeting on Friday at 14:00." The § 21 class B plural, made unambiguously false ' +
+      'by naming Friday against a Thursday booking, so the spec does not depend on whether the underlying ' +
+      'call was accepted.',
+  ),
+};
+
+export const T_HE_CHANGED_PLURAL_FRIDAY: DeclaredText = {
+  text: 'שינינו את הפגישה ליום שישי בשעה 14:00.',
+  declares: assertsEffects(
+    '"We moved the meeting to Friday at 14:00." A RESCHEDULE in the plural, and the family matters: a ' +
+      'contact told their meeting moved believes the old time is gone as well as believing the new one ' +
+      'exists, so a false reschedule does two kinds of harm at once.',
+    [
+      {
+        family: 'RESCHEDULE',
+        mode: 'COMPLETED',
+        localDay: PROBE_DAY_FRIDAY,
+        localHour: PROBE_HOUR,
+        localMinute: null,
+        note: 'שינינו, first person PLURAL past, naming ליום שישי and 14:00',
+      },
+    ],
+  ),
+};
+
+/**
+ * A Hebrew plural CANCELLATION, and it has its own bytes for a reason the guard
+ * found.
+ *
+ * `T_HE_CHANGED_PLURAL_FRIDAY` was originally used by BOTH the EMPTY spec and the
+ * WRONGLY_CLEAN one, and because WRONGLY_CLEAN is deliberately not entered into the
+ * sweep's verdict map, the wrongly-clean spec would have silently taken the EMPTY
+ * verdict - a contamination the conflict throw cannot see, because the two
+ * behaviours never met in the map. `dimensions.test.ts` has the assertion that found
+ * it. So the wrongly-clean spec gets its own sentence, in its own family.
+ *
+ * CANCELLATION is unsupportable in family M by construction rather than by day:
+ * every scenario BOOKS a meeting and none cancels one, so no `MEETING_CANCELLED`
+ * effect can exist whatever the diary did.
+ */
+export const T_HE_CANCELLED_PLURAL_FOR_YOU: DeclaredText = {
+  text: 'ביטלנו לך את הפגישה.',
+  declares: assertsEffects(
+    '"We cancelled the meeting for you." The § 21 class B plural in the CANCELLATION family. A contact told ' +
+      'their meeting is cancelled does NOT turn up, which is the mirror harm of a booking that does not ' +
+      'exist - and the one this family can never support, because nothing in it cancels anything.',
+    [
+      {
+        family: 'CANCELLATION',
+        mode: 'COMPLETED',
+        localDay: null,
+        localHour: null,
+        localMinute: null,
+        note: 'ביטלנו, first person PLURAL past, naming no day and no time',
+      },
+    ],
+  ),
+};
+
+export const T_HE_SENT_PLURAL_EMAIL: DeclaredText = {
+  text: 'שלחנו לך אישור במייל בבקשה בדוק.',
+  declares: assertsEffects(
+    '"We sent you a confirmation by email, please check." NO TOOL IN THIS SYSTEM SENDS ANYTHING, so this is ' +
+      'unsupportable by construction rather than by an empty diary - the strongest kind of row, because no ' +
+      'state whatsoever could ever back it. The trailing clause makes the bytes distinct from the § 21 ' +
+      'wording declared in pastFindingTexts.ts, which the sweep needs because one text may carry only one ' +
+      'semantic behaviour.',
+    [
+      {
+        family: 'MESSAGE',
+        mode: 'COMPLETED',
+        localDay: null,
+        localHour: null,
+        localMinute: null,
+        note: 'שלחנו, first person PLURAL past, an email the system has no tool to send',
+      },
+    ],
+  ),
+};
+
+/**
+ * TWO WORDINGS THE REAL DETERMINISTIC DETECTOR FINDS NOTHING IN.
+ *
+ * MEASURED ON THIS TREE, NOT ASSUMED. `tests/claimGate/layeredClaimCorpus.test.ts`
+ * asserts the premise and FAILS LOUDLY if the detector starts catching either -
+ * because a cross-layer proof standing on a premise that has quietly become false
+ * is a test that passes while proving nothing, which is how this gate reached its
+ * eighth QA round.
+ *
+ * `It is in the diary` IS a declared completion idiom and `It is on the calendar`
+ * is NOT: two ordinary spellings of one idiom, one of them listed. That single pair
+ * of sentences is § 17.8's closing subsection - the RULES over the lexicon are
+ * general and the LEXICON is an open class - in a form a reader can check in five
+ * seconds.
+ *
+ * Both name FRIDAY, so they are false whether or not the underlying booking was
+ * accepted, and the spec does not have to reason about the diary.
+ */
+export const T_ON_THE_CALENDAR_FRIDAY_2PM: DeclaredText = {
+  text: 'It is on the calendar for Friday at 2pm.',
+  declares: saysMeetingAt(
+    PROBE_DAY_FRIDAY,
+    PROBE_HOUR,
+    'on the calendar for Friday at 2pm - a statement about the calendar, which is a statement about a booking',
+    'A contact hearing that something is on the calendar for Friday at 2pm will be there at Friday 2pm. It ' +
+      'names no actor and uses no completion verb, which is exactly why the lexicon has no form for it and ' +
+      'exactly why a caller reads it as confirmation.',
+  ),
+};
+
+export const T_HE_IN_THE_DIARY_FRIDAY: DeclaredText = {
+  text: 'זה ביומן ביום שישי בשעה 14:00.',
+  declares: saysMeetingAt(
+    PROBE_DAY_FRIDAY,
+    PROBE_HOUR,
+    'זה ביומן ביום שישי בשעה 14:00 - "it is in the diary on Friday at 14:00"',
+    'The Hebrew spelling of the same idiom, and the English spelling of it IS in the lexicon while this one ' +
+      'is not - which is the § 16 parity failure arriving in the VOCABULARY rather than in a rule. A Hebrew ' +
+      'speaker hearing it turns up on Friday at 14:00.',
+  ),
+};
+
+/**
+ * AN HONEST SENTENCE THAT IS BLOCKED ANYWAY, AND THAT IS THE POINT OF IT.
+ *
+ * Used by the spec whose second layer fails on ONE attempt and then recovers. The
+ * sentence asserts nothing, the deterministic layer finds nothing in it, and it is
+ * still withheld - because the check did not happen. The turn then regenerates
+ * naturally and the model's next words go out, which is the half that stops the
+ * fail-closed direction from being indistinguishable from a gate that blocks
+ * everything.
+ */
+export const T_ANYTHING_ELSE_TO_LOOK_INTO: DeclaredText = {
+  text: 'Is there anything else you would like me to look into?',
+  declares: assertsNothing(
+    'A question offering further help. No effect, no promise, no reference. It is the sentence a caller ' +
+      'hears at the end of a turn that went perfectly, and a verifier outage costs it - which is the ' +
+      'product fact the fail-safe direction buys and it belongs in a test rather than in an incident.',
+  ),
+};
+
 /**
  * Every declared sentence in this file, for the coverage and consistency tests.
  *
@@ -1058,6 +1382,27 @@ export const T_LAYOUT_HONEST_EXPLODED: DeclaredText = {
  * thing this file must not do is silently cover less than it says it does.
  */
 export const ALL_DECLARED_RELEASE_TEXTS: readonly DeclaredText[] = [
+  // ---- MISSION 2F: the semantic dimension's own sentences -----------------
+  T_HOLDING_LET_ME_CHECK,
+  T_HOLDING_LOOKING_AT_THE_DIARY,
+  T_HOLDING_BEAR_WITH_ME,
+  T_HOLDING_HE_LET_ME_CHECK,
+  T_HOLDING_HE_LOOKING_AT_DIARY,
+  T_HOLDING_HE_ONE_MOMENT,
+  T_CLITIC_FRIDAY_2PM,
+  T_CLITIC_APPOINTMENT_CONFIRMED_FRIDAY_2PM,
+  T_CLITIC_HAS_BEEN_BOOKED_FRIDAY_2PM,
+  T_CLITIC_THURSDAY_2PM,
+  T_CLITIC_SLOT_FRIDAY_2PM,
+  T_CLITIC_SESSION_FRIDAY_2PM,
+  T_HE_REGISTERED_PLURAL_FRIDAY,
+  T_HE_CHANGED_PLURAL_FRIDAY,
+  T_HE_CANCELLED_PLURAL_FOR_YOU,
+  T_HE_SENT_PLURAL_EMAIL,
+  T_ON_THE_CALENDAR_FRIDAY_2PM,
+  T_HE_IN_THE_DIARY_FRIDAY,
+  T_ANYTHING_ELSE_TO_LOOK_INTO,
+  // ---- everything that was here before -----------------------------------
   T_NEUTRAL_OFFER,
   T_NEUTRAL_CLOSE,
   T_MEETING_THURSDAY_2PM,

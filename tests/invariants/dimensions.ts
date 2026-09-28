@@ -98,7 +98,40 @@ import {
   T_NEUTRAL_OFFER,
   T_PRETERITE_BOOKED_FRIDAY_2PM,
   T_PRETERITE_SUPPORTED_THURSDAY_2PM,
+  // ---- MISSION 2F: the sentences the semantic dimension needs -------------
+  T_ANYTHING_ELSE_TO_LOOK_INTO,
+  T_CLITIC_APPOINTMENT_CONFIRMED_FRIDAY_2PM,
+  T_CLITIC_FRIDAY_2PM,
+  T_CLITIC_HAS_BEEN_BOOKED_FRIDAY_2PM,
+  T_CLITIC_SESSION_FRIDAY_2PM,
+  T_CLITIC_SLOT_FRIDAY_2PM,
+  T_CLITIC_THURSDAY_2PM,
+  T_HE_CANCELLED_PLURAL_FOR_YOU,
+  T_HE_CHANGED_PLURAL_FRIDAY,
+  T_HE_IN_THE_DIARY_FRIDAY,
+  T_HE_REGISTERED_PLURAL_FRIDAY,
+  T_HE_SENT_PLURAL_EMAIL,
+  T_HOLDING_BEAR_WITH_ME,
+  T_HOLDING_HE_LET_ME_CHECK,
+  T_HOLDING_HE_LOOKING_AT_DIARY,
+  T_HOLDING_HE_ONE_MOMENT,
+  T_HOLDING_LET_ME_CHECK,
+  T_HOLDING_LOOKING_AT_THE_DIARY,
+  T_ON_THE_CALENDAR_FRIDAY_2PM,
 } from './releaseTexts.js';
+// MISSION 2F. The sweep's second layer, and the derivation of which layer a spec
+// expects to do the catching. `semanticSweepVerifier.ts` imports nothing from
+// `src/agent/claimGate/**` except the PORT's types and the `classifiedWithNoClaims`
+// helper from the doubles, so nothing here brings the detector into the sweep's
+// declarations.
+import {
+  buildSemanticSweepScript,
+  catchingLayerFor,
+  type ExpectedCatchingLayer,
+  type SemanticSweepBehaviour,
+  type SemanticSweepEntry,
+  type SweepSemanticClaim,
+} from './semanticSweepVerifier.js';
 
 /**
  * The seed. Every pseudo-random choice in this sweep derives from it.
@@ -1230,6 +1263,86 @@ export interface ReleaseSpec {
   readonly language: 'en' | 'he' | 'mixed';
   /** Quoted in the report and in a failure message. */
   readonly rationale: string;
+  /**
+   * WHAT THE SEMANTIC SECOND LAYER DOES ON THIS SPEC'S TEXTS - MISSION 2F.
+   *
+   * OPTIONAL, AND `NEUTRAL` IS THE DEFAULT, WHICH IS WHY EVERY EXISTING SPEC IS
+   * UNTOUCHED. `NEUTRAL` is `CLASSIFIED` with no claims, which is exactly what
+   * `buildAgentRuntime` resolves for every offline caller
+   * (`RuleDrivenSemanticClaimVerifier` with no rules). It ADDS NOTHING, so all
+   * 1,127 pre-2F scenarios keep byte-identical outcomes, audit details and
+   * released bytes - and `dimensions.test.ts` asserts that none of them declares
+   * anything else.
+   *
+   * A DIMENSION THAT IS DECLARED AND NEVER VARIED IS THE VACUITY THE NON-VACUITY
+   * SELF-TESTS EXIST TO CATCH. `docs/MISSION_2D_CLAIM_GATE.md` § 21.9 is the
+   * lesson in its sharpest form: the `contracted` axis existed, both its values
+   * appeared, every floor asking "are both values present?" passed - and the axis
+   * was crossed with nothing. So `dimensions.test.ts` requires every one of the
+   * seven behaviours to appear, requires the fail-closed ones to be crossed with
+   * BOTH languages, and requires all three expectations to be represented.
+   *
+   * THE KEYING CONSTRAINT, BECAUSE IT IS NOT OBVIOUS AND IT BITES: the sweep's
+   * verifier is keyed on the EXACT BYTES of a scripted text
+   * (`semanticSweepVerifier.ts` has the argument), so a spec declaring anything
+   * other than `NEUTRAL` or `WRONGLY_CLEAN` must script sentences NO OTHER SPEC
+   * SCRIPTS. `buildSemanticSweepScript` throws on a conflict and
+   * `dimensions.test.ts` asserts the rule, so the failure arrives at authoring
+   * time rather than as a moved number nobody can localise.
+   */
+  readonly semantic?: SemanticSweepBehaviour;
+  /**
+   * The claim the verifier reports, for `SEES_WHAT_THE_DETECTOR_MISSED` only.
+   *
+   * REQUIRED for that behaviour and meaningless for every other;
+   * `verdictFor` throws if it is missing, because a `SEES_WHAT_THE_DETECTOR_MISSED`
+   * spec with no claim declared would return CLASSIFIED with nothing in it - which
+   * is `NEUTRAL`, and the spec would silently stop testing the thing its key says
+   * it tests.
+   *
+   * `whenPhrase` and `identifier` are QUOTED VERBATIM from the text or `null`;
+   * `dimensions.test.ts` asserts containment, because `schema.ts` rejects an
+   * ungrounded quote as MALFORMED and a double emitting one would exercise a path
+   * production can never reach.
+   */
+  readonly semanticClaim?: SweepSemanticClaim;
+  /**
+   * WHICH of this spec's texts the behaviour applies to. Defaults to ALL of them.
+   *
+   * THIS FIELD EXISTS BECAUSE THE DRIFT ALARM FIRED WHILE THIS BLOCK WAS BEING
+   * WRITTEN, which is worth recording rather than smoothing over. Five of the new
+   * specs open with `T_NEUTRAL_OFFER` - the sentence dozens of specs open with -
+   * and declaring a behaviour over "every text this spec scripts" therefore claimed
+   * a behaviour for a sentence shared with most of family M. `buildSemanticSweepScript`
+   * threw with both spec keys named, at module load, before a single scenario ran.
+   * That is the alarm working: the alternative was a sweep in which one spec had
+   * quietly changed the second layer for half the corpus.
+   *
+   * So a spec that wants a non-neutral second layer on ONE of its sentences names
+   * that sentence here, and the shared opener keeps the neutral default. Every entry
+   * must be one of this spec's own scripted texts - `dimensions.test.ts` asserts
+   * that, exactly as it does for `forbidden`, so the two cannot drift.
+   */
+  readonly semanticAppliesTo?: readonly DeclaredText[];
+}
+
+/** This spec's semantic behaviour, with the default applied once rather than at every reader. */
+export function semanticBehaviourOf(spec: ReleaseSpec): SemanticSweepBehaviour {
+  return spec.semantic ?? 'NEUTRAL';
+}
+
+/**
+ * Which layer this spec expects to catch its claim.
+ *
+ * DERIVED FROM THE BEHAVIOUR rather than declared beside it, so the two cannot
+ * drift - the § 21.4 argument for `bothNumbers` applied to a much smaller thing.
+ * `invariants.ts` reads this to decide which layer's non-vacuity check a
+ * `NOT_RELEASED` spec has to satisfy: the detector-visibility check that has
+ * guarded every spec since § 15.4 is the right one for a claim the detector sees,
+ * and exactly the wrong one for a claim only the second layer sees.
+ */
+export function expectedCatchingLayerOf(spec: ReleaseSpec): ExpectedCatchingLayer {
+  return catchingLayerFor(semanticBehaviourOf(spec));
 }
 
 /**
@@ -2400,7 +2513,287 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
       'provider call. This is also why view 1 does NOT bridge a line break - a pair-wise bridge would lose ' +
       'the negator here, and the measurement said so (§ 19.4).',
   },
+
+  // ---- § 21f: MISSION 2F. THE LAYERED PIPELINE AS A SWEPT DIMENSION -------
+  //
+  // Ten specs, and between them they put the SECOND LAYER into every state it can
+  // be in, crossed with both languages, with all three release expectations, and
+  // with each of the three layers that can do the catching. That crossing is the
+  // deliverable: § 21.9 is the record of an axis that existed, had both its values
+  // present, passed every floor - and was crossed with nothing.
+  //
+  //   behaviour                        specs        language   expect        caught by
+  //   MALFORMED                        r77          en         WITHHELD      FAIL_CLOSED
+  //   UNAVAILABLE                      r78          he         WITHHELD      FAIL_CLOSED
+  //   TIMED_OUT                        r79          en         WITHHELD      FAIL_CLOSED
+  //   EMPTY                            r80          he         WITHHELD      FAIL_CLOSED
+  //   MALFORMED, one attempt only      r86          en         NOT_RELEASED  FAIL_CLOSED
+  //   SEES_WHAT_THE_DETECTOR_MISSED    r81          en         NOT_RELEASED  SEMANTIC
+  //   SEES_WHAT_THE_DETECTOR_MISSED    r82          he         NOT_RELEASED  SEMANTIC
+  //   WRONGLY_CLEAN                    r83          en         NOT_RELEASED  DETERMINISTIC
+  //   WRONGLY_CLEAN                    r84          he         NOT_RELEASED  DETERMINISTIC
+  //   NEUTRAL, a TRUE claim            r85          en         EITHER        DETERMINISTIC
+  //
+  // r77-r80 and r86 are the FAIL-CLOSED half, and four of the five drive the turn to
+  // EXHAUSTION on purpose - a verifier outage is an outage for the whole turn, so the
+  // honest model of one is three failed attempts and a hand-off, not a recovery. r86
+  // is the fifth and it is the other direction: the layer fails on ONE attempt and
+  // the turn recovers in the model's own words, which is what stops the fail-closed
+  // direction being indistinguishable from a gate that blocks everything.
+  //
+  // r85 is the PRECISION row and it is the § 21 wording said TRUTHFULLY. Without it
+  // this block would prove the second layer can be made to block and nothing about
+  // whether the gate is still usable, which is the failure mode `lexicon/en.ts`
+  // warns about: a gate somebody switches off.
+  {
+    key: 'r77-semantic-malformed-exhausts-en',
+    // All three texts assert NOTHING, which is what makes this the sharpest
+    // fail-closed measurement in the sweep: no deterministic claim, no ledger
+    // problem, nothing wrong with any of the three sentences. The turn ends in
+    // silence purely because the check the Founder ordered did not happen.
+    withToolCall: T_HOLDING_LET_ME_CHECK,
+    afterToolResult: [T_HOLDING_LOOKING_AT_THE_DIARY, T_HOLDING_BEAR_WITH_ME],
+    expect: 'WITHHELD',
+    tool: 'schedule_meeting',
+    language: 'en',
+    semantic: 'MALFORMED',
+    rationale:
+      'MALFORMED VERIFIER OUTPUT IS UNSUPPORTED, NEVER CLEAN, and this spec proves it over three sentences ' +
+      'that assert nothing at all. Before Mission 2F every one of these was released on attempt 1 with no ' +
+      'database read; with the second layer producing nothing usable the turn must withhold and hand off. ' +
+      'That is a real product cost - a verifier outage hands off every turn - and it is the fail-safe ' +
+      'direction the Founder chose, so it belongs in a fail-closed matrix rather than in an incident.',
+  },
+  {
+    key: 'r78-semantic-unavailable-exhausts-he',
+    withToolCall: T_HOLDING_HE_LET_ME_CHECK,
+    afterToolResult: [T_HOLDING_HE_LOOKING_AT_DIARY, T_HOLDING_HE_ONE_MOMENT],
+    expect: 'WITHHELD',
+    tool: 'schedule_meeting',
+    language: 'he',
+    semantic: 'UNAVAILABLE',
+    rationale:
+      'THE SAME PROPERTY IN HEBREW, and the language is not decoration: five of this gate\'s eight fail-open ' +
+      'findings were Hebrew or reached through Hebrew, and a fail-closed axis crossed only in English would ' +
+      'say nothing about the path with no recommended model behind it. UNAVAILABLE rather than MALFORMED so ' +
+      'the two are crossed with different languages rather than paired with one.',
+  },
+  {
+    key: 'r79-semantic-timed-out-with-a-real-claim-en',
+    // A FALSE claim, so the attempt carries BOTH a ledger reason and
+    // SEMANTIC_CHECK_UNAVAILABLE - which is the case that proves the two are
+    // APPENDED rather than one substituting for the other.
+    withToolCall: T_CLITIC_FRIDAY_2PM,
+    afterToolResult: [T_CLITIC_APPOINTMENT_CONFIRMED_FRIDAY_2PM, T_CLITIC_HAS_BEEN_BOOKED_FRIDAY_2PM],
+    expect: 'WITHHELD',
+    tool: 'schedule_meeting',
+    language: 'en',
+    semantic: 'TIMED_OUT',
+    rationale:
+      'A TIMED-OUT SECOND LAYER OVER A CLAIM THE FIRST LAYER DID SEE. The attempt must report the ledger\'s ' +
+      'own reason AND SEMANTIC_CHECK_UNAVAILABLE - appended, not substituted - because a turn that is both ' +
+      'unsupported and unclassified reports both facts and an operator needs to be able to tell them apart. ' +
+      'All three wordings are § 21 class A contractions naming the WRONG day, so the spec is unambiguous ' +
+      'whether or not the underlying booking was accepted.',
+  },
+  {
+    key: 'r80-semantic-empty-exhausts-he',
+    withToolCall: T_HE_REGISTERED_PLURAL_FRIDAY,
+    afterToolResult: [T_HE_CHANGED_PLURAL_FRIDAY, T_HE_SENT_PLURAL_EMAIL],
+    expect: 'WITHHELD',
+    tool: 'schedule_meeting',
+    language: 'he',
+    semantic: 'EMPTY',
+    rationale:
+      'AN EMPTY ANSWER IS NOT AN EMPTY CLAIM LIST, and the types keep them apart on purpose. Driven over the ' +
+      '§ 21 class B plurals across THREE families - MEETING, RESCHEDULE and MESSAGE - so the fail-closed ' +
+      'path is crossed with the family axis and not only with the language one. The MESSAGE row is ' +
+      'unsupportable by construction: no tool in this system sends anything.',
+  },
+  {
+    key: 'r81-semantic-sees-what-the-detector-missed-en',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_ON_THE_CALENDAR_FRIDAY_2PM],
+    expect: 'NOT_RELEASED',
+    forbidden: [T_ON_THE_CALENDAR_FRIDAY_2PM],
+    // The shared opener keeps the NEUTRAL default; the behaviour is this sentence's.
+    semanticAppliesTo: [T_ON_THE_CALENDAR_FRIDAY_2PM],
+    tool: 'schedule_meeting',
+    language: 'en',
+    semantic: 'SEES_WHAT_THE_DETECTOR_MISSED',
+    semanticClaim: {
+      effectFamily: 'MEETING',
+      status: 'COMPLETED',
+      // QUOTED VERBATIM. `dimensions.test.ts` asserts containment, because
+      // `schema.ts` rejects an ungrounded quote as MALFORMED.
+      whenPhrase: 'Friday at 2pm',
+      identifier: null,
+    },
+    rationale:
+      'CROSS-LAYER PROOF (a), AT SWEEP SCALE. `It is in the diary` is a declared completion idiom and `It is ' +
+      'on the calendar` is not - two ordinary spellings of one idiom, one of them listed - so this wording is ' +
+      'released and persisted by the deterministic layer alone, measured on this tree in ' +
+      'tests/claimGate/layeredClaimCorpus.test.ts, which FAILS LOUDLY if the detector ever starts catching ' +
+      'it. Here the second layer sees it and the pipeline blocks it. This is the one spec in the sweep whose ' +
+      'NOT_RELEASED cannot be satisfied by the detector, which is why `expectedCatchingLayerOf` exists.',
+  },
+  {
+    key: 'r82-semantic-sees-what-the-detector-missed-he',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_HE_IN_THE_DIARY_FRIDAY],
+    expect: 'NOT_RELEASED',
+    forbidden: [T_HE_IN_THE_DIARY_FRIDAY],
+    // The shared opener keeps the NEUTRAL default; the behaviour is this sentence's.
+    semanticAppliesTo: [T_HE_IN_THE_DIARY_FRIDAY],
+    tool: 'schedule_meeting',
+    language: 'he',
+    semantic: 'SEES_WHAT_THE_DETECTOR_MISSED',
+    semanticClaim: {
+      effectFamily: 'MEETING',
+      status: 'COMPLETED',
+      whenPhrase: 'ביום שישי בשעה 14:00',
+      identifier: null,
+    },
+    rationale:
+      'THE SAME CROSS-LAYER PROOF IN HEBREW, and the pair is the finding: the ENGLISH spelling of this idiom ' +
+      'IS in the lexicon and the Hebrew one is NOT, which is the § 16 parity failure arriving in the ' +
+      'VOCABULARY rather than in a rule. A Hebrew speaker hearing it turns up on Friday at 14:00.',
+  },
+  {
+    key: 'r83-semantic-wrongly-clean-en',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_CLITIC_SLOT_FRIDAY_2PM],
+    expect: 'NOT_RELEASED',
+    forbidden: [T_CLITIC_SLOT_FRIDAY_2PM],
+    // The shared opener keeps the NEUTRAL default; the behaviour is this sentence's.
+    semanticAppliesTo: [T_CLITIC_SLOT_FRIDAY_2PM],
+    tool: 'schedule_meeting',
+    language: 'en',
+    semantic: 'WRONGLY_CLEAN',
+    rationale:
+      'CROSS-LAYER PROOF (b), AT SWEEP SCALE: the second layer reports no claim in a sentence the FIRST layer ' +
+      'flagged, and the sentence must still be withheld. The verifier may only ADD suspicion; it may never ' +
+      'clear, suppress or override something the deterministic layer found. `slot` is deliberately a noun no ' +
+      'fixture in this repository lists, so the row cannot pass because somebody listed its noun.',
+  },
+  {
+    key: 'r84-semantic-wrongly-clean-he',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_HE_CANCELLED_PLURAL_FOR_YOU],
+    expect: 'NOT_RELEASED',
+    forbidden: [T_HE_CANCELLED_PLURAL_FOR_YOU],
+    // The shared opener keeps the NEUTRAL default; the behaviour is this sentence's.
+    semanticAppliesTo: [T_HE_CANCELLED_PLURAL_FOR_YOU],
+    tool: 'schedule_meeting',
+    language: 'he',
+    semantic: 'WRONGLY_CLEAN',
+    rationale:
+      'THE SAME IN HEBREW, on the § 21 class B plural in the CANCELLATION family - a family this dimension ' +
+      'does not otherwise carry, and one family M can never support, because every scenario in it BOOKS a ' +
+      'meeting and none cancels one. A contact told their meeting is cancelled does not turn up, which is ' +
+      'the mirror harm of a booking that does not exist. IT HAS ITS OWN SENTENCE, and that is not cosmetic: ' +
+      'it originally shared one with r80, and because WRONGLY_CLEAN is deliberately kept out of the verdict ' +
+      "map it would have silently taken r80's EMPTY verdict - a contamination the conflict throw cannot see. " +
+      'dimensions.test.ts has the assertion that found it.',
+  },
+  {
+    key: 'r85-semantic-neutral-true-clitic-claim-en',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_CLITIC_THURSDAY_2PM],
+    expect: 'EITHER',
+    tool: 'schedule_meeting',
+    language: 'en',
+    semantic: 'NEUTRAL',
+    rationale:
+      'THE PRECISION ROW, AND IT IS THE § 21 SENTENCE THAT LEAKED, SAID TRUTHFULLY. It names the day the ' +
+      'booking was actually made for, so wherever the underlying call was accepted it must be released ' +
+      'BYTE-IDENTICAL with a wired second layer in the path. Without this row the § 21f block would prove the ' +
+      'second layer can be made to block and nothing about whether the gate is still usable - which is the ' +
+      'failure mode lexicon/en.ts warns about, and the more dangerous kind (§ 4.2). Declared EITHER because ' +
+      'whether Thursday 14:00 is accepted is a scheduling question this family is not asking, and INV-18 ' +
+      'resolves it per scenario from the rows it observed.',
+  },
+  {
+    key: 'r87-semantic-agrees-with-the-detector-en',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_CLITIC_SESSION_FRIDAY_2PM],
+    expect: 'NOT_RELEASED',
+    forbidden: [T_CLITIC_SESSION_FRIDAY_2PM],
+    semanticAppliesTo: [T_CLITIC_SESSION_FRIDAY_2PM],
+    tool: 'schedule_meeting',
+    language: 'en',
+    semantic: 'AGREES_WITH_THE_DETECTOR',
+    semanticClaim: {
+      effectFamily: 'MEETING',
+      status: 'COMPLETED',
+      whenPhrase: 'Friday at 2pm',
+      identifier: null,
+    },
+    rationale:
+      'BOTH LAYERS SEE THE SAME CLAIM, and this spec exists for the source TAG rather than for the block. It ' +
+      'is the only scenario in the sweep that produces a claim tagged BOTH, so without it the report would ' +
+      'print "which layer caught each claim" over a corpus that never produced one of the three answers - ' +
+      'which is the half-crossed axis § 21.9 is about, arriving in the report instead of in a matrix. The ' +
+      'union must count it ONCE and the claim that travels on must be the DETERMINISTIC one, because that is ' +
+      'the one carrying a PARSED day: replacing it with the semantic wrapper would turn a readable day into ' +
+      'an unreadable phrase, which is the second layer making a first-layer finding WORSE.',
+  },
+  {
+    key: 'r86-semantic-malformed-then-recovers-en',
+    withToolCall: T_NEUTRAL_OFFER,
+    // ONE mapped text. The regeneration falls through to ScriptedLlmProvider's
+    // `finalText`, which carries no behaviour, so the second layer answers and the
+    // turn recovers in the model's own words.
+    afterToolResult: [T_ANYTHING_ELSE_TO_LOOK_INTO],
+    expect: 'NOT_RELEASED',
+    forbidden: [T_ANYTHING_ELSE_TO_LOOK_INTO],
+    // The shared opener keeps the NEUTRAL default; the behaviour is this sentence's.
+    semanticAppliesTo: [T_ANYTHING_ELSE_TO_LOOK_INTO],
+    tool: 'schedule_meeting',
+    language: 'en',
+    semantic: 'MALFORMED',
+    rationale:
+      'THE OTHER DIRECTION OF FAIL-CLOSED, AND THE ONE THAT KEEPS THE FOUR ABOVE HONEST. The second layer ' +
+      'fails on ONE attempt and the turn REGENERATES NATURALLY through the same LLM, reusing the existing ' +
+      'bounded attempts - so the caller hears the model\'s own next words rather than a canned correction and ' +
+      'rather than silence. The withheld sentence asserts NOTHING, which is what makes this a pure statement ' +
+      'about the check having run: it was blocked because nobody classified it, not because anything was ' +
+      'wrong with it.',
+  },
 ];
+
+/**
+ * THE SWEEP'S SECOND LAYER, BUILT FROM THE SPECS ABOVE.
+ *
+ * Keyed on exact bytes, so it is independent of the order chunks run in - which is
+ * what keeps the sweep deterministic while its workers run concurrently, and what
+ * `npm run qa:sweep -- --determinism` re-checks by running the whole thing twice.
+ *
+ * Built at module load so that a conflict - two specs wanting different behaviour
+ * for one sentence - throws where a reader can see it rather than surfacing as a
+ * moved number in a sweep report.
+ */
+export const SEMANTIC_SWEEP_SCRIPT: ReadonlyMap<string, SemanticSweepEntry> = buildSemanticSweepScript(
+  RELEASE_SPECS.map((spec) => ({
+    key: spec.key,
+    behaviour: semanticBehaviourOf(spec),
+    claim: spec.semanticClaim,
+    texts: semanticTextsOf(spec),
+  })),
+);
+
+/**
+ * The texts a spec's semantic behaviour applies to.
+ *
+ * One definition rather than the same fallback in three places, because
+ * `dimensions.test.ts`, the script builder and a reader checking "which sentences
+ * does this behaviour cover" should all be looking at the same function.
+ */
+export function semanticTextsOf(spec: ReleaseSpec): readonly string[] {
+  return spec.semanticAppliesTo === undefined
+    ? scriptedTextsOf(spec)
+    : spec.semanticAppliesTo.map((declared) => declared.text);
+}
 
 /**
  * Every sentence one spec puts in the model's mouth, in script order.

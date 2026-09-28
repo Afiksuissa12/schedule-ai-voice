@@ -65,17 +65,22 @@ import {
 // person reading the sentence, so the invariant can now fail for a reason the
 // detector did not supply.
 import {
+  attemptsTheSecondLayerAnswered,
   buildDeclarationIndex,
   compareWitnesses,
+  layeredPipelineFindings,
   unbackedDeclaredClaims,
   type ClaimDeclaration,
   type DeclaredText,
+  type LayeredReleaseFacts,
   type ObservedStateForOracle,
   type WitnessAgreement,
 } from './claimOracle.js';
 import { PAST_FINDING_TEXTS } from './pastFindingTexts.js';
 import { ALL_DECLARED_RELEASE_TEXTS } from './releaseTexts.js';
+import type { ClaimGateTurnReport } from '../../src/agent/agentTurnService.js';
 import type { ScenarioObservation } from './runner.js';
+import { expectedCatchingLayerOf } from './dimensions.js';
 import { proposedWhen, type Scenario } from './scenarios.js';
 
 /** One invariant's verdict for one scenario. */
@@ -2218,17 +2223,127 @@ function declaredReleaseExpectationHolds(
         ),
       ];
     }
-    const visible = forbidden.filter((text) => detectMaterialClaims(text).length > 0);
-    if (visible.length === 0) {
+    // ---- THE NON-VACUITY HALF, AND MISSION 2F SPLIT IT IN THREE -----------
+    //
+    // The check below exists because a NOT_RELEASED spec whose wording nobody can
+    // see is a spec passing for the wrong reason: the gate had nothing to act on.
+    // Since § 15.4 the ESCAPE check above does not depend on it - the spec names
+    // its forbidden strings by hand - so this is purely the "did anything actually
+    // do the catching" alarm.
+    //
+    // UNTIL MISSION 2F IT ASKED ONLY ABOUT THE DETECTOR, and for every spec written
+    // before this mission that was the right question. It is exactly the WRONG
+    // question for the two specs whose whole point is a wording the detector CANNOT
+    // see, and for the five whose point is that nobody classified the text at all.
+    // So the spec says which layer it expects to do the catching -
+    // `expectedCatchingLayerOf`, derived from its semantic behaviour so the two
+    // cannot drift - and the alarm is asked of THAT layer. Nothing is relaxed: each
+    // branch is a floor of the same strength, on a different mechanism.
+    const catchingLayer = expectedCatchingLayerOf(spec);
+    const layerReports = observation.claimGate.releases.flatMap((release) =>
+      release.attempts.map((attempt) => attempt.layers),
+    );
+
+    if (catchingLayer === 'DETERMINISTIC') {
+      const visible = forbidden.filter((text) => detectMaterialClaims(text).length > 0);
+      if (visible.length === 0) {
+        return [
+          fail(
+            id,
+            observation.scenarioId,
+            `spec ${spec.key} is declared NOT_RELEASED, but the detector finds NO material claim in any of its ` +
+              'forbidden wordings, so the gate had nothing to act on and this scenario is passing for the wrong ' +
+              'reason. Either the wording no longer asserts what it used to, or a detector rule stopped firing - ' +
+              'see tests/claimGate/claimGateCorpus.ts. The ESCAPE check above no longer depends on this: the ' +
+              'spec names the forbidden strings, so a detector miss fails as an escape rather than disappearing.',
+          ),
+        ];
+      }
+      return [
+        pass(
+          id,
+          observation.scenarioId,
+          `spec ${spec.key}: ${forbidden.length} declared-unsupportable wording(s) kept away from the caller ` +
+            `(${visible.length} of them visible to the detector)`,
+        ),
+      ];
+    }
+
+    if (catchingLayer === 'SEMANTIC') {
+      // A wording the detector cannot see, blocked because the SECOND layer saw it.
+      // Two floors, and both are needed: the semantic layer must have contributed a
+      // claim, and the detector must still be blind - because if the detector has
+      // started catching this wording, the spec is no longer testing the layering
+      // and the corpus's own loud failure should be the thing a reader sees.
+      const contributed = layerReports.filter((layers) => layers.semanticClaimCount > 0);
+      if (contributed.length === 0) {
+        return [
+          fail(
+            id,
+            observation.scenarioId,
+            `spec ${spec.key} declares that only the SEMANTIC layer can see its wording, and no attempt in ` +
+              'this scenario reports a contributing semantic claim. So the text was kept away from the caller ' +
+              'by something else, and the cross-layer property this spec exists for was not exercised. Check ' +
+              'that the sweep verifier is wired (tests/invariants/runner.ts) and that the spec scripts a ' +
+              'sentence no other spec scripts - one text may carry only one semantic behaviour.',
+          ),
+        ];
+      }
+      const nowVisible = forbidden.filter((text) => detectMaterialClaims(text).length > 0);
+      if (nowVisible.length > 0) {
+        return [
+          fail(
+            id,
+            observation.scenarioId,
+            `spec ${spec.key} declares its wording INVISIBLE to the deterministic detector, and the detector ` +
+              `now finds a claim in ${nowVisible.length} of them. That is an IMPROVEMENT to the detector and ` +
+              'it must not land silently: this spec is now proving something weaker than it says, because the ' +
+              'block could have come from either layer. Move the spec to WRONGLY_CLEAN, record what closed the ' +
+              'wording, and declare a new SEES_WHAT_THE_DETECTOR_MISSED spec on a wording that is still open. ' +
+              'tests/claimGate/layeredClaimCorpus.ts is where the premise is maintained.',
+          ),
+        ];
+      }
+      return [
+        pass(
+          id,
+          observation.scenarioId,
+          `spec ${spec.key}: ${forbidden.length} wording(s) the detector cannot see, kept away from the caller ` +
+            `by the SEMANTIC layer on ${contributed.length} attempt(s)`,
+        ),
+      ];
+    }
+
+    // FAIL_CLOSED. Nobody classified the text, so neither layer "caught" anything -
+    // and that is the property: a check that did not happen is not a check that
+    // passed. The floor is that the fail-closed path was really taken, with its own
+    // reason recorded, because a spec that reached NOT_RELEASED some other way
+    // would be reporting this mechanism as exercised when it was not.
+    const failedClosed = layerReports.filter((layers) => layers.failClosed);
+    if (failedClosed.length === 0) {
       return [
         fail(
           id,
           observation.scenarioId,
-          `spec ${spec.key} is declared NOT_RELEASED, but the detector finds NO material claim in any of its ` +
-            'forbidden wordings, so the gate had nothing to act on and this scenario is passing for the wrong ' +
-            'reason. Either the wording no longer asserts what it used to, or a detector rule stopped firing - ' +
-            'see tests/claimGate/claimGateCorpus.ts. The ESCAPE check above no longer depends on this: the ' +
-            'spec names the forbidden strings, so a detector miss fails as an escape rather than disappearing.',
+          `spec ${spec.key} declares a FAIL-CLOSED second layer and no attempt in this scenario reports ` +
+            'failClosed. The text was therefore kept from the caller by something other than the mechanism ' +
+            'this spec exists to exercise. Check that the sweep verifier is wired and that this spec scripts ' +
+            'sentences no other spec scripts.',
+        ),
+      ];
+    }
+    const withReason = observation.claimGate.releases
+      .flatMap((release) => release.attempts)
+      .filter((attempt) => attempt.unsupportedClaims.some((entry) => entry.reason === 'SEMANTIC_CHECK_UNAVAILABLE'));
+    if (withReason.length === 0) {
+      return [
+        fail(
+          id,
+          observation.scenarioId,
+          `spec ${spec.key} failed closed and no attempt recorded SEMANTIC_CHECK_UNAVAILABLE. An operator ` +
+            'reading a hand-off has to be able to tell a verifier outage from a model that asserted something ' +
+            'false; those have completely different fixes, and the reason code is the only thing that says ' +
+            'which happened.',
         ),
       ];
     }
@@ -2236,8 +2351,8 @@ function declaredReleaseExpectationHolds(
       pass(
         id,
         observation.scenarioId,
-        `spec ${spec.key}: ${forbidden.length} declared-unsupportable wording(s) kept away from the caller ` +
-          `(${visible.length} of them visible to the detector)`,
+        `spec ${spec.key}: ${forbidden.length} wording(s) kept away from the caller because the second layer ` +
+          `produced nothing usable on ${failedClosed.length} attempt(s), reported as SEMANTIC_CHECK_UNAVAILABLE`,
       ),
     ];
   }
@@ -2269,6 +2384,155 @@ function declaredReleaseExpectationHolds(
 }
 
 // ---------------------------------------------------------------------------
+// INV-19 - MISSION 2F. THE LAYERED PIPELINE AS A SYSTEM-WIDE PROPERTY.
+// ---------------------------------------------------------------------------
+
+/**
+ * Turn one release's layer reports into the shape the independent oracle reads.
+ *
+ * A TRANSLATION AND NOTHING ELSE: every field is copied, nothing is derived and no
+ * judgement is made here. The judgement is `layeredPipelineFindings`, which lives in
+ * `claimOracle.ts` and imports nothing at all - so it can disagree with the gate.
+ */
+function layeredFactsFor(
+  observation: ScenarioObservation,
+  release: ClaimGateTurnReport['releases'][number],
+): LayeredReleaseFacts {
+  // `verifier` is OPTIONAL on `ClaimGateTurnReport` (so pre-2F callers keep
+  // compiling), and `undefined` is NOT the same fact as `wired: false`. It means
+  // nobody said - which is its own finding, because defaulting an unknown to safe
+  // is the silence § 17.5 exists to remove.
+  const verifier = observation.claimGate.verifier;
+  return {
+    iteration: release.iteration,
+    verifierWired: verifier === undefined ? null : verifier.wired,
+    verifierName: verifier?.name ?? null,
+    releasedText: release.releasedText,
+    attempts: release.attempts.map((attempt) => ({
+      attempt: attempt.attempt,
+      semanticOutcome: attempt.layers.semanticOutcome,
+      failClosed: attempt.layers.failClosed,
+      deterministicClaimCount: attempt.layers.deterministicClaimCount,
+      semanticClaimCount: attempt.layers.semanticClaimCount,
+      unionClaimCount: attempt.layers.unionClaimCount,
+      sourceTags: attempt.layers.sources,
+      // The attempt whose bytes the caller actually got. Compared on the TEXT
+      // rather than on an index, because the gate releases the attempt it
+      // approved and not "the last one".
+      wasReleased: release.releasedText !== null && attempt.text === release.releasedText,
+      unsupportedReasons: attempt.unsupportedClaims.map((entry) => entry.reason),
+    })),
+  };
+}
+
+const everyCustomerFacingTextPassedBothLayers: Invariant = {
+  id: 'INV-19-every-customer-facing-text-passed-both-claim-layers',
+  title:
+    'Every customer-facing text the system released was read by BOTH claim layers, and a second layer that ' +
+    'produced nothing usable released nothing',
+  because:
+    'Eight successive independent QA rounds each found a phrasing shape the deterministic lexicon detector ' +
+    'did not recognise, and each one leaked a false success claim to a contact and persisted it with nothing ' +
+    'behind it (docs/MISSION_2D_CLAIM_GATE.md §§ 14.1, 15.1, 16.1, 17.1, 18.1, 19.1, 20.1, 21.1). § 17.8 ' +
+    'states why the sequence does not terminate by itself: the RULES over the lexicon are general now, and ' +
+    'the LEXICON is an open class that enumeration cannot close. The Founder\'s answer is a semantic second ' +
+    'layer that may only ADD suspicion, and INV-18 cannot police it - INV-18 asks whether a released sentence ' +
+    'was TRUE, which is a question about an effect. This asks the question no amount of reading rows can ' +
+    'answer: DID THIS SYSTEM RUN THE CHECK IT SAYS IT RUNS. A turn can be perfectly safe and still have ' +
+    'skipped the check, and a turn that skipped the check is a turn nobody classified - which is the state ' +
+    '§ 21.2 reason 3 describes as "silence is not safety". A missing or unwired verifier is a VIOLATION here, ' +
+    'exactly as claimGate.enabled === false is for INV-18: a runtime that can be configured into skipping the ' +
+    'second layer has the eight-round defect back.',
+  check(observation) {
+    // The gate itself is INV-18's subject. If it is not wired at all there is no
+    // layering to examine and reporting it twice would count one defect as two.
+    if (!observation.claimGate.enabled) {
+      return [
+        notApplicable(
+          this.id,
+          observation.scenarioId,
+          'no claim gate was wired at all; INV-18 reports that as a violation',
+        ),
+      ];
+    }
+    if (observation.outcome === 'ERROR') {
+      return [notApplicable(this.id, observation.scenarioId, 'the turn threw; INV-13 reports that')];
+    }
+
+    const releases = observation.claimGate.releases;
+    if (releases.length === 0) {
+      // A turn that produced no text at all. There is genuinely nothing to have
+      // classified, so this is inapplicable rather than a violation - but the
+      // WIRING claim is still checkable and is still asserted, because a runtime
+      // with no verifier is a violation whether or not this turn spoke.
+      const verifier = observation.claimGate.verifier;
+      if (verifier !== undefined && !verifier.wired) {
+        return [
+          fail(
+            this.id,
+            observation.scenarioId,
+            'the runtime reports NO semantic claim verifier wired (claimGate.verifier.wired === false). ' +
+              'buildAgentRuntime always resolves one and offers no way to remove it, so this means the ' +
+              'production composition root changed. Reported even on a turn that released nothing, because ' +
+              'the next turn will not be so lucky.',
+          ),
+        ];
+      }
+      return [
+        notApplicable(
+          this.id,
+          observation.scenarioId,
+          'the model produced no customer-facing text, so neither layer had anything to read',
+        ),
+      ];
+    }
+
+    const results: InvariantResult[] = [];
+
+    for (const release of releases) {
+      const facts = layeredFactsFor(observation, release);
+
+      // THE INDEPENDENT JUDGEMENT. `layeredPipelineFindings` imports nothing, so
+      // every property it checks is arithmetic or structural over values the
+      // runtime reported about its own behaviour - and none of it consults the
+      // verifier's verdict as evidence that anything is safe. The note at the top
+      // of `claimOracle.ts` § 6 is the argument; this is the call site.
+      const findings = layeredPipelineFindings(facts);
+
+      if (findings.length > 0) {
+        results.push(
+          fail(
+            this.id,
+            observation.scenarioId,
+            `iteration ${release.iteration}: the LAYERED PIPELINE did not hold. ` +
+              `${findings.map((entry) => `[${entry.reason}] ${entry.detail}`).join(' | ')} ` +
+              `The gate reported outcome ${release.outcome} over ${release.attempts.length} attempt(s), ` +
+              `verifier ${facts.verifierName ?? '(none reported)'}.` +
+              (release.releasedText === null
+                ? ' Nothing was released.'
+                : ` Released text: ${JSON.stringify(release.releasedText.slice(0, 240))}`),
+          ),
+        );
+        continue;
+      }
+
+      const answered = attemptsTheSecondLayerAnswered(facts);
+      results.push(
+        pass(
+          this.id,
+          observation.scenarioId,
+          `iteration ${release.iteration}: ${release.attempts.length} attempt(s), the second layer answered on ` +
+            `${answered} of them, union >= deterministic throughout, and nothing was released while it failed ` +
+            'closed',
+        ),
+      );
+    }
+
+    return results;
+  },
+};
+
+// ---------------------------------------------------------------------------
 
 /**
  * Invariants 09 (determinism) and 10 (no network I/O) are properties of the
@@ -2294,6 +2558,7 @@ export const INVARIANTS: readonly Invariant[] = [
   hebrewAndEnglishAgree,
   resolvedDayIsTheDayThePhraseNamed,
   releasedTextAssertsNoAbsentEffect,
+  everyCustomerFacingTextPassedBothLayers,
 ];
 
 /** Run every invariant over every observation. */

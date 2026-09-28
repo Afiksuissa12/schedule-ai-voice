@@ -70,10 +70,14 @@ const {
   QA6_HEBREW_WORDINGS,
   QA6_HOUR_WORDINGS,
   QA6_PARSED_CONTROLS,
+  QA8_AB_CONTROLS,
+  QA8_ALL_WORDINGS,
+  QA8_CLASS_A_WORDINGS,
+  QA8_CLASS_B_WORDINGS,
 } = await import('./pastFindingTexts.js');
 const { T_MEETING_THURSDAY_2PM, T_NEUTRAL_OFFER } = await import('./releaseTexts.js');
 
-import type { ClaimDeclaration } from './claimOracle.js';
+import { declarationsAgree, type ClaimDeclaration } from './claimOracle.js';
 import type { ReleaseSpec } from './dimensions.js';
 import type { ScenarioObservation } from './runner.js';
 import type { Scenario } from './scenarios.js';
@@ -442,6 +446,147 @@ describe('a released sentence nobody declared is a violation', () => {
   it('and the message says where to put the declaration', () => {
     const [failure] = failuresFor('Another undeclared sentence.');
     expect(failure).toContain('tests/invariants/releaseTexts.ts');
+  });
+});
+
+describe('§ 21: the apostrophe clitic and the person/number axis, with the detector blind', () => {
+  // THE EIGHTH ROUND, AND THIS FILE WAS ONE ROUND OUT OF DATE UNTIL MISSION 2F.
+  // Every one of the nine wordings was RELEASED to the caller AND PERSISTED as a
+  // spoken AGENT row with zero domain rows, while `npm run qa:sweep` printed
+  // `CLAIMS THAT LEAKED PAST THE GATE : 0` and `DETECTOR_BLIND 0` - honestly, and
+  // uselessly, because nobody had declared the sentences (§ 21.2 reason 3).
+  //
+  // They are declared now, and the block below is the proof that a DECLARATION is
+  // enough on its own. It does NOT mean the oracle would have caught them at the
+  // time: it could not have, and `claimOracle.ts` § 6's header says so in as many
+  // words. What it means is that the oracle catches every past finding, which is the
+  // property this file exists for and which had fallen behind.
+  //
+  // All eleven are driven on an EMPTY ledger, like §§ 14-19 and unlike § 20: every
+  // one of them leaked into a turn that dispatched no tool at all.
+
+  it('covers all nine wordings and both A/B controls, not a subset', () => {
+    // The finding listed four in class A and five in class B. A test that proved a
+    // representative subset would be the § 16.2 mistake for the fourth time.
+    expect(QA8_CLASS_A_WORDINGS.length, 'class A: the English clitic wordings').toBe(4);
+    expect(QA8_CLASS_B_WORDINGS.length, 'class B: the Hebrew person/number wordings').toBe(5);
+    expect(QA8_AB_CONTROLS.length).toBe(2);
+    expect(QA8_ALL_WORDINGS.length).toBe(11);
+  });
+
+  for (const wording of QA8_ALL_WORDINGS) {
+    it(`fails on the declaration alone: ${wording.text}`, () => {
+      const failures = failuresFor(wording.text);
+      expect(
+        failures.length,
+        'INV-18 passed a § 21 wording against an empty ledger with the detector returning nothing. That is ' +
+          'the eighth-round failure this oracle exists to make impossible for a declared sentence.',
+      ).toBeGreaterThan(0);
+      const fromTheOracle = failures.filter((detail) => detail.includes('DECLARED GROUND TRUTH'));
+      expect(fromTheOracle.length, `failures were:\n${failures.join('\n---\n')}`).toBe(1);
+      expect(fromTheOracle[0]).toContain('SO THE DETECTOR NEVER SAW THIS AT ALL');
+    });
+  }
+
+  it('and BOTH A/B CONTROLS fail too, which is the property that matters most here', () => {
+    // THE GATE'S TWO VERDICTS DIFFERED BY ONE CHARACTER - an apostrophe in class A
+    // and one Hebrew suffix in class B - and the ORACLE'S DO NOT. That is the third
+    // time this exact property has had to be pinned (§ 17's comma, § 19's line
+    // break, § 21's apostrophe), and it is what a hand-authored declaration buys
+    // over a second matcher: a person reading the two sentences hears the same
+    // assertion, because there is one.
+    for (const control of QA8_AB_CONTROLS) {
+      expect(failuresFor(control.text).length, `no failure for the control ${control.text}`).toBeGreaterThan(0);
+    }
+  });
+
+  it('declares the CONTRACTED and SPELLED-OUT spellings identically', () => {
+    // If these two ever needed different declarations the oracle would have
+    // inherited the defect it exists to catch. Asserted on the declaration itself
+    // rather than on the verdict, because the verdicts agreeing could be a
+    // coincidence of the state.
+    const contracted = QA8_CLASS_A_WORDINGS[0];
+    const spelledOut = QA8_AB_CONTROLS[0];
+    expect(contracted?.text).toBe("Your meeting's booked for Thursday at 2pm.");
+    expect(spelledOut?.text).toBe('Your meeting is booked for Thursday at 2pm.');
+    expect(declarationsAgree(contracted?.declares as ClaimDeclaration, spelledOut?.declares as ClaimDeclaration)).toBe(
+      true,
+    );
+  });
+
+  it('and the SINGULAR and PLURAL of one Hebrew verb identically', () => {
+    // Class B's own version of the same property. ביטלנו leaked and ביטלתי was
+    // blocked, and a contact does not care whether one person or two cancelled
+    // their meeting.
+    const plural = QA8_CLASS_B_WORDINGS[0];
+    const singular = QA8_AB_CONTROLS[1];
+    expect(plural?.text).toBe('ביטלנו את הפגישה שלך.');
+    expect(singular?.text).toBe('ביטלתי את הפגישה שלך.');
+    expect(declarationsAgree(plural?.declares as ClaimDeclaration, singular?.declares as ClaimDeclaration)).toBe(true);
+  });
+
+  it('names the effect FAMILY for each of the four classes § 21 spans', () => {
+    // Class B crosses four families, which is how the finding showed it is not one
+    // verb wide. A failure that did not carry the family would leave a reader
+    // unable to tell a missing cancellation from a missing email.
+    expect(failuresFor('ביטלנו את הפגישה שלך.')[0]).toContain('CANCELLATION COMPLETED');
+    expect(failuresFor('שלחנו לך אישור במייל.')[0]).toContain('MESSAGE COMPLETED');
+    expect(failuresFor('שינינו את הפגישה ליום חמישי בשעה 14:00.')[0]).toContain('RESCHEDULE COMPLETED');
+    expect(failuresFor("Your callback's arranged for 3pm tomorrow.")[0]).toContain('CALLBACK COMPLETED');
+  });
+
+  it("and שלחנו fails as NO_TOOL_FOR_PROMISE, because nothing here sends anything", () => {
+    // The strongest row of the nine: MESSAGE maps to NO observed effect at all, so
+    // no state could EVER have supported it. Distinguished from
+    // NO_MATCHING_EFFECT on purpose - "nothing happened" and "nothing could ever
+    // happen" are different findings with different fixes.
+    expect(failuresFor('שלחנו לך אישור במייל.')[0]).toContain('NO_TOOL_FOR_PROMISE');
+  });
+
+  it('but passes the same clitic wording against a booking that really exists', () => {
+    // The precision direction, on the § 21 class. Without this the block above
+    // would be satisfied by an oracle that failed every contracted sentence -
+    // and a contraction is not a claim, it is a spelling.
+    expect(
+      failuresFor("Your meeting's booked for Thursday at 2pm.", { meetings: REAL_THURSDAY_BOOKING }),
+    ).toEqual([]);
+    expect(failuresFor('Your meeting is booked for Thursday at 2pm.', { meetings: REAL_THURSDAY_BOOKING })).toEqual(
+      [],
+    );
+  });
+});
+
+describe('every past finding is covered, and the count is a floor rather than a comment', () => {
+  it('has an entry for every QA round this gate has had', () => {
+    // THE GUARD ON THIS FILE ITSELF. `pastFindingTexts.ts` used to open with "THE
+    // SIX FAIL-OPEN FINDINGS" while §§ 20 and 21 had happened - the smallest
+    // possible version of the mistake the whole file is about, a record silently
+    // falling behind the thing it records. A floor here fails when a round is
+    // added to the documentation and not to the declarations.
+    expect(
+      MISSION_2D_QA_FINDINGS.length,
+      'docs/MISSION_2D_CLAIM_GATE.md records fail-open findings in §§ 14.1, 15.1, 16.1, 17.1, 18.1, 19.1, ' +
+        '19.2, 19.3, 20.1 and 21.1. If a round has been added to the document and not to this file, the ' +
+        'oracle is no longer shown to catch every past finding.',
+    ).toBeGreaterThanOrEqual(10);
+    expect(MISSION_2D_QA_FINDINGS.map((finding) => finding.section)).toContain('21.1');
+  });
+
+  it('and every declared wording really does fail, with no round exempt', () => {
+    // The blanket assertion, over every wording of every round, so a new round
+    // added to the list cannot be added without its wordings being driven.
+    const passed: string[] = [];
+    for (const finding of MISSION_2D_QA_FINDINGS) {
+      for (const wording of finding.wordings) {
+        // § 20 is the one round whose wordings need a REAL booking to disagree
+        // with; everything else leaked into an empty ledger.
+        const options = finding.section === '20.1' ? { meetings: REAL_THURSDAY_1500_BOOKING } : {};
+        if (failuresFor(wording.text, options).length === 0) {
+          passed.push(`§ ${finding.section}: ${wording.text}`);
+        }
+      }
+    }
+    expect(passed).toEqual([]);
   });
 });
 

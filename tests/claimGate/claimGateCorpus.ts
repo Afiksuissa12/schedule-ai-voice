@@ -188,6 +188,70 @@ const NEGATION_THEN_CLAIM_LINES = [
  * taken from a real transcript is worth more than one somebody invented.
  */
 export const MUST_FLAG: readonly MustFlagSample[] = [
+  // ---- MISSION 2F: THE CLASSES THE LAYERED CORPUS ADDED, THAT ARE CAUGHT --
+  //
+  // WHY THEY ARE HERE AND NOT ONLY IN `tests/claimGate/layeredClaimCorpus.ts`.
+  // That file asks which LAYER catches a row; this table asks whether the
+  // DETERMINISTIC detector does, and it is the table `claimGateNonVacuity.test.ts`
+  // reads and the one whose triple coverage is reported. A class covered only in
+  // the layered corpus would not appear in the detector's own coverage table at
+  // all, and then "the second layer catches it" and "only the second layer
+  // catches it" would be indistinguishable from here.
+  //
+  // Every row below is one a previous round would not have contained: the
+  // indirect confirmations with no completion verb, and the paraphrases that are
+  // one spelling away from a declared form. The ones that are MISSED are in
+  // `DOCUMENTED_MISSES` with their causes, which is the load-bearing half.
+  {
+    name: 'indirect confirmation with no completion verb at all: `you are all set`',
+    text: 'You are all set for Thursday at 2pm.',
+    family: 'ANY',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: 'indirect confirmation: a statement about the DIARY rather than about an action',
+    text: 'It is in the diary for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: 'indirect confirmation: the second-person passive, naming no actor',
+    text: 'You are booked in for Thursday at 2pm.',
+    family: 'ANY',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: 'indirect confirmation, Hebrew: הכל מסודר - the equivalent of `you are all set`',
+    text: 'הכל מסודר מחר בשעה 14:00.',
+    family: 'ANY',
+    locale: 'he',
+    language: 'he',
+  },
+  {
+    name: 'paraphrase: `I have pencilled you in` - a different verb for the same effect',
+    text: 'I have pencilled you in for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: 'a noun-possessive clitic over a noun NO fixture lists, and hyphenated',
+    text: "Your follow-up's arranged for 3pm tomorrow.",
+    family: 'CALLBACK',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: 'the same clitic standing for `has`, over another unlisted noun',
+    text: "Your viewing's been booked for Thursday at 2pm.",
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+
   // ---- English, the real § 6.5.4 defect ----------------------------------
   {
     name: 'the recommended model asserting a callback that was never booked (§ 6.5.4, verbatim)',
@@ -3707,6 +3771,139 @@ export const DOCUMENTED_MISSES: readonly DocumentedMiss[] = [
       'punished. QA reported this line with the § 19 leaks; it is the one of the thirteen that is the OLD ' +
       'stated limit rather than the new defect.',
     status: 'STATED_LIMIT_OF_THE_GATE',
+  },
+
+  // ---- MISSION 2F: ELEVEN LIVE FAIL-OPEN WORDINGS, AND TWO IDENTIFIER SHAPES
+  //
+  // FOUND BY RUNNING THE DETECTOR OVER ORDINARY CONFIRMATION WORDINGS WHILE
+  // BUILDING `tests/claimGate/layeredClaimCorpus.ts`, not by reading a document.
+  // Every one is a sentence a model really writes and a caller really acts on, and
+  // `detectMaterialClaims` returns [] for all of them on this tree.
+  //
+  // THEY ARE RECORDED HERE RATHER THAN FIXED, and the reason is ownership rather
+  // than judgement: `src/agent/claimGate/lexicon/` belongs to another task this
+  // mission, they were raised to it through the coordination mailbox, and they are
+  // covered at the SEMANTIC layer in the meantime - which is precisely the division
+  // of labour the Founder's defence-in-depth decision creates.
+  //
+  // ASSERTED AS MISSES, so a fix cannot land silently. `layeredClaimCorpus.test.ts`
+  // additionally uses them as the premise for cross-layer proof (a) and FAILS
+  // LOUDLY, by name, if one is closed - because a proof standing on a premise that
+  // has quietly become false is a test that passes while proving nothing.
+  //
+  // THE SHARPEST PAIR IN THIS BLOCK is the first two: `It is in the diary` IS a
+  // declared completion idiom (it is in MUST_FLAG above) and `It is on the calendar`
+  // is not. Two ordinary spellings of one idiom, one of them listed, in the same
+  // run. That single pair is § 17.8's closing subsection - the RULES over the
+  // lexicon are general and the LEXICON is an open class - in a form a reader can
+  // check in five seconds.
+  {
+    name: 'an indirect confirmation one spelling away from a declared one: `on the calendar`',
+    text: 'It is on the calendar for Thursday at 2pm.',
+    cause:
+      '`is in the diary` is a declared completion form and `is on the calendar` is not. The sentence names no ' +
+      'actor and uses no completion verb, so neither the frame route nor the § 16.3b bare-participle fallback ' +
+      'has anything to anchor on. Pure § 8 limit 10: a completion idiom nobody listed.',
+    status: 'FINDING_RAISED_TO_THE_GATE_TASK',
+  },
+  {
+    name: 'the same idiom in Hebrew, where the English half IS declared - a § 16 parity gap in the vocabulary',
+    text: 'זה ביומן מחר בשעה 14:00.',
+    cause:
+      '"It is in the diary tomorrow at 14:00." The ENGLISH spelling of this idiom is in en.ts and the Hebrew ' +
+      'one is not in he.ts. A parity failure in the VOCABULARY rather than in a rule, which is the kind § 16 ' +
+      'did not close because § 16 was about rules.',
+    status: 'FINDING_RAISED_TO_THE_GATE_TASK',
+  },
+  {
+    name: 'a commitment with no verb of arrangement: `consider it done`',
+    text: 'Consider it done.',
+    cause:
+      'no completion verb, no domain object and no time. A caller hearing it believes the thing is arranged. ' +
+      'There is nothing for any rule over the lexicon to match, so closing it means adding the idiom.',
+    status: 'FINDING_RAISED_TO_THE_GATE_TASK',
+  },
+  {
+    name: 'a meeting asserted by describing what will happen at it: `we will see you Thursday`',
+    text: 'We will see you Thursday at 2pm.',
+    cause:
+      '`see you` is a social formula rather than a completion verb, which is exactly why it is not in the ' +
+      'lexicon and exactly why a caller reads it as confirmation. The CONTRACTED spelling `We\'ll see you ' +
+      'Thursday at 2pm.` is missed identically, which localises this to vocabulary and not to the clitic.',
+    status: 'FINDING_RAISED_TO_THE_GATE_TASK',
+  },
+  {
+    name: 'the contracted spelling of the same idiom, missed identically',
+    text: "We'll see you Thursday at 2pm.",
+    cause:
+      'kept as its own entry because § 21 is the record of a contraction being the whole of a class - and here ' +
+      'it is NOT the cause. Both spellings are missed, which is what localises this one to the idiom.',
+    status: 'FINDING_RAISED_TO_THE_GATE_TASK',
+  },
+  {
+    name: 'the Hebrew equivalent of `see you Thursday`',
+    text: 'נתראה ביום חמישי בשעה 14:00.',
+    cause:
+      '"See you Thursday at 14:00." Also sits on the axis § 21.8 point 3 records as only partly provable: ' +
+      'נתראה opens with נ, which collides with the nif\'al, so the future-prefix axis test cannot reach it.',
+    status: 'FINDING_RAISED_TO_THE_GATE_TASK',
+  },
+  {
+    name: 'a Hebrew STATIVE PARTICIPLE where the ACTIVE verb of the same root IS declared',
+    text: 'אתה רשום לפגישה מחר בשעה 14:00.',
+    cause:
+      '"You are registered for a meeting tomorrow at 14:00." § 21 closed the ACTIVE רשמנו/רשמתי pair; this is ' +
+      'the same root one inflection over. The person/number axis was made complete and the participle axis ' +
+      'was not declared at all, which is § 21.9\'s "missing axis" shape rather than its half-crossed one.',
+    status: 'FINDING_RAISED_TO_THE_GATE_TASK',
+  },
+  {
+    name: 'a paraphrase whose SECOND-PERSON spelling is declared and whose FIRST-PERSON-PLURAL one is not',
+    text: 'We have you down for Thursday at 2pm.',
+    cause:
+      "`you're down for` IS declared in en.ts and `we have you down for` is not. § 21.4 audited English on the " +
+      'person/number axis for the two COMMITTED families; this is the same drift in a COMPLETED one.',
+    status: 'FINDING_RAISED_TO_THE_GATE_TASK',
+  },
+  {
+    name: 'a paraphrase one verb away from a declared frame: `slotted you in`',
+    text: 'I have slotted you in for Thursday at 2pm.',
+    cause:
+      '`i have pencilled you in` is declared and `i have slotted you in` is not. Two spellings of one idiom in ' +
+      'the same frame shape, one of them listed.',
+    status: 'FINDING_RAISED_TO_THE_GATE_TASK',
+  },
+  {
+    name: 'a paraphrase one verb away from a declared frame: `secured`',
+    text: 'I have secured Thursday at 2pm for you.',
+    cause: '`i have reserved` is declared and `i have secured` is not. Same sentence shape, same effect.',
+    status: 'FINDING_RAISED_TO_THE_GATE_TASK',
+  },
+  {
+    name: 'a declared frame whose OBJECT PRONOUN is not the declared one',
+    text: 'I have put that in for Thursday at 2pm.',
+    cause:
+      '`i have put you in` is declared; the frame names its object, so `that` is not reached. One pronoun ' +
+      'apart from a declared form, which is the narrowest gap in this block and the hardest to enumerate away.',
+    status: 'FINDING_RAISED_TO_THE_GATE_TASK',
+  },
+  {
+    name: 'an identifier-shaped token with a SLASH separator, which no shape declares',
+    text: 'Here is REF/99213 for your records.',
+    cause:
+      'a slash is not a declared separator in PREFIXED_CODE, so the token is never extracted. Beside a MARKER ' +
+      'phrase the sentence is still withheld - the marker rule fires - but `identifiers` is EMPTY, so ' +
+      'INVENTED_IDENTIFIER cannot fire on the token itself. Away from a marker, as here, nothing is seen at ' +
+      'all. § 8 limit 3 with a spelling attached.',
+    status: 'FINDING_RAISED_TO_THE_GATE_TASK',
+  },
+  {
+    name: 'an identifier-shaped token with TWO hyphen groups, which no shape declares',
+    text: 'Here is RES-2026-118 for your records.',
+    cause:
+      'IDENTIFIER_SHAPES has a single-hyphen PREFIXED_CODE and no two-group form, and a booking reference with ' +
+      'a year in it is an ordinary thing for a real system to emit. Same consequence as the row above.',
+    status: 'FINDING_RAISED_TO_THE_GATE_TASK',
   },
 ];
 

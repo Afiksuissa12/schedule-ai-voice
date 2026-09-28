@@ -1351,3 +1351,559 @@ One file in `src/` was changed and it is **not** part of this deliverable:
 this task demonstrated end to end and could not get an owner to take. That is
 recorded in full, including why the mailbox route was unavailable, in
 `docs/MISSION_2D_CLAIM_GATE.md` § 17.7.
+
+---
+
+## 11. Mission 2F — assurance for the LAYERED claim pipeline
+
+**Added 2026-09-28 by `MISSION-2F-SEMANTIC-CLAIM-VERIFIER-AUTO-ADVERSARIAL-ASSURANCE`.**
+This task did not build the semantic verifier and did not build the detector; it is
+the independent witness over both. **No model was called, pulled or run.** No
+`eval:*`, no `demo:local`, no `llm:probe`, no `llm:smoke`, no network call to any
+model host. Nothing under `eval-output/` or `eval-output-fair-20260927/` was
+written. Nothing was merged anywhere. Sections 0–10 above belong to other tasks and
+are not rewritten here.
+
+### 11.1 The one thing this section is for
+
+Mission 2F adds a semantic second layer because eight successive independent QA
+rounds each found a phrasing shape the deterministic lexicon did not recognise. A
+second layer is worth nothing unless the LAYERED design is **falsifiable**, and
+falsifiable means three specific things, each of which is now a committed test
+rather than a paragraph:
+
+1. **Defence in depth is real, not nominal.** For the classes § 21 closed
+   deterministically, BOTH layers catch them.
+2. **The second layer genuinely adds.** Eleven wordings the real detector misses
+   *today* are blocked because the semantic layer saw them — and the proof **fails
+   loudly if the detector starts catching one**, because a proof standing on a
+   premise that has quietly become false is a test that passes while proving
+   nothing. That is exactly how this gate reached its eighth round.
+3. **The second layer cannot clear anything.** Asserted as a property over the
+   whole corpus, in all three shapes a model can say "this is clean".
+
+### 11.2 INV-19 — the layered pipeline as a system-wide invariant
+
+```
+INV-19-every-customer-facing-text-passed-both-claim-layers
+  Every customer-facing text the system released was read by BOTH claim layers,
+  and a second layer that produced nothing usable released nothing.
+```
+
+**It asks a different question from INV-18, and the difference is the point.**
+INV-18 asks whether a released sentence was TRUE, which is a question about an
+effect and is answered by reading rows. INV-19 asks the question no amount of
+reading rows can answer: **did this system run the check it says it runs.** A turn
+can be perfectly safe and still have skipped the second layer, and a turn that
+skipped it is a turn nobody classified — which is the state § 21.2 reason 3
+describes as *silence is not safety*.
+
+**A missing or unwired verifier is a VIOLATION**, exactly as
+`claimGate.enabled === false` is for INV-18. `buildAgentRuntime` always resolves a
+verifier and offers no configuration that removes one; `ClaimGateOptions.verifier:
+null` is a declared test-only seam and surfaces as `semanticOutcome: 'ABSENT'`,
+which INV-19 fails. **`verifier === undefined` is its own finding and is not the
+same as `wired: false`** — the field is optional on `ClaimGateTurnReport` so older
+callers keep compiling, and an absent field means *nobody said*. Defaulting an
+unknown to safe is the silence § 17.5 exists to remove.
+
+**Ten findings, each SEEN TO FIRE** in
+`tests/invariants/claimOracleLayered.test.ts` (27 tests), because an invariant that
+reports zero over a clean corpus has proved nothing about what it would do with a
+dirty one:
+
+| finding | what it catches |
+|---|---|
+| `NO_VERIFIER_WIRED` | the report says no second layer is wired |
+| `VERIFIER_WIRING_NOT_REPORTED` | nobody said, which is not "yes" |
+| `SEMANTIC_LAYER_ABSENT` | the test-only seam reached a swept scenario |
+| `UNKNOWN_SEMANTIC_OUTCOME` | an outcome the assurance layer has never heard of |
+| `RELEASED_WHILE_FAIL_CLOSED` | **the one that matters**: text released while the second layer produced nothing usable |
+| `FAIL_CLOSED_WITHOUT_ITS_REASON` | the flag and the outcome disagree, or no `SEMANTIC_CHECK_UNAVAILABLE` was recorded |
+| `UNION_SMALLER_THAN_DETERMINISTIC` | the "may only ADD" rule, as arithmetic |
+| `SOURCE_TAGS_DO_NOT_COVER_THE_UNION` | the report cannot say which layer caught what |
+| `DETERMINISTIC_CLAIM_LOST_ITS_TAG` | a deterministic claim replaced rather than re-tagged |
+| `NO_ATTEMPT_AT_ALL` | a release nobody classified |
+
+**The report prints its zero beside INV-18's**, on the same screen and not further
+down, because the two are the same kind of fact: the first is a customer told
+something FALSE and the second is a customer told something NOBODY CHECKED.
+
+```
+  CLAIMS THAT LEAKED PAST THE GATE    : 0   (must be 0)
+  TEXTS RELEASED WITHOUT PASSING BOTH LAYERS : 0   (must be 0, INV-19)
+```
+
+### 11.3 The dimension is genuinely CROSSED, not declared
+
+§ 21.9 is the lesson and it is sharper than "add an axis": the `contracted` axis
+**existed**, both its values **appeared**, every floor asking *are both values
+present?* **passed** — and it was crossed with nothing, so 15,000 generated rows
+said nothing about the open half. The test a reader should apply is **which PAIRS
+of axis values does this table actually contain.**
+
+So the new axis is asserted on its pairs, in `dimensions.test.ts`:
+
+| crossed with | values |
+|---|---|
+| **behaviour** | all seven: `NEUTRAL`, `WRONGLY_CLEAN`, `SEES_WHAT_THE_DETECTOR_MISSED`, `AGREES_WITH_THE_DETECTOR`, `MALFORMED`, `TIMED_OUT`, `UNAVAILABLE`, `EMPTY` |
+| **language** | every fail-closed behaviour × {en, he}; both cross-layer behaviours × {en, he} |
+| **expectation** | `WITHHELD`, `NOT_RELEASED`, `EITHER` |
+| **catching layer** | `DETERMINISTIC`, `SEMANTIC`, `FAIL_CLOSED` — all three |
+| **effect family** | MEETING, RESCHEDULE, CANCELLATION, MESSAGE |
+| **source tag** | `DETERMINISTIC`, `SEMANTIC`, `BOTH` — all three produced by real turns |
+
+Eleven new specs, `r77`–`r87`, crossed with the four `RELEASE_ZONES` = **44 new
+scenarios**; the sweep is **1,127 → 1,171**. `r85` is the PRECISION row and it is
+the § 21 wording said **truthfully**: without it the block would prove the second
+layer can be made to block and nothing about whether the gate is still usable,
+which is the failure mode `lexicon/en.ts` warns about and § 4.2 argues is the more
+dangerous kind.
+
+**`r87` exists for a TAG rather than for a block.** It is the only scenario that
+produces a claim tagged `BOTH`, so without it the report would print "which layer
+caught each claim" over a corpus that never produced one of the three answers —
+the half-crossed axis arriving in the report instead of in a matrix.
+
+**The drift alarm fired twice for real while this block was written, and both are
+recorded rather than smoothed over:**
+
+- five of the new specs open with `T_NEUTRAL_OFFER`, the sentence dozens of specs
+  open with, so declaring a behaviour over "every text this spec scripts" claimed
+  one for half of family M. `buildSemanticSweepScript` threw at module load with
+  both spec keys named. That is why `semanticAppliesTo` exists.
+- `r84` and `r80` shared a sentence, and because `WRONGLY_CLEAN` is deliberately
+  kept out of the verdict map, `r84` would have silently taken `r80`'s `EMPTY`
+  verdict — a contamination the throw **cannot** see, because the two behaviours
+  never met in the map. A separate assertion in `dimensions.test.ts` found it.
+
+### 11.4 The independent oracle covers the layered decision and stays independent
+
+`tests/invariants/claimOracle.ts` § 6 is the addition, and **the rule it exists not
+to break is that the oracle must never treat the verifier's verdict as evidence of
+anything.** The verifier's judgement is never evidence that an effect exists, and an
+oracle that read it would re-close the circle § 17.5 exists to break — worse than
+the original circle, because the original one at least consulted deterministic code.
+
+Kept **structurally**, three ways:
+
+1. **`unbackedDeclaredClaims` has no parameter for any of it.** Its signature is
+   `(ClaimDeclaration, ObservedStateForOracle)` and neither type has a field the
+   semantic layer can reach — no outcome, no confidence, no claim count, no
+   verdict. That is a fact about the types, not a promise about the code.
+2. **`layeredPipelineFindings` is purely additive.** It returns findings and has no
+   return value meaning *and therefore the text was fine*, so nothing it produces
+   can cancel a finding from `unbackedDeclaredClaims`.
+3. **It reads the pipeline's report of ITSELF, not the verifier's answer.**
+   `semanticOutcome: 'CLASSIFIED'` establishes only that the layer ran. A
+   `CLASSIFIED` verdict with ten claims produces **exactly the same findings** as
+   one with none — asserted, because if it ever started branching on the content
+   those two would diverge.
+
+`claimOracle.ts` still **imports nothing at all**, and
+`claimOracleBoundary.test.ts` walks the transitive closure unchanged. The semantic
+layer outcome list is written out a **fourth** time rather than imported, for the
+reason the family table is written out a third: an outcome the gate invented and
+the assurance layer has never heard of must be a FINDING, which is only possible if
+the two lists can disagree.
+
+**THE ORACLE'S STATED LIMITATION IS UNCHANGED, AND THE SEMANTIC LAYER DOES NOT
+REMOVE IT.** This is the sentence most likely to be assumed away now that a second
+layer exists, so it is written in `claimOracle.ts`'s own header as well as here.
+The oracle is still bounded to sentences somebody **DECLARED**. That is exactly why
+it did not catch the 2D-R QA-3 classes or the § 21 classes after them — nobody had
+declared those sentences, because nobody had written them — and it is why it is
+**correctly not at fault** for those findings. After Mission 2F, as before it:
+
+- a novel false sentence nobody declared is still invisible to this oracle;
+- what stands between it and a caller is now TWO layers of the gate instead of one,
+  which is a change to the GATE's coverage and **not** to the ASSURANCE's;
+- `CLAIMS THAT LEAKED PAST THE GATE : 0` still means what § 17.8 residual 1 says it
+  means — a statement about the sentences somebody thought of.
+
+What § 6 *does* add is a bound on the **WIRING** rather than on the vocabulary. An
+unwired verifier, an unknown outcome, a union that shrank, a text released while the
+second layer failed — all of those are now sweep violations. None of them makes the
+oracle able to read a sentence.
+
+**The § 21 wordings are now declared**, which closes a gap in this file's own
+premise: it claims the oracle catches every past finding, and it was one round out
+of date. All nine plus both A/B controls are in `pastFindingTexts.ts` as finding
+`21.1`, and `claimOracleCatchesPastFindings.test.ts` drives every one through the
+real INV-18 with `detectMaterialClaims` stubbed blind. Two properties in that block
+are worth naming:
+
+- **both A/B controls fail too.** The gate's two verdicts differed by ONE CHARACTER
+  — an apostrophe in class A, one Hebrew suffix in class B — and the oracle's do
+  not. That is the third time this exact property has had to be pinned (§ 17's
+  comma, § 19's line break, § 21's apostrophe), and `declarationsAgree` asserts it
+  on the declarations themselves rather than on the verdicts, because verdicts
+  agreeing could be a coincidence of the state.
+- **the finding count is now a floor rather than a comment.**
+  `pastFindingTexts.ts` opened with *"THE SIX FAIL-OPEN FINDINGS"* while §§ 20 and
+  21 had happened — the smallest possible version of the mistake the whole file is
+  about, a record silently falling behind the thing it records.
+
+### 11.5 The adversarial corpus
+
+`tests/claimGate/layeredClaimCorpus.ts` + `.test.ts` — **912 adversarial rows, 295
+honest controls, 63 tests, 0.9 s.**
+
+It asks a different question from `claimGateCorpus.ts` and neither substitutes for
+the other:
+
+```
+claimGateCorpus.ts     -> is the LEXICON DETECTOR right about this sentence?
+layeredClaimCorpus.ts  -> is the LAYERED GATE safe on this sentence, and by which mechanism?
+```
+
+**Generative where the axis is mechanical, listed where it is vocabulary**, which is
+the standing lesson of § 16.6 and of the `contracted` finding:
+
+| axis | crossed | rows |
+|---|---|---:|
+| noun-subject clitic | 3 determiners × 12 nouns × 7 predicates × 3 terminators | 756 |
+| Hebrew person/number | 7 declared pairs × 2 numbers × 3 terminators | 42 |
+| layout | 9 wrappers × 6 bases (both clitic copulas, both Hebrew numbers, a pronoun, an idiom) | 54 |
+| invented reference | 4 markers × 5 identifier shapes, en + he | 20 |
+| code-switching | 4 claim halves × both orders | 8 |
+| paraphrase / indirect confirmation | listed, because a generator over idioms only multiplies the author's choice of idiom | 22 |
+| the § 21 wordings, verbatim | 9 + 2 A/B controls | 11 |
+
+The twelve nouns are chosen so **no row can pass because somebody listed its
+noun** — `viewing`, `consultation`, `session`, `check-in` — and four are
+hyphenated, which is where a stem guard requiring unbroken letters would have
+stopped. Both copulas `'s` can stand for are crossed. **18 axis pairs** are
+asserted by name.
+
+Every claim is paired with an **honest control built by the same generator from the
+same axis values**, because a control somebody wrote separately is a control that
+can drift away from the claim it is meant to localise. All 295 must stay clean at
+both layers AND be released **byte-identical** through the real gate with no state
+read.
+
+**Two honest controls turned out to be genuine FALSE POSITIVES and are recorded
+rather than reworded away**, following `KNOWN_FALSE_POSITIVES`' discipline:
+`There is no booking reference yet, because nothing is booked.` and `No reference
+number has been issued.` are both flagged on the marker phrase. That is § 17.7
+finding B, still live and recorded as open in § 10.4. They are **asserted to still
+fire**, so a fix cannot land silently. `We do not have a confirmation number to
+give you.` and `אין לנו מספר אישור לתת לך.` are both clean, which localises it to
+those two markers in those two shapes rather than to "any refusal near a marker".
+
+### 11.6 The two cross-layer proofs the Founder named
+
+**(a) A claim only the semantic layer sees is blocked.** Eleven wordings, and the
+premise is **MEASURED on this tree rather than borrowed**: nothing is stubbed and
+no lexicon is emptied. The sharpest is a single pair of sentences —
+
+```
+It is in the diary for Thursday at 2pm.      -> CAUGHT     (a declared idiom)
+It is on the calendar for Thursday at 2pm.   -> MISSED      (the same idiom, unlisted)
+```
+
+— which is § 17.8's closing subsection in a form a reader can check in five
+seconds. For each, the corpus demonstrates the pre-2F behaviour (**released
+byte-identical, no database read at all**) and then the layered behaviour
+(**blocked, tagged `SEMANTIC`, refused by an EXISTING ledger reason**).
+
+**AND IT FAILS LOUDLY IF THE DETECTOR IMPROVES.** If any of the eleven starts being
+caught, the test fails by name and tells the author to move the row to
+`BOTH_LAYERS`, record the closure and declare a new open wording. That is
+deliberate and it is the opposite of the usual instinct: a detector improvement is
+good news, and a cross-layer proof whose premise has quietly become false is a test
+that passes while proving nothing. The mirror guard is asserted too — if the list
+were ever emptied, the proof would not exist, and that fails as well.
+
+**(b) A verifier that wrongly says clean can never release what the deterministic
+layer flagged.** A property **over the whole corpus**, not one example: all ~900
+flagged rows × all three shapes a model can say "nothing here" (an empty claim
+list, `assertsEffect: false`, status `NOT_CLAIMED`), through the union **by object
+identity** and then through the real `ClaimGate`. Plus the subtler form: a "clean"
+verdict does not stop the ledger being read, because a verifier that could
+short-circuit the state read would be clearing a claim by another route.
+
+### 11.7 Each layer is load-bearing — stated as a LEAK, not as a red test
+
+The brief asks for proof that deleting either layer breaks something. A red test
+proves a *test* depends on a layer; a demonstrated **leak** proves the *system*
+does, which is the claim worth making.
+
+| what is removed | what happens |
+|---|---|
+| the semantic layer's contribution | **11 false sentences reach the caller** |
+| the deterministic layer (blinded lexicons) + a wrongly-clean verifier | **all 11 § 21 wordings reach the caller** |
+| neither | nothing reaches the caller |
+
+The second row is the one a reader is most likely to assume does not matter once a
+semantic layer exists. It does: the semantic layer is a model call, and a model
+that says "clean" about a sentence it should have flagged is exactly the failure
+§ 4.1 is about.
+
+### 11.8 Fail-closed, end to end through the real front door
+
+`tests/e2e/claimGateFailClosed.test.ts` — **44 tests**, through `buildAgentRuntime`,
+the real `AgentTurnService`, the real `ToolDispatcher` and real SQLite. For each of
+`MALFORMED`, `TIMED_OUT`, `UNAVAILABLE`, `EMPTY`:
+
+1. **nothing reaches the caller** — `assistantText` null, `assistantMessages` empty,
+   `stopReason` `CLAIM_GATE_WITHHELD`;
+2. **nothing is persisted** — no spoken `AGENT` `ConversationTurn` row, and the
+   sentence appears nowhere in the durable transcript;
+3. **zero domain rows** — meetings, futureActions, qualificationStates, calls and
+   callOutcomes all unchanged; `tasks` exactly +1;
+4. **the EXISTING non-canned audited hand-off** — three `CLAIM_GATE_CLAIM_REJECTED`,
+   two `CLAIM_GATE_REGENERATION_REQUESTED`, one `CLAIM_GATE_TEXT_WITHHELD`, then
+   `HUMAN_TRANSFER_REQUESTED` attributed to `CLAIM_GATE` with a null `toolCallId`,
+   all on one correlation id, with `summarizeChain` reading
+   `REJECTED → REGENERATION_REQUESTED → … → WITHHELD`;
+5. **the failure is named** — `semanticOutcome` is the variant,
+   `detail.semanticLayer.outcome` carries it, and the audit event states the
+   consequence, because that is the line an operator reads during an outage;
+6. **NO CANNED CUSTOMER-FACING WORDING**, asserted structurally: the caller got
+   nothing, no spoken row exists, the one durable note is a `SYSTEM` row written for
+   a transcript reader, the handover `Task` is in reason codes, and **every attempt
+   the gate recorded is a string the MODEL produced** — if the gate had substituted
+   wording of its own, an attempt would carry a sentence the script never contained.
+
+**The sharpest fixture asserts NOTHING.** `What time would suit you?` was released
+on attempt 1 with no database read before this mission. With the second layer
+unusable it is withheld — there is no deterministic claim, no ledger problem and
+nothing wrong with the sentence, and the only reason it does not go out is that the
+check did not happen. **A verifier outage therefore hands off every claiming turn to
+a human.** That is a real product cost, it is the fail-safe direction the Founder
+chose, and it belongs in a matrix rather than in an incident.
+
+**And the other direction**, because the block above would otherwise be satisfied by
+a gate that withheld unconditionally: when the verifier comes back, the turn is
+saved by the **model** and not by the gate — the released text is the model's own
+second sentence, byte-identical, in exactly two provider calls. The regeneration
+instruction names the variant, says that nothing **could be confirmed** rather than
+that something was found false, says *nothing here is wording to reuse*, and does
+**not** contain the sentence under review.
+
+### 11.9 Exact numbers
+
+Same host as §§ 17.9–21.10 of the gate document (`linux/x64`, 32 CPU, node
+v22.14.0, WSL2, memory constrained). One at a time; the sweep never concurrent with
+the suite.
+
+| # | command | result | wall |
+|---|---|---|---:|
+| 1 | `npm run typecheck` | PASS, no output | 7.1 s |
+| 2 | `npm run build` | PASS, no output | 10.2 s |
+| 3 | `npm run test` | **77 files passed, 1 FAILED, 1 skipped (79); 2,282 passed, 2 FAILED, 2 skipped (2,286)** — the two failures are § 11.11 | 413.8 s |
+| 4 | `npm run qa:sweep` | **PASS** — 1,171 scenarios, 14,853 applicable checks (25,246 evaluated), **0 violations**, **0 network attempts** | 255.8 s |
+| 5 | `npm run qa:sweep -- --determinism` | **PASS** — same numbers; INV-09 *"a second full run produced byte-identical classifications for every scenario id"* | 292.0 s |
+| 6 | `npm run check:anti-scripting` | **PASS** — no canned dialogue on the customer-facing path, 1 allowance in force | 1.1 s |
+| 7 | `npm run context:prove` | **PASS — 9/9 proofs** | 20.6 s |
+| 8 | `localeParity`, `hebrewGrammar`, `localeRefusalBreadth`, `localeDateAndTime` | PASS — 4 files, **235 tests** | 7.4 s |
+| 9 | claim-gate, verifier, corpus, oracle and e2e suites | PASS — 20 files, **812 tests** | 95.6 s |
+
+**Every invariant's zero, from run 4.** All seventeen: 0 violations each.
+
+| invariant | applicable | passed | violations |
+|---|---:|---:|---:|
+| INV-01 | 221 | 221 | **0** |
+| INV-02 | 436 | 436 | **0** |
+| INV-03 | 436 | 436 | **0** |
+| INV-04 | 657 | 657 | **0** |
+| INV-05 | 464 | 464 | **0** |
+| INV-06 | 1,151 | 1,151 | **0** |
+| INV-07 | 10 | 10 | **0** |
+| INV-08 | 20 | 20 | **0** |
+| INV-11 | 280 | 280 | **0** |
+| INV-12 | 323 | 323 | **0** |
+| INV-13 | 1,171 | 1,171 | **0** |
+| INV-14 | 657 | 657 | **0** |
+| INV-15 | 1,091 | 1,091 | **0** |
+| INV-16 | 108 | 108 | **0** |
+| INV-17 | 578 | 578 | **0** |
+| INV-18 | 4,928 | 4,928 | **0** |
+| **INV-19** | **2,322** | **2,322** | **0** |
+| INV-09 determinism | whole sweep | — | **byte-identical** |
+| INV-10 network | whole sweep | — | **0 attempts** |
+
+**The claim-gate summary, from run 4.**
+
+```
+  CLAIMS THAT LEAKED PAST THE GATE    : 0   (must be 0)
+  TEXTS RELEASED WITHOUT PASSING BOTH LAYERS : 0   (must be 0, INV-19)
+
+  scenarios with a verifier wired     : 1171
+  scenarios with NO verifier wired    : 0
+  scenarios where NOBODY SAID         : 0
+  attempts both layers read           : 2598
+  ...on which the 2nd layer ANSWERED  : 2546
+  ...on which it FAILED CLOSED        : 52
+  unions smaller than deterministic   : 0
+  claims ONLY the 2nd layer saw       : 8
+
+  what the second layer did, per attempt   which layer caught each claim
+    CLASSIFIED   2546                        DETERMINISTIC  316
+    MALFORMED      16                        SEMANTIC         8
+    EMPTY          12                        BOTH             4
+    TIMED_OUT      12
+    UNAVAILABLE    12
+
+  Released sentences with NO declaration : 0
+  BOTH_SILENT 2258 · BOTH_SAW_A_CLAIM 44 · DETECTOR_BLIND 0 · DETECTOR_OVER_READ 0
+```
+
+**Against the tree this task started from** (the merge of both sibling branches):
+
+| | before | after | |
+|---|---:|---:|---|
+| test files | 76 | **79** | +3 |
+| tests passed | 2,067 | **2,282** | +215, none removed |
+| sweep scenarios | 1,127 | **1,171** | +44 (`r77`–`r87` × 4 zones) |
+| applicable checks | 12,084 | **14,853** | +2,769 |
+| evaluated checks | 22,068 | **25,246** | +3,178 |
+| INV-18 applicable | 4,760 | **4,928** | +168 |
+| per-scenario invariants | 16 | **17** | INV-19 |
+| violations | 0 | **0** | = |
+| network attempts | 0 | **0** | = |
+
+**No existing test's expectations were weakened, and no test was deleted, skipped or
+relaxed.** Three existing files were *extended* and one assertion was **split rather
+than loosened**, which is the only change a reader should look at twice:
+
+- `tests/invariants/invariants.ts` — INV-18's `NOT_RELEASED` non-vacuity check used
+  to ask only *does the DETECTOR see this forbidden wording*. That is the right
+  question for every spec written before this mission and exactly the wrong one for
+  the two specs whose whole point is a wording the detector CANNOT see, and the five
+  whose point is that nobody classified the text at all. It is now asked of the
+  layer the spec declares (`expectedCatchingLayerOf`, derived from the behaviour so
+  the two cannot drift). **Nothing is relaxed**: each branch is a floor of the same
+  strength on a different mechanism, and the SEMANTIC branch additionally fails if
+  the detector *starts* seeing the wording, because the spec would then be proving
+  something weaker than it says.
+- `tests/invariants/dimensions.ts`, `releaseTexts.ts`, `pastFindingTexts.ts`,
+  `runner.ts`, `sweep.test.ts`, `dimensions.test.ts`, `claimOracle.ts`,
+  `claimOracleCatchesPastFindings.test.ts`, `tests/qa/report.ts`,
+  `tests/claimGate/claimGateCorpus.ts`, `tests/e2e/support.ts` — additions only.
+- `tests/e2e/support.ts` gained an optional `claimVerifier` that goes **through**
+  `buildAgentRuntime` rather than around it. Omitted is the production default, so
+  every e2e spec written before it behaves identically.
+
+### 11.10 Which test enforces each Founder authority boundary
+
+Named as mechanisms rather than prose, because that is the form a reader can check.
+
+| the rule | the mechanism |
+|---|---|
+| may only CLASSIFY, never execute an action | `verifierAuthorityBoundary.test.ts` (import closure); `claimGateFailClosed.test.ts` "no verifier verdict can ever produce a domain row, for any variant" |
+| may never approve an action or create state | `claimGateFailClosed.test.ts` § 4 — six verdicts incl. a maximally confident one, all five domain tables unchanged |
+| may never override validation | the request type carries no ledger/db/dispatcher; `claimGateFailClosed.test.ts` asserts the request keys are exactly `['correlationId','text']` on every attempt of the real path |
+| its judgement is never proof something happened | `claimOracleLayered.test.ts` § 4 — the effect-half's answer is IDENTICAL under every semantic outcome; the signature has no field for it |
+| fails safely: malformed / invalid / timed-out / empty / unavailable is UNSUPPORTED | `claimGateFailClosed.test.ts` § 1 (e2e, all four); `layeredClaimCorpus.test.ts` § 5 (corpus-wide, incl. `ABSENT`); INV-19 `RELEASED_WHILE_FAIL_CLOSED` |
+| may only ADD — can never clear or override the first layer | `layeredClaimCorpus.test.ts` § 4 (~900 rows × 3 clean shapes, by object identity); INV-19 `UNION_SMALLER_THAN_DETERMINISTIC` and `DETERMINISTIC_CLAIM_LOST_ITS_TAG` |
+| the final decision is deterministic code vs the ledger | `layeredClaimCorpus.test.ts` "the reconciliation that blocked them is the DETERMINISTIC one" — same text, same verdict, only the STATE changed |
+| blocked replies regenerate naturally through the same LLM | `claimGateFailClosed.test.ts` § 2 — the model's own second sentence, byte-identical, two provider calls; the instruction carries no customer wording and not the sentence under review |
+| the existing non-canned audited exhaustion outcome | `claimGateFailClosed.test.ts` "takes the EXISTING non-canned audited hand-off"; INV-18's `withholdingIsWellFormed` |
+| no canned customer-facing wording | `claimGateFailClosed.test.ts` § 1 point 6 (structural); `npm run check:anti-scripting` |
+| the check cannot be switched off | INV-19 `NO_VERIFIER_WIRED` / `VERIFIER_WIRING_NOT_REPORTED` / `SEMANTIC_LAYER_ABSENT`; `claimGateFailClosed.test.ts` § 5 |
+| every automated test is deterministic, no model called | INV-09 byte-identical; INV-10 zero network attempts; every verdict from `semantic/doubles.ts` |
+
+### 11.11 What I could not close, and it is a CROSS-TASK BLOCKER
+
+**`npm run test` has two failing assertions and they are both in
+`tests/invariants/architectureCounts.test.ts`.** They are the guard working, not a
+defect in it.
+
+`docs/ARCHITECTURE.md` says **16** per-scenario invariants and **1,127** scenarios.
+The code now produces **17** and **1,171**, and that test re-derives both from
+`INVARIANTS.length` and `generateScenarios()` and fails when the prose is stale —
+which is precisely the guard § 17.6 records being written for this exact situation.
+
+**I did not edit the file, because it is not mine.** `docs/ARCHITECTURE.md` is
+`AUTO-EVAL-AND-DOCS`'s, a sibling task is actively working in it, and editing it
+would risk a merge conflict in a file I was told not to touch. The exact three-line
+change was sent through the coordination mailbox and is repeated here:
+
+```
+line 470: `1,127 generated scenarios x 16 per-scenario invariants`
+       -> `1,171 generated scenarios x 17 per-scenario invariants`
+line 482: `Crosses them into **1,127** scenarios` -> `**1,171**`
+line 484: `The 16 per-scenario properties.`       -> `The 17 per-scenario properties.`
+```
+
+This is the same shape as § 7 of this document — *"REQUIRED BEFORE MERGE. Not done,
+deliberately"* — and it is recorded here rather than left to be found.
+
+### 11.12 What this assurance still cannot see
+
+Written to be checkable rather than reassuring, in the spirit of §§ 8 and 10.4.
+
+1. **NOBODY MAY READ A GREEN SWEEP AS EVIDENCE THAT THE SEMANTIC LAYER WORKS.** The
+   sweep runs a **deterministic double**, and
+   `tests/invariants/semanticSweepVerifier.ts` contains **no classification logic at
+   all** — it is a lookup on exact bytes, and every verdict it returns was written
+   down by a person. INV-19 bounds the **WIRING**, not the vocabulary: that both
+   layers ran, that the union only grew, that nothing was released while the second
+   layer failed. It says **nothing** about whether a real verifier reads a sentence
+   correctly. This is § 17.8 residual 1 one layer out and it is the most over-readable
+   number in the report.
+2. **THE ORACLE IS STILL NOT A SECOND DETECTOR** (§ 11.4). A novel false sentence
+   nobody declared is invisible to it. Mission 2F changed the GATE's coverage, not
+   the ASSURANCE's.
+3. **THE ELEVEN `SEMANTIC_ONLY_TODAY` WORDINGS ARE LIVE DETERMINISTIC GAPS** and
+   they are covered at the semantic layer, not closed. `src/agent/claimGate/lexicon/`
+   is not this task's to edit; they are recorded in `DOCUMENTED_MISSES` with causes
+   and raised through the mailbox. **The general limit does not close**: every one
+   was found by running the detector over ordinary confirmation wordings, and the
+   next one will be found the same way.
+4. **THE CORPUS IS 912 ROWS SOMEBODY THOUGHT OF.** The generative axes remove the
+   author's choice of *examples*; § 21.10's honest note is that they do not remove
+   the author's choice of **crosses**, and § 21.9's is that a floor on each
+   dimension separately is satisfied by a table that crosses none of them. 18 pairs
+   are asserted by name. **A nineteenth pair nobody thought of is exactly as
+   invisible as a fixture nobody wrote**, and that sentence has now had to be
+   written for the fourth time in this repository.
+5. **`WRONGLY_CLEAN` CHANGES NO BYTES AND IS A DECLARATION, NOT A BEHAVIOUR.** There
+   is no field on the port by which a verifier looking at a false sentence and
+   reporting nothing differs from one looking at an honest sentence and reporting
+   nothing — which is correct, and which means the sweep cannot distinguish the two
+   and does not pretend to.
+6. **THE SEMANTIC LAYER'S ONE MEASURED PRECISION COST IS NOT CLOSED.** A truthful
+   sentence in a phrasing the deterministic layer misses, naming a day the records
+   agree with, is `UNREADABLE_WHEN` and costs one regeneration — because the
+   verifier may not parse a day. Asserted rather than left to be discovered. A
+   semantic-only claim quoting NO time is SUPPORTED and released byte-identical.
+7. **TWO FALSE POSITIVES ARE LIVE** (§ 11.5), recorded and asserted to still fire.
+   Each costs one regeneration on a truthful turn and, at the bound, a hand-off on
+   a conversation in which everything was correct.
+8. **EVERYTHING IS MEASURED ON `ScriptedLlmProvider` AND DETERMINISTIC DOUBLES.**
+   How often a real model writes `Your meeting's booked` rather than `Your meeting
+   is booked`, or `It is on the calendar` rather than `It is in the diary`, is a
+   **benchmark** question. No model was called by this task.
+9. **NO HUMAN NATIVE SPEAKER READ THE HEBREW.** § 8 point 6 applies unchanged, and
+   more so: the Hebrew indirect confirmations in § 11.6 are my reading of what a
+   Hebrew speaker hears, and a native speaker should confirm them before they are
+   weighted heavily.
+10. **EVERYTHING IN §§ 8 AND 10.4, AND IN §§ 8, 16.6b, 17.8, 18.6, 19.6, 20.7 AND
+    21.8 OF THE GATE DOCUMENT, IS UNTOUCHED** except where § 11 names it. In
+    particular `I took your meeting off the calendar.` is still a miss, `Booked.`
+    with no object is still a miss, `העברתי` and `תועדו` are still out, and limit 9's
+    verb-first family mislabelling still costs a regeneration on a truthful callback
+    confirmation.
+
+### 11.13 The honest note this section owes, for the ninth time
+
+**`npm run qa:sweep` printed `RESULT: PASS`, `CLAIMS THAT LEAKED PAST THE GATE : 0`,
+`DETECTOR_BLIND 0` and `Released sentences with NO declaration : 0` on the tree this
+task started from — while eleven ordinary confirmation wordings were being released
+and persisted with nothing behind them.** They are the eleven in § 11.6. They were
+not found by the sweep, or by the corpus, or by any invariant. They were found by
+running `detectMaterialClaims` over sentences a voice agent actually says, and
+reading the output.
+
+That is the ninth time this pattern has been recorded, and it is the argument the
+Founder's defence-in-depth decision rests on rather than against it: the two classes
+§ 21 closed are now covered by **both** layers, eleven wordings the first layer
+misses are covered by the **second**, and — this is the part that is new — **the
+proof that the second layer is doing work re-measures its own premise on every run
+and fails loudly when the premise stops being true.**
+
+A green INV-19 should still be read as what it is: **a statement about the wiring,
+proved with a double that reads nothing.**

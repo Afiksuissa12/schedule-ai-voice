@@ -28,13 +28,24 @@ import {
   RELEASE_PROBE_LOCAL_DAY,
   RELEASE_PROBE_LOCAL_HOUR,
   RELEASE_SPECS,
+  SEMANTIC_SWEEP_SCRIPT,
+  expectedCatchingLayerOf,
   scriptedTextsOf,
   seededRandom,
+  semanticBehaviourOf,
+  semanticTextsOf,
+  type ReleaseSpec,
   TIMEZONE_OVERRIDE_CASES,
   TIMEZONES,
   VALID_EXPRESSIONS,
 } from './dimensions.js';
 import { AMBIENT_SWEEP_TEXTS, declarationInconsistencies } from './claimOracle.js';
+import {
+  buildSemanticSweepScript,
+  FAIL_CLOSED_SWEEP_BEHAVIOURS,
+  SEMANTIC_SWEEP_BEHAVIOURS,
+  type SweepSemanticClaim,
+} from './semanticSweepVerifier.js';
 import {
   ALL_DECLARED_RELEASE_TEXTS,
   PROBE_DAY_FRIDAY,
@@ -620,5 +631,200 @@ describe('the declared ground truth behind INV-18', () => {
     expect(fillerSpecs.some((spec) => spec.expect === 'NOT_RELEASED')).toBe(true);
     expect(fillerSpecs.some((spec) => spec.expect === 'RELEASED')).toBe(true);
     expect(fillerSpecs.some((spec) => spec.expect === 'EITHER')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MISSION 2F: THE SEMANTIC DIMENSION, ASSERTED ON ITS AXIS VALUES AND ITS PAIRS
+// ---------------------------------------------------------------------------
+
+describe('the semantic second layer is a genuinely CROSSED dimension', () => {
+  const semanticSpecs = RELEASE_SPECS.filter((spec) => semanticBehaviourOf(spec) !== 'NEUTRAL');
+  const behaviourOf = (spec: ReleaseSpec) => semanticBehaviourOf(spec);
+
+  it('exists at all, and is not one spec wide', () => {
+    expect(semanticSpecs.length, 'a dimension with one value is not a dimension').toBeGreaterThanOrEqual(10);
+  });
+
+  it('every one of the seven behaviours appears, so none is a value on nothing', () => {
+    // A DECLARED-AND-NEVER-VARIED DIMENSION IS THE VACUITY THESE SELF-TESTS EXIST
+    // TO CATCH. Asserted as set equality rather than as a floor, so adding a
+    // behaviour to the type without adding a spec for it fails here.
+    const present = new Set(RELEASE_SPECS.map(behaviourOf));
+    expect([...present].sort()).toEqual([...SEMANTIC_SWEEP_BEHAVIOURS].sort());
+  });
+
+  it('and NEUTRAL is what every pre-2F spec still declares, so nothing old moved', () => {
+    // The stability claim, as a test. Every spec written before this mission keeps
+    // the default, so the union equals the deterministic claim set for all of them
+    // and no pre-existing outcome, audit detail or released byte changed.
+    // r01-r76 inclusive. Written out rather than as `[1-7][0-9]`, which would have
+    // swallowed r77-r79 - and did, on the first run of this test.
+    const preMission2f = RELEASE_SPECS.filter((spec) => /^r(0[1-9]|[1-6][0-9]|7[0-6])-/.test(spec.key));
+    expect(preMission2f.length, 'r01-r76 must still be in the corpus').toBeGreaterThanOrEqual(76);
+    const notNeutral = preMission2f.filter((spec) => behaviourOf(spec) !== 'NEUTRAL');
+    expect(
+      notNeutral.map((spec) => `${spec.key} -> ${behaviourOf(spec)}`),
+      'a spec that predates Mission 2F has been given a non-neutral second layer, which changes what it ' +
+        'measures. Add a new spec instead.',
+    ).toEqual([]);
+  });
+
+  it('crosses the FAIL-CLOSED behaviours with BOTH languages, which is the PAIR that matters', () => {
+    // § 21.9's test applied to the new axis: a floor on each dimension separately
+    // is satisfied by a table that crosses none of them. `contracted` was true in
+    // seven rows and false in twenty-five and was crossed with nothing.
+    const failClosed = semanticSpecs.filter((spec) => FAIL_CLOSED_SWEEP_BEHAVIOURS.includes(behaviourOf(spec)));
+    expect(failClosed.length).toBeGreaterThanOrEqual(5);
+    expect(new Set(failClosed.map((spec) => spec.language)), 'fail-closed x language').toEqual(
+      new Set(['en', 'he']),
+    );
+    // All four failure variants, not a representative one.
+    expect(new Set(failClosed.map(behaviourOf))).toEqual(new Set(FAIL_CLOSED_SWEEP_BEHAVIOURS));
+  });
+
+  it('crosses the CROSS-LAYER behaviours with both languages too', () => {
+    const semanticOnly = semanticSpecs.filter((spec) => behaviourOf(spec) === 'SEES_WHAT_THE_DETECTOR_MISSED');
+    expect(semanticOnly.length, 'cross-layer proof (a) must exist in the sweep').toBeGreaterThanOrEqual(2);
+    expect(new Set(semanticOnly.map((spec) => spec.language))).toEqual(new Set(['en', 'he']));
+
+    const wronglyClean = semanticSpecs.filter((spec) => behaviourOf(spec) === 'WRONGLY_CLEAN');
+    expect(wronglyClean.length, 'cross-layer proof (b) must exist in the sweep').toBeGreaterThanOrEqual(2);
+    expect(new Set(wronglyClean.map((spec) => spec.language))).toEqual(new Set(['en', 'he']));
+  });
+
+  it('crosses the behaviour axis with the EXPECTATION axis, all three values', () => {
+    // A block containing only NOT_RELEASED would prove the second layer can be
+    // made to block and nothing about whether the gate is still usable - which is
+    // the failure mode lexicon/en.ts warns about and the more dangerous kind.
+    const expectations = new Set(semanticSpecs.map((spec) => spec.expect));
+    expect(expectations).toContain('WITHHELD');
+    expect(expectations).toContain('NOT_RELEASED');
+    // And a NEUTRAL spec carrying a TRUE claim, which is the precision row.
+    expect(
+      RELEASE_SPECS.some((spec) => spec.key.startsWith('r85-') && spec.expect === 'EITHER'),
+      'the precision row must be declared EITHER - whether Thursday 14:00 is accepted is a scheduling ' +
+        'question this family is not asking',
+    ).toBe(true);
+  });
+
+  it('crosses the behaviour axis with ALL THREE catching layers', () => {
+    const layers = new Set(RELEASE_SPECS.map((spec) => expectedCatchingLayerOf(spec)));
+    expect([...layers].sort()).toEqual(['DETERMINISTIC', 'FAIL_CLOSED', 'SEMANTIC']);
+  });
+
+  it('crosses it with more than one effect FAMILY, so it is not one family wide', () => {
+    const families = new Set<string>();
+    for (const spec of semanticSpecs) {
+      for (const text of scriptedTextsOf(spec)) {
+        for (const assertion of SWEEP_DECLARATIONS.get(text)?.assertions ?? []) families.add(assertion.family);
+      }
+    }
+    expect(families).toContain('MEETING');
+    expect(families).toContain('RESCHEDULE');
+    expect(families).toContain('MESSAGE');
+    expect(families.size, 'the semantic dimension must span several families').toBeGreaterThanOrEqual(3);
+  });
+
+  it('and it carries sentences that assert NOTHING, which is the sharpest fail-closed row', () => {
+    // Before Mission 2F a text with no claim in it was released on attempt 1 with
+    // no database read at all. A fail-closed spec over three such sentences is a
+    // pure statement about the check having run.
+    const holding = RELEASE_SPECS.find((spec) => spec.key.startsWith('r77-'));
+    expect(holding).toBeDefined();
+    const declarations = scriptedTextsOf(holding as ReleaseSpec).map((text) => SWEEP_DECLARATIONS.get(text));
+    expect(declarations.length).toBe(3);
+    for (const declaration of declarations) {
+      expect(declaration?.assertsMaterialEffect, 'every r77 text must assert nothing').toBe(false);
+    }
+  });
+});
+
+describe('the semantic sweep script is keyed safely', () => {
+  it('a text carries AT MOST ONE behaviour, and the builder throws otherwise', () => {
+    // The drift alarm, asserted by exercising it. It FIRED FOR REAL while this
+    // block was being written: five of the new specs open with T_NEUTRAL_OFFER, the
+    // sentence dozens of specs open with, so declaring a behaviour over "every text
+    // this spec scripts" claimed one for half of family M. It threw at module load
+    // with both spec keys named, which is why `semanticAppliesTo` exists.
+    expect(() =>
+      buildSemanticSweepScript([
+        { key: 'a', behaviour: 'MALFORMED', claim: undefined, texts: ['shared'] },
+        { key: 'b', behaviour: 'TIMED_OUT', claim: undefined, texts: ['shared'] },
+      ]),
+    ).toThrow(/different semantic-layer behaviour for the SAME scripted text/u);
+  });
+
+  it('and the real script built without throwing, which is the assertion', () => {
+    // `SEMANTIC_SWEEP_SCRIPT` is built at module load, so this test running at all
+    // is the proof. Stated explicitly so the guarantee is not invisible.
+    expect(SEMANTIC_SWEEP_SCRIPT.size, 'the script must hold the non-neutral texts').toBeGreaterThanOrEqual(12);
+  });
+
+  it('no WRONGLY_CLEAN text is in the script, or it would take another spec\'s verdict', () => {
+    // WRONGLY_CLEAN produces the DEFAULT verdict, so it is deliberately not entered
+    // into the map. If one of its texts appeared there it would be because some
+    // OTHER spec claimed the same sentence - and it would then silently take that
+    // spec's failure verdict, because the conflict check only fires when two
+    // behaviours disagree. That is the one contamination the throw cannot see.
+    const wronglyClean = RELEASE_SPECS.filter((spec) => semanticBehaviourOf(spec) === 'WRONGLY_CLEAN');
+    expect(wronglyClean.length).toBeGreaterThan(0);
+    for (const spec of wronglyClean) {
+      for (const text of semanticTextsOf(spec)) {
+        expect(
+          SEMANTIC_SWEEP_SCRIPT.has(text),
+          `${spec.key} is WRONGLY_CLEAN and its text ${JSON.stringify(text)} is in the script map, which means ` +
+            'another spec claimed the same sentence. It would silently take that verdict.',
+        ).toBe(false);
+      }
+    }
+  });
+
+  it('every `semanticAppliesTo` entry is one of the spec\'s own scripted texts', () => {
+    // The same guard `forbidden` has, for the same reason: a field naming a string
+    // that is not in the script is a field that has drifted away from the spec.
+    for (const spec of RELEASE_SPECS) {
+      if (spec.semanticAppliesTo === undefined) continue;
+      const own = scriptedTextsOf(spec);
+      for (const declared of spec.semanticAppliesTo) {
+        expect(own, `${spec.key} applies its behaviour to a text it does not script`).toContain(declared.text);
+      }
+    }
+  });
+
+  it('every declared semantic claim QUOTES VERBATIM from a text the spec scripts', () => {
+    // `src/agent/claimGate/semantic/schema.ts` rejects an ungrounded quote as
+    // MALFORMED, so a double emitting one would exercise a path production can
+    // never reach - the spec would look like it was testing the semantic layer and
+    // would be testing a case that cannot occur.
+    const withClaims = RELEASE_SPECS.filter((spec) => spec.semanticClaim !== undefined);
+    expect(withClaims.length, 'at least one spec must declare a semantic claim').toBeGreaterThanOrEqual(3);
+    for (const spec of withClaims) {
+      const texts = semanticTextsOf(spec);
+      const claim = spec.semanticClaim as SweepSemanticClaim;
+      if (claim.whenPhrase !== null) {
+        expect(
+          texts.some((text) => text.includes(claim.whenPhrase as string)),
+          `${spec.key} quotes whenPhrase ${JSON.stringify(claim.whenPhrase)}, which is in none of its texts`,
+        ).toBe(true);
+      }
+      if (claim.identifier !== null) {
+        expect(
+          texts.some((text) => text.includes(claim.identifier as string)),
+          `${spec.key} quotes identifier ${JSON.stringify(claim.identifier)}, which is in none of its texts`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it('and every behaviour that NEEDS a claim declares one', () => {
+    for (const spec of RELEASE_SPECS) {
+      const behaviour = semanticBehaviourOf(spec);
+      const needsOne = behaviour === 'SEES_WHAT_THE_DETECTOR_MISSED' || behaviour === 'AGREES_WITH_THE_DETECTOR';
+      expect(
+        spec.semanticClaim !== undefined,
+        `${spec.key} declares ${behaviour}, which ${needsOne ? 'REQUIRES' : 'has no use for'} a semanticClaim`,
+      ).toBe(needsOne);
+    }
   });
 });

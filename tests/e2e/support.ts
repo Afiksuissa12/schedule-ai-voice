@@ -11,6 +11,7 @@ import { buildAgentRuntime, type AgentRuntime } from '../../src/app/composition.
 import { seedSliceWorld, type SeedSliceWorldOptions, type SliceWorld } from '../../src/app/seedSliceWorld.js';
 import type { Conversation } from '../../src/domain/entities.js';
 import { ScriptedLlmProvider, type ScriptedLlmProviderOptions } from '../../src/llm/scriptedLlmProvider.js';
+import type { SemanticClaimVerifier } from '../../src/ports/claimVerifier.js';
 import type { FixedClock } from '../../src/ports/clock.js';
 import type { DeterministicTelephonyProvider } from '../../src/providers/deterministicTelephonyProvider.js';
 import {
@@ -45,6 +46,28 @@ export interface SliceHarnessOptions {
   readonly llm?: ScriptedLlmProviderOptions;
   readonly providers?: ProviderRegistryConfig;
   readonly maxToolIterations?: number;
+  /**
+   * The SEMANTIC CLAIM VERIFIER this runtime wires - MISSION 2F.
+   *
+   * Omitted is the production default: `buildAgentRuntime` resolves
+   * `RuleDrivenSemanticClaimVerifier` with no rules, which returns `CLASSIFIED`
+   * with an empty claim list for every text. So every e2e spec written before
+   * this option existed behaves exactly as it did - the union equals the
+   * deterministic claim set and no outcome, audit detail or released byte moves.
+   *
+   * IT GOES THROUGH `buildAgentRuntime`, NOT AROUND IT, and that is the whole
+   * reason the option is here rather than a hand-built `ClaimGate` in a test. The
+   * fail-closed proofs in `claimGateFailClosed.test.ts` have to be about the REAL
+   * composition root: a proof that a hand-assembled gate fails closed says
+   * nothing about whether the gate on the production path is the one that was
+   * assembled. What a test may vary is which verifier the root is handed;
+   * `composition.ts` documents `claimVerifier` as exactly that seam, and it
+   * offers no configuration that removes the verifier altogether.
+   *
+   * Pass one of the deterministic doubles from
+   * `src/agent/claimGate/semantic/doubles.ts`. NOTHING HERE CALLS A MODEL.
+   */
+  readonly claimVerifier?: SemanticClaimVerifier;
 }
 
 export interface SliceHarness {
@@ -89,6 +112,7 @@ export async function createSliceHarness(options: SliceHarnessOptions): Promise<
     providers,
     llm,
     ...(options.maxToolIterations !== undefined ? { maxToolIterations: options.maxToolIterations } : {}),
+    ...(options.claimVerifier !== undefined ? { claimVerifier: options.claimVerifier } : {}),
   });
 
   const world = await seedSliceWorld(testDb.db, options.world ?? {});
