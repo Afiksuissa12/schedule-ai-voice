@@ -260,6 +260,10 @@ describe('the detector holds no language-specific literal', () => {
       // language to work on. English is the language that needed it; the rule
       // itself must not know that.
       { forms: ['zis grobbled'], family: 'CANCELLATION', mode: 'COMPLETED' },
+      // A frame whose first token is this locale's AUXILIARY, so the § 18 rule
+      // about what a completion form OPENS with has something in this language to
+      // work on. English `has been booked` and `is booked` are the same shape.
+      { forms: ['bik grobbled'], family: 'MEETING', mode: 'COMPLETED' },
     ],
     // The bare participle rule, in a language the engine has never heard of: `grobbelt`
     // asserts nothing alone and asserts a completion beside `vorpen`, this locale's
@@ -273,11 +277,15 @@ describe('the detector holds no language-specific literal', () => {
     negators: ['nix', 'nox'],
     // What a `nix` or an `iffen` may reach ACROSS, and what each token IS. `vorp` is
     // this locale's emphatic particle, which heads nothing; `zub` is its third-person
-    // pronoun, which can head a subject; `snerk` is its word for a worry and is
-    // deliberately NOT here at all, which is what makes `Nix snerk vorp grobbled` -
-    // the synthetic form of `אין בעיה הפגישה נקבעה` - a detected claim. Nothing in
-    // `detector.ts` has heard of any of the three.
-    suppressionCarriers: [{ forms: ['vorp'], role: 'MODIFIER' }, { forms: ['zub'] }],
+    // pronoun, which can head a subject; `bik` is its auxiliary; and `snerk` is its
+    // word for a worry, which is deliberately NOT here at all - that is what makes
+    // `Nix snerk vorp bik grobbled` - the synthetic form of `אין בעיה הפגישה נקבעה` -
+    // a detected claim. Nothing in `detector.ts` has heard of any of the four.
+    suppressionCarriers: [
+      { forms: ['vorp'], role: 'MODIFIER' },
+      { forms: ['bik'], role: 'VERB' },
+      { forms: ['zub'] },
+    ],
     // `nix` is subject-capable and `nox` is not, which is the synthetic form of
     // English `nothing` versus `not`.
     subjectNegators: ['nix'],
@@ -298,7 +306,7 @@ describe('the detector holds no language-specific literal', () => {
 
   it('and honours that language own negator and its own conditional', () => {
     expect(detectMaterialClaims('Vorp nix grobbled.', { lexicons: [SYNTHETIC] })).toEqual([]);
-    expect(detectMaterialClaims('Iffen vorp grobbled.', { lexicons: [SYNTHETIC] })).toEqual([]);
+    expect(detectMaterialClaims('Iffen vorp bik grobbled.', { lexicons: [SYNTHETIC] })).toEqual([]);
   });
 
   it('tolerates an interruption inside a frame of a language it has never heard of', () => {
@@ -363,10 +371,10 @@ describe('the detector holds no language-specific literal', () => {
     // `detector.ts` has heard of either word, and no rule in it knows what a
     // reassurance is.
     expect(
-      detectMaterialClaims('Nix vorp grobbled.', { lexicons: [SYNTHETIC] }),
+      detectMaterialClaims('Nix vorp bik grobbled.', { lexicons: [SYNTHETIC] }),
       'a carrier is crossed, so the negator governs the completion and it is a plan',
     ).toEqual([]);
-    const claims = detectMaterialClaims('Nix snerk vorp grobbled.', { lexicons: [SYNTHETIC] });
+    const claims = detectMaterialClaims('Nix snerk vorp bik grobbled.', { lexicons: [SYNTHETIC] });
     expect(
       claims.map((claim) => claim.family),
       'an UNDECLARED token ends the reach, so the negator governs `snerk` and the completion is asserted - ' +
@@ -379,8 +387,8 @@ describe('the detector holds no language-specific literal', () => {
     // negator stops reaching and the completion is detected. The bound is the belt
     // over the carrier list: its only effect is to make suppression stricter, so it
     // cannot turn a detection into a miss.
-    expect(familiesIn('Nix vorp vorp vorp vorp grobbled.', [SYNTHETIC])).toEqual([]);
-    expect(familiesIn('Nix vorp vorp vorp vorp vorp grobbled.', [SYNTHETIC])).toEqual(['MEETING']);
+    expect(familiesIn('Nix vorp vorp vorp vorp bik grobbled.', [SYNTHETIC])).toEqual([]);
+    expect(familiesIn('Nix vorp vorp vorp vorp vorp bik grobbled.', [SYNTHETIC])).toEqual(['MEETING']);
   });
 
   it('and reads that language own CARRIER ROLES, so an all-carrier filler cannot silence it', () => {
@@ -392,11 +400,11 @@ describe('the detector holds no language-specific literal', () => {
     // This is the synthetic form of `Nothing at all has been booked yet.` against
     // `Nothing else your meeting is booked for Thursday at 2pm.`
     expect(
-      detectMaterialClaims('Nix vorp grobbled.', { lexicons: [SYNTHETIC] }),
+      detectMaterialClaims('Nix vorp bik grobbled.', { lexicons: [SYNTHETIC] }),
       'a MODIFIER heads nothing, so the negator is still looking for the predicate it finds',
     ).toEqual([]);
     expect(
-      familiesIn('Nix vorp zub grobbled.', [SYNTHETIC]),
+      familiesIn('Nix vorp zub bik grobbled.', [SYNTHETIC]),
       'a SUBJECT standing where a predicate was due is a new clause, so the negator governs none of it',
     ).toEqual(['MEETING']);
   });
@@ -408,11 +416,11 @@ describe('the detector holds no language-specific literal', () => {
     // SAME negator, the SAME carrier and the SAME form suppress correctly when
     // something before it in the clause can be its subject.
     expect(
-      familiesIn('Nox vorp grobbled.', [SYNTHETIC]),
+      familiesIn('Nox vorp bik grobbled.', [SYNTHETIC]),
       'a clause-initial negator with no possible subject governs only its own modifiers',
     ).toEqual(['MEETING']);
     expect(
-      detectMaterialClaims('Zub nox vorp grobbled.', { lexicons: [SYNTHETIC] }),
+      detectMaterialClaims('Zub nox vorp bik grobbled.', { lexicons: [SYNTHETIC] }),
       'and the same negator with a subject in front of it governs its predicate exactly as before',
     ).toEqual([]);
   });

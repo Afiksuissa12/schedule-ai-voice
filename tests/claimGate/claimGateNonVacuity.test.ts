@@ -254,7 +254,13 @@ describe('the claim gate is not vacuous', () => {
     // Both halves matter. The kind, because `NEGATOR_BUILT` is the leaking class and
     // `UNDECLARED_NEGATION` is the control that localises it. The language, because
     // English could omit bare `no` from its negators and Hebrew cannot omit `אין`.
-    for (const kind of ['NEGATOR_BUILT', 'CONDITIONAL_BUILT', 'UNDECLARED_NEGATION', 'POLITENESS'] as const) {
+    for (const kind of [
+      'NEGATOR_BUILT',
+      'CONDITIONAL_BUILT',
+      'UNDECLARED_NEGATION',
+      'POLITENESS',
+      'ALL_CARRIER',
+    ] as const) {
       expect(
         SUPPRESSION_FILLERS.filter((filler) => filler.kind === kind).length,
         `no filler of kind ${kind} - suppression treats negators and conditionals identically, and the ` +
@@ -268,11 +274,60 @@ describe('the claim gate is not vacuous', () => {
           "`Don't worry your meeting is booked for Thursday at 2pm.` was missed as well as `אין בעיה ...`.",
       ).toBeGreaterThanOrEqual(4);
     }
-    // The five wordings QA drove end to end have to still be in the table by text.
+
+    // ---- THE § 18 FLOOR, PER LANGUAGE, AND IT IS A NEW AXIS VALUE ---------
+    // THIS IS § 17.2's LESSON ARRIVING ONE LEVEL DOWN. § 17 generalised the JOINER
+    // axis and then hand-listed the FILLER axis, and all 26 values somebody typed
+    // contained an open-class word - `worry`, `payments`, `anyone`, `booking`,
+    // `engineer`, `בעיה`, `דאגה`, `צורך`. Every one of those ENDS a negator's reach,
+    // which is exactly why the § 17 rule passed on all 26 rows and why the value
+    // that defeats it - a filler made of NOTHING BUT declared carriers - was never
+    // generated. `Not at all I have booked your meeting for Thursday at 2pm.` was
+    // released to a real caller and PERSISTED; so were six more English wordings and
+    // seven Hebrew ones. An axis nobody declared is exactly as invisible as a
+    // fixture nobody wrote.
+    for (const language of ['en', 'he'] as const) {
+      expect(
+        SUPPRESSION_FILLERS.filter((filler) => filler.language === language && filler.kind === 'ALL_CARRIER').length,
+        `too few ${language} fillers built ENTIRELY out of declared carriers. This is the § 18 class and it is ` +
+          'the one value of this axis that can defeat the reach rule outright, because the rule asks whether ' +
+          'everything between the negator and the form is carrier material and a filler made of nothing else ' +
+          'answers yes. It leaked in BOTH languages, which is why the floor is per language.',
+      ).toBeGreaterThanOrEqual(2);
+    }
+    // BOTH HALVES OF THE § 18 RULE have to be exercised, and which half catches a
+    // row depends on the filler's own first word. A table of only `Not at all`-shaped
+    // fillers would prove rule 1 and leave the predication scan untested.
+    expect(
+      SUPPRESSION_FILLERS.filter(
+        (filler) => filler.kind === 'ALL_CARRIER' && /^nothing/iu.test(filler.text),
+      ).length,
+      'every ALL_CARRIER filler is built on a negator that cannot be a SUBJECT, so only § 18 rule 1 is ' +
+        'exercised. `nothing`, `none` and `nobody` CAN be subjects - `Nothing at all has been booked yet.` is ' +
+        'clean because of it - so those rows are the ones that test the fresh-predication scan instead.',
+    ).toBeGreaterThanOrEqual(1);
+    expect(
+      SUPPRESSION_FILLERS.filter(
+        (filler) => filler.kind === 'ALL_CARRIER' && /^once/iu.test(filler.text),
+      ).length,
+      'no CONDITIONAL all-carrier filler. A subordinator is allowed to cross the subject of the clause it ' +
+        'opens - `Once your meeting is booked I will let you know.` is a plan - and must not be allowed to ' +
+        'cross one an adverbial separates it from. Without a row like `Once more ...` that split is untested.',
+    ).toBeGreaterThanOrEqual(1);
+
+    // The five wordings QA-3 drove end to end, and the two QA-4 did, by their own
+    // text. A kind floor alone can be satisfied by wordings nobody reported.
     for (const filler of ['אין בעיה', 'אין דאגה', 'לא נורא', 'אין צורך לדאוג', 'אין שום בעיה']) {
       expect(
         SUPPRESSION_FILLERS.map((entry) => entry.text),
         `the QA-3 filler ${filler} must stay in the axis table by name`,
+      ).toContain(filler);
+    }
+    for (const filler of ['Not at all', 'לא צריך כלום']) {
+      expect(
+        SUPPRESSION_FILLERS.map((entry) => entry.text),
+        `the QA-4 all-carrier filler ${filler} must stay in the axis table by name - it is the wording that ` +
+          'was released to a real caller and persisted, in the language it was released in',
       ).toContain(filler);
     }
 

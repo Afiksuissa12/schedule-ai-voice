@@ -1306,7 +1306,19 @@ function freshPredicationStands(
   }
 
   if (state === 'SEEKING_PREDICATE' || state === 'SUBJECT_SLOT_OPEN') {
-    return form.formTokens > 1 && opensANounPhrase(roleAt(tokens, form.position, reach));
+    // The form brings its own SUBJECT, so the new clause starts at the form.
+    if (form.formTokens > 1 && opensANounPhrase(roleAt(tokens, form.position, reach))) return true;
+    // A bare PARTICIPLE is the negated predicate itself - `Nothing at all booked
+    // for your meeting.` - so it is governed whatever it is made of.
+    if (form.kind === 'PARTICIPLE') return false;
+    // A FINITE form is the suppressor's predicate only if it OPENS like one. In
+    // both registered languages a predicate a negator reaches across modifiers is
+    // introduced by an auxiliary or a copula (`has been booked`, `is booked`), and
+    // this is where Hebrew's pro-drop shows: `Not at all קבעתי לך פגישה למחר.`
+    // puts a complete finite clause, subject and all, into one inflected word, so
+    // there is no subject token for the scan above to find and the form's own
+    // shape is the only evidence there is.
+    return roleAt(tokens, form.position, reach) !== 'VERB';
   }
   return form.kind === 'FINITE';
 }
