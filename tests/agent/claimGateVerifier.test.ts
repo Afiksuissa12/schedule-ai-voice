@@ -12,7 +12,14 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ActionLedger, LedgerEffect } from '../../src/agent/claimGate/ledger.js';
-import { verifyClaims } from '../../src/agent/claimGate/verifier.js';
+import { detectMaterialClaims } from '../../src/agent/claimGate/detector.js';
+import {
+  ALL_UNSUPPORTED_CLAIM_REASONS,
+  SEMANTIC_LAYER_UNSUPPORTED_REASONS,
+  UNSUPPORTED_CLAIM_REASONS,
+  semanticLayerUnsupportedClaim,
+  verifyClaims,
+} from '../../src/agent/claimGate/verifier.js';
 import { DEFAULT_DAY_PARTS } from '../../src/scheduling/policy.js';
 import type { IsoUtcString } from '../../src/ports/clock.js';
 
@@ -236,5 +243,116 @@ describe('fail-safe: an effect with no instant cannot confirm a day', () => {
     expect(reasonsFor('That is recorded for Thursday at 3pm.', ledger({ effects: [recorded] }))).toEqual([
       'WRONG_DAY',
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MISSION 2F: `verifyClaims` accepts PRE-DETECTED claims
+// ---------------------------------------------------------------------------
+
+describe('pre-detected claims are reconciled by the same code, with the same verdicts', () => {
+  // The additive input the layered pipeline needs. The property that matters is
+  // that it changes nothing: every caller that does not pass it must be
+  // byte-identical, and a caller that passes the detector's own output must get the
+  // same answer as one that passed nothing.
+  const SAMPLES = [
+    "I've booked the callback for 3pm on your local time.",
+    'Your meeting is booked for Thursday at 2pm.',
+    'Your confirmation number is CONF123456.',
+    'I will send you a confirmation email.',
+    'Your meeting is booked for Thursday at half past four.',
+    'Nothing is booked yet.',
+    'What time would suit you?',
+  ] as const;
+
+  const withEffect = ledger({ effects: [tomorrowAtThree()] });
+
+  for (const text of SAMPLES) {
+    it(`agrees with the re-detecting path: ${JSON.stringify(text)}`, () => {
+      for (const snapshot of [ledger(), withEffect]) {
+        const detected = detectMaterialClaims(text);
+        const reDetected = verifyClaims({ text, ledger: snapshot });
+        const preDetected = verifyClaims({ text, ledger: snapshot, claims: detected });
+
+        expect(preDetected.unsupported.map((entry) => entry.reason)).toEqual(
+          reDetected.unsupported.map((entry) => entry.reason),
+        );
+        expect(preDetected.unsupported.map((entry) => entry.detail)).toEqual(
+          reDetected.unsupported.map((entry) => entry.detail),
+        );
+        expect(preDetected.supported.map((entry) => entry.matchedEffect?.entity?.id ?? null)).toEqual(
+          reDetected.supported.map((entry) => entry.matchedEffect?.entity?.id ?? null),
+        );
+      }
+    });
+  }
+
+  it('an EMPTY pre-detected list means "both layers found nothing" and is NOT re-detected', () => {
+    // `?? ` and not a truthiness test. If this ever regressed to `||` or to a
+    // length check, the function would silently re-run the layer whose answer had
+    // already been taken - which for the layered gate would mean the union's
+    // decision to drop a non-material semantic claim got quietly overruled.
+    const verdict = verifyClaims({
+      text: "I've booked the callback for 3pm on your local time.",
+      ledger: ledger(),
+      claims: [],
+    });
+    expect(verdict.unsupported).toEqual([]);
+    expect(verdict.supported).toEqual([]);
+  });
+
+  it('and a claim the detector never produced is still judged from the LEDGER, not from the caller', () => {
+    // The authority boundary in this function: a caller supplies OBSERVATIONS and
+    // the verdict is made here. There is no input by which a claim can be declared
+    // supported.
+    const handCrafted = {
+      kind: 'EFFECT_ASSERTED' as const,
+      family: 'MEETING' as const,
+      mode: 'COMPLETED' as const,
+      locale: 'semantic',
+      matchedForm: '(semantic claim verifier)',
+      sentenceIndex: 0,
+      excerpt: '',
+      assertedDay: null,
+      assertedTime: null,
+      unreadTemporal: [] as readonly string[],
+      identifiers: [] as readonly string[],
+    };
+    expect(
+      verifyClaims({ text: 'anything', ledger: ledger(), claims: [handCrafted] }).unsupported.map(
+        (entry) => entry.reason,
+      ),
+    ).toEqual(['NO_MATCHING_EFFECT']);
+  });
+});
+
+describe('the second layer’s own failure is an unsupported reason with its own list', () => {
+  it('SEMANTIC_CHECK_UNAVAILABLE is NOT in UNSUPPORTED_CLAIM_REASONS, deliberately', () => {
+    // That array is the reasons the LEDGER produces, and
+    // `tests/claimGate/claimGateCorpus.ts` asserts every member is exercised by a
+    // pure ledger case. This one cannot be - it is not a fact about the ledger -
+    // so adding it there would have turned a guard about the ledger red for a
+    // reason unrelated to the ledger. `verifier.ts` argues it at length.
+    expect([...UNSUPPORTED_CLAIM_REASONS]).not.toContain('SEMANTIC_CHECK_UNAVAILABLE');
+    expect([...SEMANTIC_LAYER_UNSUPPORTED_REASONS]).toEqual(['SEMANTIC_CHECK_UNAVAILABLE']);
+  });
+
+  it('but it IS in ALL_UNSUPPORTED_CLAIM_REASONS, which is the full list to sweep over', () => {
+    expect([...ALL_UNSUPPORTED_CLAIM_REASONS]).toEqual([
+      ...UNSUPPORTED_CLAIM_REASONS,
+      ...SEMANTIC_LAYER_UNSUPPORTED_REASONS,
+    ]);
+  });
+
+  it('and the placeholder claim it carries asserts nothing and quotes nothing', () => {
+    // It travels into the state instruction and the handover description, so it
+    // must not smuggle a customer-facing sentence into either.
+    const entry = semanticLayerUnsupportedClaim({ outcome: 'TIMED_OUT', reason: 'no answer in 20000 ms' });
+    expect(entry.reason).toBe('SEMANTIC_CHECK_UNAVAILABLE');
+    expect(entry.claim.excerpt).toBe('');
+    expect(entry.claim.identifiers).toEqual([]);
+    expect(entry.claim.unreadTemporal).toEqual([]);
+    expect(entry.claim.assertedDay).toBeNull();
+    expect(entry.detail.semanticLayer).toEqual({ outcome: 'TIMED_OUT', reason: 'no answer in 20000 ms' });
   });
 });

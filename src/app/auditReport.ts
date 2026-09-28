@@ -48,6 +48,43 @@ export interface ChainSummary {
    * no text has to be able to find out why from the chain alone.
    */
   readonly whatWasSayable: readonly ClaimGateChainEntry[];
+  /**
+   * WHICH LAYER caught each claim - the SEVENTH question, added by Mission 2F.
+   *
+   * WHY IT IS A SEVENTH QUESTION RATHER THAN MORE ENTRIES ON THE SIXTH. The sixth
+   * answers *what was the system allowed to say*, and that is a verdict per
+   * attempt. This answers *who noticed*, and it is the question eight successive
+   * independent QA rounds needed and could not ask: every one of those findings was
+   * a sentence the deterministic detector did not recognise, and nothing on the
+   * chain could distinguish "no claim in this text" from "no claim THAT LAYER could
+   * see". A claim tagged `SEMANTIC` here is a claim that would have leaked before.
+   *
+   * It is a SEPARATE field, and deliberately not folded into `whatWasSayable`,
+   * because that array's contents are asserted exactly by
+   * `tests/e2e/claimGate.test.ts` and `tests/e2e/claimGateExhaustion.test.ts` -
+   * adding entries to it would have changed a published answer rather than added
+   * one.
+   */
+  readonly whichLayerCaughtIt: readonly ClaimLayerChainEntry[];
+}
+
+/** One attempt's layering, read off a `CLAIM_GATE_CLAIM_LAYERED` event. */
+export interface ClaimLayerChainEntry {
+  readonly attempt: number | null;
+  /** How many claims the deterministic lexicon detector found. */
+  readonly deterministic: number | null;
+  /** What the semantic layer did: a verdict kind, or `ABSENT` when none was wired. */
+  readonly semanticOutcome: string | null;
+  /** How many semantic claims CONTRIBUTED to the union. */
+  readonly semantic: number | null;
+  /**
+   * `true` when the semantic layer produced nothing usable, so the attempt is
+   * UNSUPPORTED whatever else was found. An `ABSENT` verifier counts.
+   */
+  readonly failClosed: boolean;
+  /** One tag per claim, in union order: `DETERMINISTIC`, `SEMANTIC` or `BOTH`. */
+  readonly sources: readonly string[];
+  readonly summary: string;
 }
 
 export interface ClaimGateChainEntry {
@@ -77,6 +114,7 @@ export function summarizeChain(events: readonly AuditEvent[]): ChainSummary {
   const whatWasPersisted: { subjectType: string; subjectId: string; summary: string }[] = [];
   const whatWasRefused: { tool: string | null; code: string; reason: string }[] = [];
   const whatWasSayable: ClaimGateChainEntry[] = [];
+  const whichLayerCaughtIt: ClaimLayerChainEntry[] = [];
 
   const readClaimGate = (
     event: AuditEvent,
@@ -164,6 +202,17 @@ export function summarizeChain(events: readonly AuditEvent[]): ChainSummary {
         whatWasSayable.push(readClaimGate(event, detail, 'WITHHELD'));
         break;
 
+      case 'CLAIM_GATE_CLAIM_LAYERED':
+        whichLayerCaughtIt.push(readClaimLayers(event, detail));
+        break;
+
+      // The remaining Mission 2F events - SEMANTIC_REQUESTED, SEMANTIC_CLASSIFIED
+      // and SEMANTIC_FAILED - are deliberately NOT summarised into a question. They
+      // are the trace of ONE layer's call, and what a reader needs from them is
+      // already answered twice over: the LAYERED event above says what the layer
+      // contributed, and `whatWasSayable` says what the gate then decided. Folding
+      // three more events into either would make a chain harder to read rather than
+      // easier. `renderChain` prints them verbatim, in order, like everything else.
       default:
         break;
     }
@@ -180,6 +229,22 @@ export function summarizeChain(events: readonly AuditEvent[]): ChainSummary {
     whatWasPersisted,
     whatWasRefused,
     whatWasSayable,
+    whichLayerCaughtIt,
+  };
+}
+
+/** One `CLAIM_GATE_CLAIM_LAYERED` detail, flattened. Tolerant, like every reader here. */
+function readClaimLayers(event: AuditEvent, detail: Record<string, unknown>): ClaimLayerChainEntry {
+  const layers = (detail['layers'] ?? {}) as Record<string, unknown>;
+  const asNumber = (value: unknown): number | null => (typeof value === 'number' ? value : null);
+  return {
+    attempt: asNumber(detail['attempt']),
+    deterministic: asNumber(layers['deterministicClaimCount']),
+    semanticOutcome: typeof layers['semanticOutcome'] === 'string' ? layers['semanticOutcome'] : null,
+    semantic: asNumber(layers['semanticClaimCount']),
+    failClosed: layers['failClosed'] === true,
+    sources: Array.isArray(layers['sources']) ? (layers['sources'] as unknown[]).map(String) : [],
+    summary: event.summary,
   };
 }
 
@@ -195,7 +260,7 @@ export function renderChain(events: readonly AuditEvent[]): string {
   return lines.join('\n');
 }
 
-/** The five questions, answered. */
+/** The five original questions, plus the sixth and the seventh, answered. */
 export function renderChainAnswers(summary: ChainSummary): string {
   const section = (title: string, entries: readonly string[]): string =>
     [`  ${title}`, ...(entries.length > 0 ? entries.map((entry) => `    - ${entry}`) : ['    - (none)'])].join('\n');
@@ -229,6 +294,16 @@ export function renderChainAnswers(summary: ChainSummary): string {
           `${entry.decision} (iteration ${entry.iteration ?? 'n/a'}, attempt ${entry.attempt ?? 'n/a'})` +
           `${entry.outcome ? ` -> ${entry.outcome}` : ''}` +
           `${entry.reasons.length > 0 ? `: ${entry.reasons.join(', ')}` : ''}`,
+      ),
+    ),
+    section(
+      'WHICH LAYER CAUGHT IT',
+      summary.whichLayerCaughtIt.map(
+        (entry) =>
+          `attempt ${entry.attempt ?? 'n/a'}: deterministic ${entry.deterministic ?? 'n/a'}, ` +
+          `semantic ${entry.semantic ?? 'n/a'} (${entry.semanticOutcome ?? 'n/a'})` +
+          `${entry.failClosed ? ' FAIL-CLOSED' : ''}` +
+          `${entry.sources.length > 0 ? ` -> ${entry.sources.join(', ')}` : ''}`,
       ),
     ),
   ].join('\n\n');

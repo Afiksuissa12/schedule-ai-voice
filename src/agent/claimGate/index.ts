@@ -15,6 +15,18 @@
  *   buildStateInstruction                  `./stateInstruction.ts`
  *   handOffAfterClaimGateExhaustion        `./handoff.ts`  - the designed exhaustion outcome
  *   REGISTERED_CLAIM_LEXICONS              `./lexicon/`    - locale vocabulary as DATA
+ *
+ * MISSION 2F adds the SEMANTIC second layer, from `./semantic/`:
+ *
+ *   LlmSemanticClaimVerifier               the real one, over an injected LlmProvider
+ *   ScriptedSemanticClaimVerifier          a double: answers what a test dictates
+ *   RuleDrivenSemanticClaimVerifier        a double: answers from deterministic rules
+ *   unionClaims, ClaimSource, SourcedClaim provably ADDITIVE; the verifier may only add
+ *   SemanticVerifierOutputSchema           strict, and fails closed on anything else
+ *   SEMANTIC_VERIFIER_INSTRUCTION          model-facing only; no customer-facing wording
+ *
+ * The PORT itself lives in `src/ports/claimVerifier.ts`, because the authority
+ * boundary belongs in the types every implementation is written against.
  */
 export * from './ledger.js';
 export * from './detector.js';
@@ -24,3 +36,4 @@ export * from './stateInstruction.js';
 export * from './handoff.js';
 export * from './text.js';
 export * from './lexicon/index.js';
+export * from './semantic/index.js';

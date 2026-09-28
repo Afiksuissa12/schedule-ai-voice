@@ -48,17 +48,27 @@ import { loadBusinessProfile, type BusinessProfile } from '../context/businessPr
 import { createDatabase, type Database } from '../db/database.js';
 import { DueActionRunner } from '../followup/dueActionRunner.js';
 import { FutureActionService } from '../followup/futureActionService.js';
-import { DEFAULT_LOCAL_LLM_NUM_CTX, LocalLlmProvider, type LocalLlmProviderOptions } from '../llm/localLlmProvider.js';
+import {
+  DEFAULT_LOCAL_LLM_MODEL,
+  DEFAULT_LOCAL_LLM_NUM_CTX,
+  LocalLlmProvider,
+  type LocalLlmProviderOptions,
+} from '../llm/localLlmProvider.js';
 import { ScriptedLlmProvider } from '../llm/scriptedLlmProvider.js';
 import type { Clock } from '../ports/clock.js';
 import { SystemClock } from '../ports/clock.js';
-import type { LlmProvider } from '../ports/llm.js';
+import type { SemanticClaimVerifier } from '../ports/claimVerifier.js';
+import { isStructuredOutputLlmProvider, type LlmProvider } from '../ports/llm.js';
 import { ConfigurationError } from '../shared/errors.js';
 import { createProviderRegistry, type ProviderRegistry, type ProviderRegistryConfig } from '../providers/index.js';
 import { MeetingSchedulingService } from '../scheduling/meetingSchedulingService.js';
 import { SchedulingValidator } from '../scheduling/schedulingValidator.js';
 import { AgentTurnService } from '../agent/agentTurnService.js';
 import { ClaimGate } from '../agent/claimGate/claimGate.js';
+import {
+  LlmSemanticClaimVerifier,
+  RuleDrivenSemanticClaimVerifier,
+} from '../agent/claimGate/semantic/index.js';
 import { ToolDispatcher } from '../agent/tools/dispatcher.js';
 
 /** The originating number used for outbound callbacks in this slice. */
@@ -199,9 +209,46 @@ export interface BuildAgentRuntimeOptions {
    */
   readonly claimGate?: { readonly maxRegenerationAttempts?: number };
   /**
+   * An already-constructed SEMANTIC CLAIM VERIFIER - MISSION 2F.
+   *
+   * The same three-rung shape as `llm` / `llmProviderConfig`: an explicit instance
+   * wins, then an explicit request to build one, then a safe default. There is NO
+   * rung that produces `null`, and there is no option here that turns the second
+   * layer off - for exactly the reason `claimGate` above has no off switch. The
+   * gate's `verifier: null` seam exists so a unit test can exercise one layer in
+   * isolation, and no supported wiring path produces it.
+   *
+   * Pass a DOUBLE here to make an offline test or a harness deterministic while
+   * still going through the real composition root. `ScriptedSemanticClaimVerifier`
+   * and `RuleDrivenSemanticClaimVerifier` are both exported from
+   * `src/agent/claimGate/index.ts`.
+   */
+  readonly claimVerifier?: SemanticClaimVerifier;
+  /**
+   * Build the verifier instead of passing one. Ignored when `claimVerifier` is
+   * given, so the two can never fight.
+   *
+   * `model` DEFAULTS TO THE CONFIGURED LOCAL MODEL - see
+   * `resolveClaimVerifier`. Naming a different one is supported and is a VRAM
+   * decision, not a free one: `src/config/env.ts` states the measured cost.
+   */
+  readonly claimVerifierConfig?: ClaimVerifierConfig;
+  /**
    * Opt into durable memory and business context. Omitting it is Baseline V1.
    */
   readonly contextAssembly?: ContextAssemblyConfig | null;
+}
+
+/** How to build the real semantic claim verifier, when one is wanted. */
+export interface ClaimVerifierConfig {
+  /**
+   * The model tag. Omitted means THE MODEL THIS RUNTIME'S LOCAL PROVIDER IS
+   * ALREADY SERVING, which is the default the brief requires and the only
+   * configuration the VRAM evidence supports.
+   */
+  readonly model?: string;
+  /** Overrides `DEFAULT_SEMANTIC_VERIFIER_TIMEOUT_MS`. */
+  readonly timeoutMs?: number;
 }
 
 export interface AgentRuntime {
@@ -343,11 +390,16 @@ export function buildAgentRuntime(options: BuildAgentRuntimeOptions = {}): Agent
 
   // ENABLED BY DEFAULT, and there is no branch above this line that skips it.
   // The chokepoint governs actions; this governs sentences. Both are always on.
-  const claimGate = new ClaimGate(
-    options.claimGate?.maxRegenerationAttempts !== undefined
+  //
+  // MISSION 2F: and so is the SEMANTIC second layer. `resolveClaimVerifier` never
+  // returns null, so there is no path through this function that releases
+  // customer-facing text with no verifier verdict and no fail-closed treatment.
+  const claimGate = new ClaimGate({
+    ...(options.claimGate?.maxRegenerationAttempts !== undefined
       ? { maxRegenerationAttempts: options.claimGate.maxRegenerationAttempts }
-      : {},
-  );
+      : {}),
+    verifier: resolveClaimVerifier(options, llm),
+  });
 
   const agent = new AgentTurnService({
     db,
@@ -389,6 +441,110 @@ export function buildAgentRuntime(options: BuildAgentRuntimeOptions = {}): Agent
       if (ownsDb) await db.disconnect();
     },
   };
+}
+
+/**
+ * Which SEMANTIC CLAIM VERIFIER this runtime gets - MISSION 2F.
+ *
+ * THE CONTRACT OF THIS FUNCTION IS THAT IT NEVER RETURNS NULL. That is the whole
+ * "no hole" requirement: every path out of `buildAgentRuntime` hands the gate a
+ * verifier, so every piece of customer-facing text gets either a verdict or a
+ * fail-closed treatment. A missing verifier is reachable only by constructing a
+ * `ClaimGate` by hand with `verifier: null`, which is a declared TEST-ONLY seam,
+ * is treated as UNSUPPORTED rather than as clean, and is visible in the per-turn
+ * report as `semanticOutcome: 'ABSENT'`.
+ *
+ * FOUR RUNGS, AND THE BOTTOM ONE IS ALWAYS SAFE AND ALWAYS OFFLINE
+ * ---------------------------------------------------------------------------
+ *  1. AN EXPLICIT INSTANCE (`options.claimVerifier`). Wins over everything, the
+ *     way `options.llm` does.
+ *
+ *  2. THIS CALL IS BUILDING THE LOCAL PROVIDER (`llmProviderConfig.kind ===
+ *     'local'` and no instance was passed). A SECOND `LocalLlmProvider` is built
+ *     for the verifier, which is what lets `CLAIM_VERIFIER_MODEL` name a
+ *     different tag - the only rung that can, because it is the only one where
+ *     this function knows how to construct a provider. It defaults to the SAME
+ *     model, so the default costs one resident model and not two.
+ *
+ *  3. A CALLER HANDED IN A PROVIDER THAT DECLARES CONSTRAINED STRUCTURED OUTPUT
+ *     (`isStructuredOutputLlmProvider`). The real verifier runs over THAT
+ *     instance. This rung exists because `src/app/localBrainDemo.ts` passes a
+ *     `LocalLlmProvider` as `options.llm` rather than through
+ *     `llmProviderConfig`, and a local-brain runtime that quietly got a
+ *     no-op double would be precisely the hole this requirement is about. Sharing
+ *     the instance is safe because the schema, the temperature and the seed all
+ *     travel PER REQUEST (`src/ports/llm.ts`), so the verifier cannot change how
+ *     the conversation is sampled.
+ *
+ *  4. ANYTHING ELSE - which is `ScriptedLlmProvider`, i.e. every test, the sweep
+ *     and `npm run slice:demo` - gets `RuleDrivenSemanticClaimVerifier` with NO
+ *     RULES. That is a fully deterministic double that returns `CLASSIFIED` with
+ *     an empty claim list, so the offline union equals the deterministic claim set
+ *     and every offline outcome, audit detail and released byte is what it was
+ *     before this mission. IT ADDS NO SUSPICION, and `./semantic/doubles.ts` says
+ *     so at length: a green sweep is evidence the PIPELINE holds, not evidence the
+ *     semantic layer classifies anything.
+ *
+ * WHY RUNG 2 IS NOT SKIPPED IN FAVOUR OF RUNG 3. When `llmProviderConfig.kind` is
+ * `'local'`, `llm` IS a `LocalLlmProvider` and rung 3 alone would work - but it
+ * would silently ignore `claimVerifierConfig.model`. A configuration key that is
+ * accepted and ignored is worse than one that does not exist.
+ */
+function resolveClaimVerifier(options: BuildAgentRuntimeOptions, llm: LlmProvider): SemanticClaimVerifier {
+  if (options.claimVerifier) return options.claimVerifier;
+
+  const config = options.claimVerifierConfig;
+  const timeout = config?.timeoutMs !== undefined ? { timeoutMs: config.timeoutMs } : {};
+
+  if (options.llm === undefined && options.llmProviderConfig?.kind === 'local') {
+    const { kind: _kind, ...local } = options.llmProviderConfig;
+    return new LlmSemanticClaimVerifier({
+      llm: new LocalLlmProvider({
+        ...local,
+        // THE DEFAULT IS THE CONFIGURED LOCAL MODEL. No model default in this
+        // repository was changed to add the semantic layer.
+        model: config?.model ?? local.model ?? DEFAULT_LOCAL_LLM_MODEL,
+        // Belt and braces with the per-request `determinism` block. A provider
+        // built solely to classify has no reason to be sampled warm, and if a
+        // future change ever dropped the per-request override this would still be
+        // greedy rather than silently creative.
+        temperature: 0,
+        // Streaming buys nothing here: nobody listens to a classifier's deltas and
+        // the answer is a small JSON object.
+        streamByDefault: false,
+      }),
+      ...timeout,
+    });
+  }
+
+  if (isStructuredOutputLlmProvider(llm)) {
+    if (config?.model !== undefined) {
+      throw new ConfigurationError(
+        `claimVerifierConfig.model was set to "${config.model}", but this runtime was handed an ` +
+          'already-constructed LlmProvider via `options.llm`, so there is nothing here that knows how to build ' +
+          'a provider for a different model. Either drop the model override - the verifier then shares the ' +
+          'provider you passed, which is the configuration the VRAM evidence supports - or build the runtime ' +
+          'with `llmProviderConfig: { kind: "local", ... }` so the composition root owns both providers, or ' +
+          'construct LlmSemanticClaimVerifier yourself and pass it as `claimVerifier`.',
+        { details: { requestedVerifierModel: config.model } },
+      );
+    }
+    return new LlmSemanticClaimVerifier({ llm, ...timeout });
+  }
+
+  if (config !== undefined) {
+    throw new ConfigurationError(
+      'claimVerifierConfig asks for the real semantic claim verifier, but this runtime has no provider that ' +
+        'declares constrained structured output - the default is ScriptedLlmProvider, which does not. Pass ' +
+        '`llmProviderConfig: { kind: "local", ... }`, or pass a deterministic double as `claimVerifier` if what ' +
+        'you wanted was an offline runtime.',
+      { details: { providerName: llm.name() } },
+    );
+  }
+
+  // Rung 4. Deterministic, offline, adds nothing, and is never "clean by
+  // accident": an empty claim list is a CLASSIFIED verdict, which is a verdict.
+  return new RuleDrivenSemanticClaimVerifier();
 }
 
 /**

@@ -33,6 +33,15 @@
  *    from `WRONG_DAY` because it is not a contradiction: the record may well
  *    agree with what the model meant, and what the model has to do about it is
  *    different - name the day and the hour plainly rather than pick another one.
+ *  - `SEMANTIC_CHECK_UNAVAILABLE` - MISSION 2F, and the only reason in this list
+ *    that is NOT a fact about the ledger. The second, SEMANTIC layer did not
+ *    produce a usable classification: malformed output, a timeout, an unreachable
+ *    verifier, an empty answer, or - on the test-only seam - no verifier wired at
+ *    all. The Founder's rule is that every one of those is UNSUPPORTED and never
+ *    clean, so the text is withheld and regenerated. `./claimGate.ts` is what
+ *    produces it, from `./semantic/union.ts`'s `failClosed`, and the consequence
+ *    is stated rather than discovered: A VERIFIER OUTAGE HANDS OFF EVERY CLAIMING
+ *    TURN TO A HUMAN. A turn that claims nothing is unaffected.
  *
  * COMPARISON IS DONE IN THE CONTACT'S OWN TIMEZONE
  * ---------------------------------------------------------------------------
@@ -87,6 +96,16 @@ import { detectMaterialClaims, type AssertedDay, type AssertedTime, type DetectC
 import { issuedIdentifierSet, STATE_CHANGING_EFFECT_KINDS, type ActionLedger, type LedgerEffect, type LedgerEffectKind, type LedgerRefusal } from './ledger.js';
 import type { ClaimEffectFamily } from './lexicon/index.js';
 
+/**
+ * The reasons THE LEDGER can refuse a claim.
+ *
+ * UNCHANGED BY MISSION 2F, and the fact that it is unchanged is load-bearing.
+ * Every entry here is a statement about the relationship between a sentence and a
+ * persisted record, and `tests/claimGate/claimGateCorpus.ts` asserts that each one
+ * is actually produced by some pure `verifyClaims` case - a non-vacuity guard
+ * worth keeping, because a rejection reason nobody has ever seen fire is a
+ * rejection reason that might not work.
+ */
 export const UNSUPPORTED_CLAIM_REASONS = [
   'NO_MATCHING_EFFECT',
   'EFFECT_WAS_REFUSED',
@@ -97,7 +116,45 @@ export const UNSUPPORTED_CLAIM_REASONS = [
   'NO_TOOL_FOR_PROMISE',
 ] as const;
 
-export type UnsupportedClaimReason = (typeof UNSUPPORTED_CLAIM_REASONS)[number];
+/**
+ * The reason the SECOND LAYER's own failure produces - MISSION 2F.
+ *
+ * `SEMANTIC_CHECK_UNAVAILABLE` is what the gate records when the semantic claim
+ * verifier returned MALFORMED, TIMED_OUT, UNAVAILABLE or EMPTY, or when no
+ * verifier was wired at all. The Founder's rule is that each of those is treated
+ * as UNSUPPORTED and never as clean, so the text does not reach the customer, the
+ * existing bounded regeneration runs, and exhaustion takes the existing
+ * non-canned audited hand-off.
+ *
+ * WHY IT IS IN A SECOND ARRAY RATHER THAN APPENDED TO THE FIRST, stated because
+ * it looks like an odd place to put it and the reason is a real constraint rather
+ * than taste. The array above is the list of reasons THE LEDGER produces, and the
+ * corpus guard named in its comment requires every member to be produced by a
+ * pure `verifyClaims` ledger case. This reason cannot be: it is not a fact about
+ * the ledger at all - it is a fact about whether the second layer answered - and
+ * `verifyClaims` never emits it. Appending it to that array would have turned a
+ * guard that exists to prove the LEDGER reasons work red for a reason unrelated
+ * to the ledger, in a file this mission does not own.
+ *
+ * So both arrays exist, `ALL_UNSUPPORTED_CLAIM_REASONS` is the full list, and
+ * `UnsupportedClaimReason` is the union - which means every existing consumer of
+ * the TYPE keeps working and every existing consumer of the ARRAY keeps its
+ * meaning. A caller that wants to sweep over every possible reason should use
+ * `ALL_UNSUPPORTED_CLAIM_REASONS`.
+ */
+export const SEMANTIC_LAYER_UNSUPPORTED_REASONS = ['SEMANTIC_CHECK_UNAVAILABLE'] as const;
+
+/** Every reason a claim can be unsupported, from either layer. */
+export const ALL_UNSUPPORTED_CLAIM_REASONS = [
+  ...UNSUPPORTED_CLAIM_REASONS,
+  ...SEMANTIC_LAYER_UNSUPPORTED_REASONS,
+] as const;
+
+export type LedgerUnsupportedClaimReason = (typeof UNSUPPORTED_CLAIM_REASONS)[number];
+
+export type SemanticLayerUnsupportedClaimReason = (typeof SEMANTIC_LAYER_UNSUPPORTED_REASONS)[number];
+
+export type UnsupportedClaimReason = (typeof ALL_UNSUPPORTED_CLAIM_REASONS)[number];
 
 export interface SupportedClaim {
   readonly claim: DetectedClaim;
@@ -127,6 +184,17 @@ export interface UnsupportedClaimDetail {
   readonly refusal?: { readonly toolName: string; readonly code: string; readonly reason: string };
   /** Effect kinds that WOULD have supported this claim. */
   readonly expectedEffectKinds?: readonly LedgerEffectKind[];
+  /**
+   * MISSION 2F, OPTIONAL. Present only on a `SEMANTIC_CHECK_UNAVAILABLE` entry.
+   *
+   * `outcome` is which of the second layer's variants happened - MALFORMED,
+   * TIMED_OUT, UNAVAILABLE, EMPTY, or ABSENT for the test-only seam where no
+   * verifier is wired - and `reason` is the diagnostic string it carried. Both go
+   * into the audit detail and the model-facing state instruction so an operator
+   * can tell a dead provider from a model that stopped producing JSON, and
+   * neither is ever a customer-facing sentence.
+   */
+  readonly semanticLayer?: { readonly outcome: string; readonly reason: string };
 }
 
 export interface ClaimVerification {
@@ -138,6 +206,30 @@ export interface VerifyClaimsInput {
   readonly text: string;
   readonly ledger: ActionLedger;
   readonly detect?: DetectClaimsOptions;
+  /**
+   * MISSION 2F, OPTIONAL: the claims to reconcile, ALREADY FOUND.
+   *
+   * WHY THIS EXISTS. The Founder's pipeline puts a second, SEMANTIC classifier
+   * between detection and reconciliation, and the claim list that has to be
+   * reconciled is therefore the UNION of two layers rather than the output of one
+   * function (`./semantic/union.ts`). This function is where the whole
+   * reconciliation lives - the family table, day and time agreement including the
+   * unreadable-when rule, the identifier rules, the refusal rules, and effects
+   * from earlier turns and earlier sessions - and forking it to serve the union
+   * would put two copies of all of that in the tree. So the union is passed IN.
+   *
+   * ABSENT IS THE OLD BEHAVIOUR, EXACTLY. When this is undefined the function
+   * detects from `text` itself, with `detect`, as it always did - so every
+   * existing caller, every ledger case in `tests/claimGate/claimGateCorpus.ts`
+   * and every sweep scenario is byte-identical, and nothing about the reasons,
+   * the details or the ordering moves.
+   *
+   * WHAT IT DOES NOT DO. It does not let a caller decide whether a claim is
+   * SUPPORTED. A caller supplies OBSERVATIONS; the verdict is made here, from the
+   * ledger, by the same code either way. The semantic layer can put a claim in
+   * front of this function and can do nothing whatsoever about the answer.
+   */
+  readonly claims?: readonly DetectedClaim[];
 }
 
 /**
@@ -180,7 +272,10 @@ const TOOLS_FOR_FAMILY: Record<ClaimEffectFamily, readonly string[]> = {
 };
 
 export function verifyClaims(input: VerifyClaimsInput): ClaimVerification {
-  const claims = detectMaterialClaims(input.text, input.detect ?? {});
+  // `??` and not a truthiness test: an EMPTY pre-detected list is a caller
+  // saying "both layers found nothing", and re-detecting over it would silently
+  // re-run the layer whose answer was already taken.
+  const claims = input.claims ?? detectMaterialClaims(input.text, input.detect ?? {});
   const supported: SupportedClaim[] = [];
   const unsupported: UnsupportedClaim[] = [];
   const issued = issuedIdentifierSet(input.ledger);
@@ -284,6 +379,58 @@ export function verifyClaims(input: VerifyClaimsInput): ClaimVerification {
 }
 
 // ---------------------------------------------------------------------------
+
+/**
+ * The claim that stands in for "the second layer did not answer" - MISSION 2F.
+ *
+ * WHY A SYNTHETIC CLAIM AT ALL. `UnsupportedClaim` carries a `DetectedClaim`,
+ * because every other way a claim fails is a fact about a claim somebody found.
+ * A fail-closed second layer is not: there may be no claim, or the layer may
+ * have been about to find one. Rather than make `claim` nullable across the whole
+ * type - which every consumer, the state instruction, the handover description
+ * and two sibling tasks would then have to handle - the absence is represented
+ * by one honest placeholder.
+ *
+ * EVERY FIELD ON IT IS DELIBERATE. `family: 'ANY'` is the widest family and the
+ * one that means "something completed without saying what", which is the correct
+ * reading of "I do not know what this text claimed". `matchedForm` is a fixed
+ * marker naming the layer, so nothing in an audit detail or a handover
+ * description suggests a lexicon form fired. `excerpt` is EMPTY on purpose: the
+ * attempt's own text is already recorded on the rejection event, and putting a
+ * customer-facing sentence on a synthetic claim would smuggle it into the
+ * regeneration instruction, which `./stateInstruction.ts` exists to keep clean.
+ *
+ * It lives in THIS file rather than in `./semantic/`, because `reason`,
+ * `UnsupportedClaim` and the whole vocabulary of support are this module's and
+ * the semantic layer is not entitled to them.
+ */
+export const SEMANTIC_LAYER_PLACEHOLDER_FORM = '(second-layer check did not complete)';
+
+export function semanticLayerUnsupportedClaim(input: {
+  readonly outcome: string;
+  readonly reason: string;
+}): UnsupportedClaim {
+  return {
+    claim: {
+      kind: 'EFFECT_ASSERTED',
+      family: 'ANY',
+      mode: 'COMPLETED',
+      locale: 'semantic',
+      matchedForm: SEMANTIC_LAYER_PLACEHOLDER_FORM,
+      sentenceIndex: 0,
+      excerpt: '',
+      assertedDay: null,
+      assertedTime: null,
+      unreadTemporal: [],
+      identifiers: [],
+    },
+    reason: 'SEMANTIC_CHECK_UNAVAILABLE',
+    detail: {
+      family: 'ANY',
+      semanticLayer: { outcome: input.outcome, reason: input.reason },
+    },
+  };
+}
 
 /**
  * Is there an identifier a contact could legitimately be given?
