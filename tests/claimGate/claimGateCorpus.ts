@@ -2228,6 +2228,24 @@ export interface SuppressionClaimBase {
  *    fusing an auxiliary to a subject (`I've`, `you're`, `that's`) and Hebrew has no
  *    standing auxiliary to fuse. `text.ts` keeps an apostrophe inside a token, which
  *    is why the English contracted rows matter; there is nothing to test in Hebrew.
+ *
+ * AND THE `contracted` AXIS WAS HALF AN AXIS UNTIL § 21, WHICH IS WHY FOUR WORDINGS
+ * LEAKED PAST A TABLE THAT DECLARES CONTRACTION AS A DIMENSION
+ * ---------------------------------------------------------------------------
+ * Every `contracted: true` row here used to be a SUBJECT PRONOUN contraction -
+ * `I've`, `we've`, `I'll`, `you're` - and every THIRD-person row was
+ * `contracted: false`. There was no `your meeting's booked` anywhere in this file,
+ * in any matrix, or in any fixture. So the table declared the dimension and crossed
+ * exactly one half of it, and the half it did not cross is the one an apostrophe
+ * attaches to an ARBITRARY NOUN in - which is the open half.
+ *
+ * That is § 17.8 residual 19 in a new place: an axis whose VALUES are drawn from
+ * what the lexicon already handles cannot falsify the lexicon. `I've` and `you're`
+ * are declared whole forms in `lexicon/en.ts`, with a comment explaining the
+ * tokenisation - so the contracted rows agreed with the code by construction, and
+ * 3,276 generated rows said nothing about the class. The third-person rows below are
+ * the missing half, and they are crossed over SIX different nouns, one of them
+ * hyphenated, precisely so that no row can pass because somebody listed its noun.
  */
 export const SUPPRESSION_CLAIM_BASES: readonly SuppressionClaimBase[] = [
   // ---- MEETING, every voice / tense / person / contraction English has ----
@@ -2264,6 +2282,24 @@ export const SUPPRESSION_CLAIM_BASES: readonly SuppressionClaimBase[] = [
   { text: 'that has {} been recorded against your account', family: 'RECORD', locale: 'en', language: 'en', voice: 'PASSIVE', tense: 'PERFECT', person: 'THIRD', contracted: false },
   { text: "you're {} all set", family: 'ANY', locale: 'en', language: 'en', voice: 'PASSIVE', tense: 'SIMPLE', person: 'THIRD', contracted: true },
 
+  // ---- THIRD PERSON, CONTRACTED: the § 21 half of the contraction axis -----
+  // `'s` fusing the copula to a NOUN, which is the spelling a model reaches for most
+  // often and the one no row in this table had. Six different nouns, one hyphenated
+  // (`follow-up`, which is where a letters-only stem rule would have stopped), and
+  // both auxiliaries the clitic can stand for - `is` in the simple rows and `has` in
+  // the perfect one.
+  { text: "your meeting's {} booked for Thursday at 2pm", family: 'MEETING', locale: 'en', language: 'en', voice: 'PASSIVE', tense: 'SIMPLE', person: 'THIRD', contracted: true },
+  { text: "your appointment's {} confirmed for Thursday at 2pm", family: 'MEETING', locale: 'en', language: 'en', voice: 'PASSIVE', tense: 'SIMPLE', person: 'THIRD', contracted: true },
+  { text: "the meeting's {} been booked for Thursday at 2pm", family: 'MEETING', locale: 'en', language: 'en', voice: 'PASSIVE', tense: 'PERFECT', person: 'THIRD', contracted: true },
+  // MEETING rather than ANY, and the reason is § 8 limit 9 rather than this row: the
+  // FRAME `is confirmed` decides the family from the position it starts at and cannot
+  // see `slot` behind it. The noun is here to prove the rule does not depend on a
+  // declared noun, not to refine the family.
+  { text: "your slot's {} confirmed for Thursday at 2pm", family: 'MEETING', locale: 'en', language: 'en', voice: 'PASSIVE', tense: 'SIMPLE', person: 'THIRD', contracted: true },
+  { text: "your callback's {} arranged for tomorrow at 3pm", family: 'CALLBACK', locale: 'en', language: 'en', voice: 'PASSIVE', tense: 'SIMPLE', person: 'THIRD', contracted: true },
+  { text: "your follow-up's {} arranged for tomorrow at 3pm", family: 'CALLBACK', locale: 'en', language: 'en', voice: 'PASSIVE', tense: 'SIMPLE', person: 'THIRD', contracted: true },
+  { text: "your meeting's {} cancelled", family: 'CANCELLATION', locale: 'en', language: 'en', voice: 'PASSIVE', tense: 'SIMPLE', person: 'THIRD', contracted: true },
+
   // ---- Hebrew -------------------------------------------------------------
   { text: 'הפגישה {} נקבעה למחר בשעה 14:00', family: 'MEETING', locale: 'he', language: 'he', voice: 'PASSIVE', tense: 'SIMPLE', person: 'THIRD', contracted: false },
   { text: 'הפגישה {} אושרה ליום חמישי בשעה 14:00', family: 'MEETING', locale: 'he', language: 'he', voice: 'PASSIVE', tense: 'SIMPLE', person: 'THIRD', contracted: false },
@@ -2277,6 +2313,23 @@ export const SUPPRESSION_CLAIM_BASES: readonly SuppressionClaimBase[] = [
   { text: '{} נתקשר אליך מחר בשעה 15:00', family: 'CALLBACK', locale: 'he', language: 'he', voice: 'ACTIVE', tense: 'FUTURE', person: 'FIRST_PLURAL', contracted: false },
   { text: '{} שלחתי לך אישור באימייל', family: 'MESSAGE', locale: 'he', language: 'he', voice: 'ACTIVE', tense: 'SIMPLE', person: 'FIRST_SINGULAR', contracted: false },
   { text: '{} סידרתי לך הכל', family: 'ANY', locale: 'he', language: 'he', voice: 'ACTIVE', tense: 'SIMPLE', person: 'FIRST_SINGULAR', contracted: false },
+
+  // ---- THE HEBREW PERSON/NUMBER AXIS, BOTH MEMBERS OF EVERY PAIR ----------
+  // § 21. The `person` dimension was declared and was crossed in ONE Hebrew verb
+  // (קבעתי/קבענו) and in the future tense (אתקשר/נתקשר); every other Hebrew
+  // first-person row was singular, and each of the missing plurals was a released,
+  // persisted false claim. The lexicon now generates both numbers from one paired
+  // declaration (`lexicon/he.ts`, `bothNumbers`) and these rows are the matrix half
+  // of that: every Hebrew first-person verb this product asserts with, crossed with
+  // both numbers, so a matrix row exists for a form before anybody remembers it.
+  { text: '{} ביטלנו את הפגישה', family: 'CANCELLATION', locale: 'he', language: 'he', voice: 'ACTIVE', tense: 'SIMPLE', person: 'FIRST_PLURAL', contracted: false },
+  { text: '{} שלחנו לך אישור באימייל', family: 'MESSAGE', locale: 'he', language: 'he', voice: 'ACTIVE', tense: 'SIMPLE', person: 'FIRST_PLURAL', contracted: false },
+  { text: '{} רשמתי אותך לפגישה מחר בשעה 14:00', family: 'MEETING', locale: 'he', language: 'he', voice: 'ACTIVE', tense: 'SIMPLE', person: 'FIRST_SINGULAR', contracted: false },
+  { text: '{} רשמנו אותך לפגישה מחר בשעה 14:00', family: 'MEETING', locale: 'he', language: 'he', voice: 'ACTIVE', tense: 'SIMPLE', person: 'FIRST_PLURAL', contracted: false },
+  { text: '{} שינינו לך את הפגישה ליום חמישי', family: 'RESCHEDULE', locale: 'he', language: 'he', voice: 'ACTIVE', tense: 'SIMPLE', person: 'FIRST_PLURAL', contracted: false },
+  { text: '{} סידרנו לך הכל', family: 'ANY', locale: 'he', language: 'he', voice: 'ACTIVE', tense: 'SIMPLE', person: 'FIRST_PLURAL', contracted: false },
+  { text: '{} סגרתי לך את הפגישה למחר בשעה 14:00', family: 'ANY', locale: 'he', language: 'he', voice: 'ACTIVE', tense: 'SIMPLE', person: 'FIRST_SINGULAR', contracted: false },
+  { text: '{} סגרנו לך את הפגישה למחר בשעה 14:00', family: 'ANY', locale: 'he', language: 'he', voice: 'ACTIVE', tense: 'SIMPLE', person: 'FIRST_PLURAL', contracted: false },
 ];
 
 /**
@@ -4254,6 +4307,35 @@ export const DOCUMENTED_OVERREACH: readonly DocumentedOverreach[] = [
       'honest second sentences - that the delivered detector flags and the pre-§ 19 detector does not. Neither ' +
       'sentence on its own is flagged, and `I have checked and confirmed your details.` is asserted clean in ' +
       'MUST_NOT_FLAG.',
+  },
+  {
+    // FOUND BY THE § 21 PRECISION SWEEP, AND IT PREDATES § 21. Recorded here rather
+    // than left out, because the honest statement of what § 21 costs is "it makes
+    // the contracted spelling behave exactly like the spelled-out one" - and that
+    // is a benefit where the spelled-out one is right and a cost where it is
+    // already wrong. This is the one sentence in the sweep where it is already
+    // wrong, so § 21 propagates a pre-existing over-detection to a second spelling
+    // rather than creating a new one. Both spellings are asserted here so a later
+    // fix has to close both.
+    name: 'a subordinate clause introduced by a word no locale declares - the shape § 21 inherits',
+    text: 'I need a time from you before your meeting is in the diary.',
+    cause:
+      '`before` is not in `conditionalMarkers`, `frameBlockers` or `clauseBreakers` in `lexicon/en.ts`, so ' +
+      'nothing tells the detector that `your meeting is in the diary` is the UNREALISED condition of the ' +
+      'sentence rather than its assertion, and `is in the diary` fires. The PRE-§ 21 detector flags this ' +
+      'sentence identically, which is what makes it a pre-existing cost rather than a new one - and the ' +
+      'contracted spelling `before your meeting\'s in the diary` was a MISS before § 21 and is flagged now, ' +
+      'which is § 21 doing exactly what it says: making the two spellings agree. Accepted rather than fixed: ' +
+      'adding `before` to `conditionalMarkers` widens suppression, which is one of the two directions in this ' +
+      'design that costs a LEAK, and `Once your meeting is booked I will let you know.` already covers the ' +
+      'conditional shape a model actually writes.',
+    consequence:
+      'One wasted provider round trip on a truthful sentence, and a WITHHELD turn if the model writes it ' +
+      'three times. Measured cost IN CONTEXT: across 3,010 honest rows - the fourteen controls independent QA ' +
+      're-verified, MUST_NOT_FLAG, HONEST_PRECISION_MATRIX, GOVERNED_NEGATION_BASES, the clean half of ' +
+      'SUPPRESSION_MATRIX, both control tables and a 448-row generated apostrophe sweep - the delivered ' +
+      'detector flags exactly as many rows as the pre-§ 21 detector: ZERO. This sentence is outside all of ' +
+      'them, and it is the only shape the § 21 sweep found in either detector.',
   },
 ];
 

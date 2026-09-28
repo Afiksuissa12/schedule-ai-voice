@@ -227,11 +227,13 @@ import {
 } from './lexicon/index.js';
 import {
   bridgeSegments,
+  expandCopulaClitics,
   flattenLayout,
   matchLongestForm,
   readSentences,
   type ClaimSentence,
   type ClaimToken,
+  type CopulaClitic,
   type FrameGapAllowance,
 } from './text.js';
 
@@ -340,7 +342,13 @@ export function detectMaterialClaims(text: string, options: DetectClaimsOptions 
   // reverse. Both are shapes the eval corpus actually contains.
   const reach = suppressionReach(claimLexicons);
 
-  const context: DetectionContext = { claimLexicons, schedulingLexicons, gap, reach };
+  // WHICH APOSTROPHE CONTRACTIONS FUSE A COPULA ONTO THE WORD IN FRONT OF THEM, read
+  // from every registered locale at once for the third time and the same reason: a
+  // model writing `הפגישה's booked` is code-switching, not changing language, and a
+  // per-locale view cannot read a sentence that does both.
+  const clitics = copulaClitics(claimLexicons);
+
+  const context: DetectionContext = { claimLexicons, schedulingLexicons, gap, reach, clitics };
 
   // VIEW 1: THE TEXT AS THE MODEL WROTE IT, segmented exactly as it always was.
   const out = claimsInView(text, context);
@@ -397,13 +405,106 @@ function claimIdentity(claim: DetectedClaim): string {
   ].join('|');
 }
 
+/**
+ * The copula clitics of one set of lexicons - computed once per array.
+ *
+ * Keyed by array IDENTITY, exactly as `FRAME_GAP_ALLOWANCES` and `SUPPRESSION_REACHES`
+ * are, and for the same reason.
+ */
+const COPULA_CLITICS = new WeakMap<readonly ClaimLexicon[], readonly CopulaClitic[]>();
+
+function copulaClitics(lexicons: readonly ClaimLexicon[]): readonly CopulaClitic[] {
+  const cached = COPULA_CLITICS.get(lexicons);
+  if (cached !== undefined) return cached;
+
+  // DEDUPED ON THE SUFFIX, because two locales that share a writing system share its
+  // contractions, and reading the same sentence twice the same way would cost a pass
+  // per locale for nothing. The copulas of a repeated suffix are merged in declaration
+  // order rather than one locale's list silently winning.
+  const bySuffix = new Map<string, string[]>();
+  for (const lexicon of lexicons) {
+    for (const entry of lexicon.copulaClitics) {
+      const copulas = bySuffix.get(entry.suffix);
+      if (copulas === undefined) bySuffix.set(entry.suffix, [...entry.copulas]);
+      else for (const copula of entry.copulas) if (!copulas.includes(copula)) copulas.push(copula);
+    }
+  }
+
+  const clitics: CopulaClitic[] = [];
+  for (const [suffix, copulas] of bySuffix) clitics.push({ suffix, copulas });
+  COPULA_CLITICS.set(lexicons, clitics);
+  return clitics;
+}
+
+/** One way of reading a span of text, and where its cut is. */
+interface Reading {
+  readonly sentence: ClaimSentence;
+  /** `null` on a first pass, the bridged boundary on a bridged one. */
+  readonly crossing: number | null;
+}
+
+/**
+ * The base reading, then every clitic reading of the same span, deduped against it.
+ *
+ * THE DIRECTION IS THE WHOLE POINT, and it is the same one `detectMaterialClaims`
+ * argues for the flattened view. The base reading runs FIRST and its output is kept
+ * entire, so nothing this detector already flagged can stop being flagged by adding a
+ * reading. A reading may only ADD a claim the base did not make, which is why an
+ * apostrophe read as a copula where it was really a possessive costs at most one
+ * regeneration of a true sentence.
+ *
+ * DEDUPED ON WHAT THE CLAIM SAYS, by `claimIdentity`, for the reason that function
+ * gives: a frame in one reading and a bare participle beside its object in another are
+ * the same assertion reached twice, and reporting it twice would tell a reader the
+ * model made two claims.
+ *
+ * SCOPED TO ONE SPAN. Two sentences that happen to assert the identical thing are two
+ * claims and both are reported, exactly as they were before this existed.
+ */
+function collectReadings(
+  base: Reading,
+  clitic: readonly Reading[],
+  context: DetectionContext,
+  out: DetectedClaim[],
+): void {
+  const start = out.length;
+  collectClaims(base.sentence, base.crossing, context, out);
+  if (clitic.length === 0) return;
+
+  const seen = new Set<string>();
+  for (let index = start; index < out.length; index += 1) seen.add(claimIdentity(out[index] as DetectedClaim));
+
+  const found: DetectedClaim[] = [];
+  for (const reading of clitic) {
+    found.length = 0;
+    collectClaims(reading.sentence, reading.crossing, context, found);
+    for (const claim of found) {
+      const identity = claimIdentity(claim);
+      if (seen.has(identity)) continue;
+      seen.add(identity);
+      out.push(claim);
+    }
+  }
+}
+
 /** Every claim one VIEW of the text produces: the first pass, then the bridged pass. */
 function claimsInView(text: string, context: DetectionContext): DetectedClaim[] {
   const sentences = readSentences(text);
   const out: DetectedClaim[] = [];
 
+  // THE CLITIC READINGS OF EVERY SEGMENT, READ ONCE. `expandCopulaClitics` returns
+  // nothing at all for a segment that carries no declared clitic, which is the common
+  // case - so on ordinary text this is one `endsWith` per token and no second pass.
+  const readings = sentences.map((sentence) => expandCopulaClitics(sentence, context.clitics));
+
   for (let index = 0; index < sentences.length; index += 1) {
-    collectClaims(sentences[index] as ClaimSentence, null, context, out);
+    const sentence = sentences[index] as ClaimSentence;
+    collectReadings(
+      { sentence, crossing: null },
+      (readings[index] as readonly ClaimSentence[]).map((reading) => ({ sentence: reading, crossing: null })),
+      context,
+      out,
+    );
 
     // § 19: THE BRIDGED PASS. Each adjacent PAIR is read again as one sentence, and
     // only what CROSSES the cut between them is reported - see `bridgeSegments` in
@@ -432,7 +533,23 @@ function claimsInView(text: string, context: DetectionContext): DetectedClaim[] 
     // pair IS the whole context there is.
     if (/\s/u.test(current.terminator)) continue;
     const bridged = bridgeSegments(current, next);
-    if (bridged !== null) collectClaims(bridged.sentence, bridged.boundary, context, out);
+    if (bridged === null) continue;
+
+    // THE CLITIC READINGS OF A BRIDGED PAIR ARE BRIDGED PAIRS OF CLITIC READINGS, and
+    // they have to be paired by INDEX: reading `k` of both segments was produced by
+    // the same declared copula, so bridging `k` with `k` reads the whole span one way
+    // rather than two halves two ways. A segment with no clitic in it contributes its
+    // own tokens to every pairing, which is why `expandCopulaClitics` returns the full
+    // grid whenever it returns anything at all.
+    const currentReadings = readings[index] as readonly ClaimSentence[];
+    const nextReadings = readings[index + 1] as readonly ClaimSentence[];
+    const bridgedReadings: Reading[] = [];
+    for (let reading = 0; reading < Math.max(currentReadings.length, nextReadings.length); reading += 1) {
+      const pair = bridgeSegments(currentReadings[reading] ?? current, nextReadings[reading] ?? next);
+      if (pair !== null) bridgedReadings.push({ sentence: pair.sentence, crossing: pair.boundary });
+    }
+
+    collectReadings({ sentence: bridged.sentence, crossing: bridged.boundary }, bridgedReadings, context, out);
   }
 
   return out;
@@ -453,6 +570,8 @@ interface DetectionContext {
   readonly schedulingLexicons: readonly LocaleLexicon[];
   readonly gap: FrameGapAllowance;
   readonly reach: SuppressionReach;
+  /** § 21: the apostrophe contractions a token may be read through. */
+  readonly clitics: readonly CopulaClitic[];
 }
 
 /**

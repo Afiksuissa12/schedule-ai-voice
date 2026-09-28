@@ -220,6 +220,140 @@ export interface SuppressionCarrierEntry {
   readonly role?: SuppressionCarrierRole;
 }
 
+/**
+ * A written contraction that fuses a COPULA or an AUXILIARY onto the word before it.
+ *
+ * WHY THIS FIELD EXISTS - THE EIGHTH FAIL-OPEN DEFECT, AND IT IS THE FIRST ONE
+ * ABOUT TOKENISATION
+ * ---------------------------------------------------------------------------
+ * `../text.ts` keeps an apostrophe INSIDE a token on purpose, so `you're` and
+ * `o'clock` stay whole. The consequence nobody followed through is that a copula
+ * fused to a NOUN subject is inside the noun's token too:
+ *
+ *     Your meeting is booked for Thursday at 2pm.       DETECTED  (the A/B control)
+ *     Your meeting's booked for Thursday at 2pm.        RELEASED, persisted
+ *     Your appointment's confirmed for Thursday at 2pm. RELEASED, persisted
+ *     The meeting's been booked for Thursday at 2pm.    RELEASED, persisted
+ *     Your callback's arranged for 3pm tomorrow.        RELEASED, persisted
+ *
+ * Independent QA drove all four through the real `AgentTurnService`, the real
+ * `ToolDispatcher` and real SQLite: every one reached the caller with
+ * `outcome=NO_MATERIAL_CLAIM`, was persisted as a spoken AGENT turn, and left zero
+ * domain rows behind it. The control was blocked in the same run.
+ *
+ * BOTH routes to the claim fail on the same token. The FRAME route, because
+ * `is booked` needs an `is` token and the copula is fused into `meeting's`. And the
+ * bare-participle fallback (§ 16.3b), which exists precisely to catch a participle
+ * whose frame was defeated, because `domainObjects` declares `meeting` and the token
+ * says `meeting's`.
+ *
+ * `en.ts` had ALREADY reasoned about exactly this tokenisation: `that's`, `it's` and
+ * `you're` are listed there as whole completion forms, with the argument written
+ * beside them. It was applied only to PRONOUN subjects. A noun subject is the
+ * commonest third-person spelling a model writes.
+ *
+ * WHY THIS IS A CLITIC AND NOT THREE MORE NOUNS
+ * ---------------------------------------------------------------------------
+ * Listing `meeting's`, `appointment's` and `callback's` would be the § 16.6 pattern
+ * for the eighth time - an enumeration exactly as wide as its author's imagination,
+ * with the next noun leaking. The apostrophe clitic is a property of the WRITING
+ * SYSTEM and not of the vocabulary, so it is declared once here and the engine reads
+ * a token that carries it BOTH as itself and as its stem plus the copula. Nothing
+ * downstream learns a noun list.
+ *
+ * THE INCOMPLETENESS OF THIS LIST IS ON THE FAIL-OPEN SIDE, which is why it is two
+ * entries long and about morphology rather than about words. A clitic nobody declares
+ * is a miss; a copula nobody declares is a miss. Both are checkable by asking what
+ * apostrophe contractions the language has, which is a closed question in a way
+ * "which nouns does a model write" is not.
+ *
+ * Empty is the right answer for a locale that writes no such contraction. Hebrew
+ * declares it empty and means it: Hebrew has no standing copula in the present tense,
+ * so there is nothing for an apostrophe to fuse.
+ */
+export interface CopulaCliticEntry {
+  /** The written suffix, apostrophe included, lower-cased - `'s`. */
+  readonly suffix: string;
+  /**
+   * The whole tokens this suffix may stand for. One extra reading of the sentence
+   * per entry, unioned with the text as written.
+   *
+   * `'s` is `is` and `has` and a possessive and `let us`, and no rule can tell them
+   * apart without a parser this gate does not have. So both verbal readings are
+   * declared, the possessive needs no entry because reading it as a copula produces
+   * no completion frame, and the residue is resolved in the fail-safe direction: an
+   * extra reading may only ADD suspicion, so a wrong one costs at most one
+   * regeneration of a true sentence and can never release a false one.
+   */
+  readonly copulas: readonly string[];
+}
+
+/**
+ * How this locale spells the FIRST PERSON SINGULAR and PLURAL of the same verb.
+ *
+ * WHY THIS FIELD EXISTS - THE OTHER HALF OF THE EIGHTH FINDING, AND IT IS AN AXIS
+ * AND NOT A WORD LIST
+ * ---------------------------------------------------------------------------
+ * `he.ts` paired singular and plural for two verbs and carried ONE member for four
+ * others, and every missing member was a released, persisted false claim:
+ *
+ *     ביטלנו את הפגישה שלך.                    RELEASED, persisted (ביטלתי was listed)
+ *     שלחנו לך אישור במייל.                    RELEASED, persisted (שלחתי was listed)
+ *     רשמנו אותך לפגישה מחר בשעה 14:00.        RELEASED, persisted (רשמתי was listed)
+ *     שינינו את הפגישה ליום חמישי בשעה 14:00.  RELEASED, persisted (שיניתי was listed)
+ *     סגרתי לך את הפגישה למחר בשעה 14:00.      RELEASED, persisted (סגרנו was listed)
+ *     ביטלתי את הפגישה שלך.                    the A/B control - blocked, same run
+ *
+ * The last one is the asymmetry in the OTHER direction, which is what shows this is
+ * not "Hebrew needs more plurals": it is that the two numbers were written down
+ * independently, so they drifted. `סידרתי` was added by § 4 for exactly this reason,
+ * one verb over, four QA rounds earlier. Hebrew has no `completionParticiples` - and
+ * says so, deliberately - so there is no second route and a missing member is a total
+ * miss.
+ *
+ * WHAT THIS FIELD IS FOR, AND WHAT IT IS NOT
+ * ---------------------------------------------------------------------------
+ * The FIX is that each locale now GENERATES both numbers from one declaration, so the
+ * two cannot drift: `he.ts` declares `['ביטלתי', 'ביטלנו']` as a pair and crosses it
+ * into `completionMarkers`, exactly as `en.ts` crosses its subject prefixes across its
+ * verbs. Generation makes drift impossible rather than merely detectable, which is why
+ * it is the mechanism and this field is not.
+ *
+ * What this field adds is the PROOF that nothing escaped the generator. It declares
+ * how the language marks the person/number axis - a suffix or a prefix, and its two
+ * spellings - so a test can walk every completion form the locale declares, ask which
+ * ones are first person, and require the counterpart to be declared too, in the same
+ * family and the same mode. A hand-written entry that slips past the generator then
+ * fails a test instead of reaching a caller.
+ *
+ * THE FAIL-SAFE DIRECTION FOR THIS FIELD IS "REQUIRE THE COUNTERPART". A marker
+ * missing from a locale means the test asks for nothing and drift goes unnoticed; a
+ * marker declared too widely means the test asks for a counterpart that should not
+ * exist, which FAILS LOUDLY and is corrected in a minute. So a locale declares every
+ * marker it can, and `notFirstPerson` - the escape hatch - carries a reason per entry
+ * and is the one part of this field that has to be audited.
+ */
+export interface FirstPersonNumberMarker {
+  /** Where the person/number inflection sits in the written form. */
+  readonly attaches: 'PREFIX' | 'SUFFIX';
+  /** How the first-person SINGULAR of a verb is spelled at that position. */
+  readonly singular: string;
+  /** How the first-person PLURAL of the SAME verb is spelled at that position. */
+  readonly plural: string;
+  /**
+   * Forms this marker must NOT be read as first person, each with its reason
+   * recorded beside it where the locale declares it.
+   *
+   * Hebrew needs this and English does not: the nif'al and pu'al passives are
+   * spelled with the same `נ` and `א` that mark the first-person future, so
+   * `נקבעה` ("was scheduled") is indistinguishable by prefix from a first-person
+   * plural. An entry here is a place the axis test stops looking, so each one is a
+   * small fail-open hole in the PROOF - never in the detector - and the list is
+   * kept to the forms whose morphology genuinely collides.
+   */
+  readonly notFirstPerson?: readonly string[];
+}
+
 /** A month name, so `5 March` can be compared against a resolved instant. */
 export interface MonthEntry {
   readonly forms: readonly string[];
@@ -335,6 +469,35 @@ export interface ClaimLexicon {
    * has an identifier to hand over or it does not.
    */
   readonly identifierMarkers: readonly string[];
+  /**
+   * Apostrophe contractions that fuse a copula or an auxiliary onto the word in
+   * front of it, so a token carrying one is read both ways.
+   *
+   * `CopulaCliticEntry` carries the whole argument, including the four wordings that
+   * were released and persisted because `Your meeting's booked` tokenises as
+   * `meeting's` and neither the frame route nor the participle route can see a
+   * `meeting` or an `is` in it.
+   *
+   * Pooled across every registered locale by the engine, for the same reason
+   * `domainObjects` are: real traffic writes `הפגישה's booked` and worse, and a
+   * per-locale view cannot read it.
+   */
+  readonly copulaClitics: readonly CopulaCliticEntry[];
+  /**
+   * How this locale spells the first person SINGULAR and PLURAL of one verb, so a
+   * test can prove no completion form has one number and not the other.
+   *
+   * `FirstPersonNumberMarker` carries the argument and the five Hebrew wordings that
+   * leaked because two numbers of the same verb were written down independently.
+   * This is TEST-facing data: the detector never reads it, the locale modules
+   * GENERATE both numbers from a paired declaration, and this field is what proves
+   * nothing escaped the generator.
+   *
+   * Empty means "this locale makes no person/number distinction a test could check",
+   * which is a claim about the language and not a way to opt out - the axis test
+   * asserts that every registered locale declares at least one marker.
+   */
+  readonly firstPersonNumberMarkers: readonly FirstPersonNumberMarker[];
   /**
    * Tokens that reverse the sense of a completion form THEY GOVERN.
    *

@@ -773,6 +773,159 @@ function splitForm(form: string): readonly string[] {
   return split;
 }
 
+/**
+ * A written contraction that fuses a COPULA or an AUXILIARY onto the word before it.
+ *
+ * WHY THIS EXISTS - THE EIGHTH FAIL-OPEN DEFECT, AND IT IS A TOKENISATION FACT
+ * ---------------------------------------------------------------------------
+ * `TOKEN_INNER_CHARACTERS` keeps an apostrophe INSIDE a token, deliberately, so that
+ * `you're`, `i've` and `o'clock` survive as one word each. That decision has a
+ * consequence nobody followed through: a copula fused to a NOUN subject is inside
+ * the noun's token too.
+ *
+ *     Your meeting is booked for Thursday at 2pm.    your | meeting | is | booked | ...
+ *     Your meeting's booked for Thursday at 2pm.     your | meeting's | booked | ...
+ *
+ * The second one was RELEASED to a caller and PERSISTED as a spoken agent turn while
+ * the first was blocked in the same run. BOTH routes to the claim fail on the same
+ * token: the FRAME route, because `is booked` needs an `is` token and the copula is
+ * inside `meeting's`; and the bare-participle fallback (§ 16.3b), which exists
+ * precisely to catch a participle whose frame was defeated, because
+ * `domainObjectMatches` looks for the declared form `meeting` and the token says
+ * `meeting's`. `appointment's`, `callback's` and every other noun behave identically.
+ *
+ * `lexicon/en.ts` had ALREADY reasoned about this tokenisation - `that's`, `it's` and
+ * `you're` are listed there as whole forms with that argument written beside them -
+ * but only for PRONOUN subjects. A noun subject is the commonest third-person
+ * spelling a model writes, and the same argument was never applied to it.
+ *
+ * WHY THIS IS NOT A LIST OF NOUNS
+ * ---------------------------------------------------------------------------
+ * Adding `meeting's`, `appointment's` and `callback's` as three more strings is the
+ * § 16.6 pattern for the eighth time: the coverage would be exactly as wide as the
+ * nouns somebody typed, and the next noun leaks. The clitic is a property of the
+ * WRITING SYSTEM, not of the vocabulary, so it is declared once per locale - the
+ * suffix, and the copulas it may stand for - and the engine reads a token carrying it
+ * BOTH as itself and as its stem plus that copula. No rule downstream is taught a
+ * noun list; `domainObjectMatches`, the frame route and the participle fallback all
+ * simply see the stem and the copula as separate tokens.
+ *
+ * WHY IT IS A SECOND READING AND NOT A REWRITE
+ * ---------------------------------------------------------------------------
+ * `'s` is genuinely ambiguous - `is`, `has`, the possessive, and `let's`. Choosing one
+ * would be a guess this module cannot make. So the expansion is an extra VIEW, unioned
+ * with the text as written, exactly as `flattenLayout` is: the original tokens are read
+ * first and entire, and a reading may only ADD a claim. Three consequences follow, and
+ * all three are the direction the fail-safe rule asks for:
+ *
+ *  - the forms `en.ts` declares as whole tokens on purpose - `it's`, `that's`,
+ *    `you're`, `i've`, `o'clock` - still match in the view where they are whole, so
+ *    none of them can be regressed by being read a second way, and none of them needs
+ *    to be named in an exclusion list that would then be one more enumeration to keep
+ *    complete;
+ *  - a supported claim still passes BYTE-IDENTICAL, because the gate withholds or
+ *    releases and never edits;
+ *  - a possessive read as a copula can only over-detect, which costs at most one
+ *    regeneration.
+ */
+export interface CopulaClitic {
+  /** The written suffix, apostrophe included, lower-cased: `'s`. */
+  readonly suffix: string;
+  /**
+   * The whole tokens this suffix may stand for, one reading each.
+   *
+   * ORDERED, and the order is part of the data: the readings this produces are
+   * positional, so the same index means the same copula for every sentence in a
+   * turn - which is what lets the bridged pass pair a reading of one segment with
+   * the matching reading of the next.
+   */
+  readonly copulas: readonly string[];
+}
+
+const CLITIC_STEM_HAS_A_LETTER = /\p{L}/u;
+const CLITIC_STEM_HAS_A_DIGIT = /\p{N}/u;
+
+/**
+ * The stem of `text` when it carries `suffix`, or `null`.
+ *
+ * A STEM IS A WORD: AT LEAST ONE LETTER, AND NO DIGIT. That is the identifier guard,
+ * and it is stated as a property rather than as a copy of the identifier rules. Every
+ * shape `detector.ts` recognises as an identifier - `CODE_LIKE`, `PREFIXED_CODE`, and
+ * the three marker-adjacent shapes - requires a DIGIT, and `15:00`, `ב-15:00`, `2pm`
+ * and `483921` all carry one too. So refusing a stem with a digit in it excludes every
+ * one of them structurally, without this module holding the identifier table and
+ * without the two having to be kept in step.
+ *
+ * It does NOT exclude a hyphenated word, and that is deliberate: `your follow-up's
+ * arranged for 3pm` is the same claim as `your callback's arranged for 3pm`, and a
+ * guard that required unbroken letters would have made the rule exactly as wide as
+ * the nouns that happen to be spelled without a hyphen - which is the enumeration
+ * this whole design is trying not to repeat. `CUID_LIKE` is the one identifier shape
+ * with no digit in it, and it is a 21-character run starting with `c`; reading one as
+ * a stem plus a copula can only ADD an identifier claim, which is the fail-safe
+ * direction.
+ */
+function cliticStem(text: string, suffix: string): string | null {
+  if (!text.endsWith(suffix)) return null;
+  const stem = text.slice(0, text.length - suffix.length);
+  if (stem.length === 0) return null;
+  if (!CLITIC_STEM_HAS_A_LETTER.test(stem)) return null;
+  return CLITIC_STEM_HAS_A_DIGIT.test(stem) ? null : stem;
+}
+
+/**
+ * The sentence read again with every declared clitic expanded - one reading per copula.
+ *
+ * Returns `[]` when no token in the sentence carries a declared clitic, which is the
+ * common case and the reason this costs nothing on ordinary text. When one DOES, the
+ * full grid is returned - one reading per `(clitic, copula)` pair, in declaration
+ * order, including the pairs that changed nothing - so that reading `k` of one
+ * sentence and reading `k` of the next were produced by the same copula and can be
+ * bridged against each other.
+ *
+ * `raw`, `index`, `interrogative` and `terminator` are carried over UNCHANGED: the
+ * audit excerpt must stay the bytes the model wrote, and a reading is a way of reading
+ * those bytes rather than a different text. The inserted copula takes the offset of
+ * the apostrophe it stands for, and both halves keep the original token's CLAUSE, so
+ * every clause-scoped rule behaves as it would have on the spelled-out sentence.
+ */
+export function expandCopulaClitics(
+  sentence: ClaimSentence,
+  clitics: readonly CopulaClitic[],
+): readonly ClaimSentence[] {
+  if (clitics.length === 0) return [];
+
+  let carries = false;
+  for (const clitic of clitics) {
+    for (const token of sentence.tokens) {
+      if (cliticStem(token.text, clitic.suffix) !== null) {
+        carries = true;
+        break;
+      }
+    }
+    if (carries) break;
+  }
+  if (!carries) return [];
+
+  const readings: ClaimSentence[] = [];
+  for (const clitic of clitics) {
+    for (const copula of clitic.copulas) {
+      const tokens: ClaimToken[] = [];
+      for (const token of sentence.tokens) {
+        const stem = cliticStem(token.text, clitic.suffix);
+        if (stem === null) {
+          tokens.push(token);
+          continue;
+        }
+        tokens.push({ text: stem, offset: token.offset, clause: token.clause });
+        tokens.push({ text: copula, offset: token.offset + stem.length, clause: token.clause });
+      }
+      readings.push({ ...sentence, tokens });
+    }
+  }
+  return readings;
+}
+
 /** True when any of `forms` matches anywhere in `tokens`. */
 export function containsForm(tokens: readonly ClaimToken[], forms: readonly string[]): string | null {
   for (let position = 0; position < tokens.length; position += 1) {

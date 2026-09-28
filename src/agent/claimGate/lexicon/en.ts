@@ -116,24 +116,77 @@ import type { ClaimLexicon } from './types.js';
  * asserts nothing and must not become `i have confirmed`. So the four
  * `gone ahead and` spellings stay written out: they are the case where the general
  * rule correctly declines, not the case it was hiding.
+ *
+ * THE SINGULAR AND THE PLURAL ARE NOW ADJACENT ROWS, AND § 21 IS WHY. Every entry
+ * here is written as a `i`/`we` pair, because the pair is the unit that cannot be
+ * allowed to drift: `i've gone ahead and` was here and `we've gone ahead and` was
+ * not, which is the same shape of gap that leaked five Hebrew wordings (see
+ * `he.ts`). `firstPersonNumberMarkers` below is what makes a future omission fail a
+ * test rather than reach a caller.
  */
 const FIRST_PERSON_PREFIXES: readonly string[] = [
   'i',
   'we',
   "i've",
-  'i have',
   "we've",
+  'i have',
   'we have',
   'i went ahead and',
   'we went ahead and',
   "i've gone ahead and",
+  "we've gone ahead and",
   'i have gone ahead and',
+  'we have gone ahead and',
 ];
 
 /** Every prefix crossed with every verb, in one flat list of forms. */
 function firstPersonFrames(verbs: readonly string[]): readonly string[] {
   return FIRST_PERSON_PREFIXES.flatMap((prefix) => verbs.map((verb) => `${prefix} ${verb}`));
 }
+
+/**
+ * The FUTURE subjects, as a singular/plural pair - `I'll call you`, `we'll call you`.
+ *
+ * WHY THESE ARE GENERATED NOW AND WERE HAND-LISTED BEFORE
+ * ---------------------------------------------------------------------------
+ * The COMMITTED families were the one part of this file that was still typed out
+ * verb by verb, and they had drifted exactly the way § 21's Hebrew finding drifted:
+ * `we'll call you` and `we will call you` were listed, `we'll ring you` and every
+ * other plural of the same promise were not, and `we'll email you` was nowhere at
+ * all. A contact told "we will call you at 3pm" arranges their afternoon around it
+ * in precisely the way the brief says `will call` is material for.
+ *
+ * Nothing here has an intention reading to protect: a first-person future with an
+ * explicit object IS the commitment, which is the same argument § 14.1 makes for the
+ * preterite.
+ */
+const FUTURE_FIRST_PERSON_PREFIXES: readonly string[] = ["i'll", "we'll", 'i will', 'we will'];
+
+function futureFirstPersonFrames(predicates: readonly string[]): readonly string[] {
+  return FUTURE_FIRST_PERSON_PREFIXES.flatMap((prefix) =>
+    predicates.map((predicate) => `${prefix} ${predicate}`),
+  );
+}
+
+/** What a first-person future CALLBACK promise is a promise to do. */
+const CALLBACK_PROMISES: readonly string[] = [
+  'call you',
+  'call',
+  'ring you',
+  'ring',
+  'give you a ring',
+  'phone you',
+];
+
+/** The same, for the message families nothing in this system can send. */
+const MESSAGE_PROMISES: readonly string[] = [
+  'send you an email',
+  'send you a confirmation',
+  'send a confirmation',
+  'email you',
+  'text you',
+  'message you',
+];
 
 /**
  * The past-tense verbs, grouped by the family the VERB commits to.
@@ -351,20 +404,11 @@ export const EN_CLAIM_LEXICON: ClaimLexicon = {
     },
     {
       forms: [
-        "i'll call you",
-        'i will call you',
-        "i'll call",
-        'i will call',
-        "we'll call you",
-        'we will call you',
-        "i'll ring you",
-        'i will ring you',
-        "i'll ring",
-        'i will ring',
-        "i'll give you a ring",
-        'i will give you a ring',
-        "i'll phone you",
-        'i will phone you',
+        // Generated across BOTH numbers - see `FUTURE_FIRST_PERSON_PREFIXES`. Half of
+        // these were hand-listed and the plural half of most of them was missing.
+        ...futureFirstPersonFrames(CALLBACK_PROMISES),
+        // Not first person, so not part of that cross: these are what the CONTACT is
+        // told to expect, with no subject to inflect.
         'expect a call',
         'expect our call',
         'can expect a call',
@@ -391,20 +435,7 @@ export const EN_CLAIM_LEXICON: ClaimLexicon = {
       mode: 'COMPLETED',
     },
     {
-      forms: [
-        "i'll send you an email",
-        'i will send you an email',
-        "i'll send you a confirmation",
-        'i will send you a confirmation',
-        "i'll send a confirmation",
-        'i will send a confirmation',
-        "i'll email you",
-        'i will email you',
-        "i'll text you",
-        'i will text you',
-        "i'll message you",
-        'i will message you',
-      ],
+      forms: futureFirstPersonFrames(MESSAGE_PROMISES),
       family: 'MESSAGE',
       mode: 'COMMITTED',
     },
@@ -522,6 +553,40 @@ export const EN_CLAIM_LEXICON: ClaimLexicon = {
     { forms: ['callback', 'callbacks', 'call back', 'follow-up', 'followup'], family: 'CALLBACK' },
     { forms: ['email', 'e-mail', 'message', 'text'], family: 'MESSAGE' },
     { forms: ['reminder', 'note'], family: 'RECORD' },
+  ],
+
+  // THE APOSTROPHE CLITIC, AND IT IS THE § 21 FIX. `types.ts` (`CopulaCliticEntry`)
+  // carries the whole argument. What belongs here is the English `'s` and nothing
+  // else, for a reason worth stating: `'re`, `'ve`, `'ll`, `'d` and `n't` attach only
+  // to a PRONOUN or to another auxiliary, and every pronoun that takes one is already
+  // a whole declared form in this file (`you're`, `i've`, `i'll`) precisely because
+  // `text.ts` keeps the apostrophe inside the token. `'s` is the one that attaches to
+  // an ARBITRARY NOUN - `your meeting's`, `your appointment's`, `your callback's` -
+  // which is what made it, and only it, an open class this lexicon could not cover.
+  //
+  // `is` and `has` are both declared because both leaked: `Your meeting's booked` is
+  // `is` and `The meeting's been booked` is `has`. The possessive reading needs no
+  // entry - read as a copula it simply produces no completion frame - and `let's`
+  // needs none either, for the same reason plus `frameBlockers`, which hold
+  // `Let's get your meeting booked for Thursday.` clean in every reading.
+  copulaClitics: [{ suffix: "'s", copulas: ['is', 'has'] }],
+
+  // HOW ENGLISH MARKS FIRST PERSON SINGULAR AGAINST PLURAL: a standing subject
+  // pronoun in front of the verb, in the five spellings this lexicon's frames use.
+  // `types.ts` (`FirstPersonNumberMarker`) carries the argument - this is TEST data,
+  // and the mechanism that makes drift impossible is that `FIRST_PERSON_PREFIXES` and
+  // `FUTURE_FIRST_PERSON_PREFIXES` carry both numbers and are CROSSED with the verbs.
+  //
+  // The trailing space is load-bearing: without it `i ` would match `is booked` and
+  // `it's confirmed`, and the axis test would demand a `we` counterpart for a passive.
+  // English needs no `notFirstPerson` escape hatch, because no third-person form in
+  // this file begins with a first-person pronoun followed by a space.
+  firstPersonNumberMarkers: [
+    { attaches: 'PREFIX', singular: 'i ', plural: 'we ' },
+    { attaches: 'PREFIX', singular: "i've ", plural: "we've " },
+    { attaches: 'PREFIX', singular: 'i have ', plural: 'we have ' },
+    { attaches: 'PREFIX', singular: "i'll ", plural: "we'll " },
+    { attaches: 'PREFIX', singular: 'i will ', plural: 'we will ' },
   ],
 
   identifierMarkers: [
