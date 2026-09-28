@@ -25,8 +25,8 @@ import {
 } from '../../src/agent/claimGate/detector.js';
 import type { ClaimLexicon } from '../../src/agent/claimGate/lexicon/index.js';
 
-const familiesIn = (text: string): string[] =>
-  detectMaterialClaims(text)
+const familiesIn = (text: string, lexicons?: readonly ClaimLexicon[]): string[] =>
+  detectMaterialClaims(text, lexicons === undefined ? {} : { lexicons })
     .filter((claim) => claim.kind === 'EFFECT_ASSERTED')
     .map((claim) => claim.family);
 
@@ -268,6 +268,12 @@ describe('the detector holds no language-specific literal', () => {
     domainObjects: [{ forms: ['vorpen'], family: 'ANY' }],
     identifierMarkers: ['snerk kod'],
     negators: ['nix'],
+    // What a `nix` or an `iffen` may reach ACROSS. `vorp` is this locale's `the`
+    // used as a bare subject, so `Iffen vorp grobbled` is a plan; `snerk` is this
+    // locale's word for a worry and is deliberately NOT here, which is what makes
+    // `Nix snerk vorp grobbled` - the synthetic form of `אין בעיה הפגישה נקבעה` -
+    // a detected claim. Nothing in `detector.ts` has heard of either word.
+    suppressionCarriers: ['vorp'],
     conditionalMarkers: ['iffen'],
     clauseBreakers: ['ond'],
     frameBlockers: ['kanna'],
@@ -341,5 +347,144 @@ describe('the detector holds no language-specific literal', () => {
     expect(familiesIn('Vorp nix zzmarch ond vorp grobbled.')).toEqual([]);
     const claims = detectMaterialClaims('Vorp nix zzmarch ond vorp grobbled.', { lexicons: [SYNTHETIC] });
     expect(claims.map((claim) => claim.family)).toEqual(['MEETING']);
+  });
+
+  it('and its own suppressionCarriers, which decide how far that negator REACHES', () => {
+    // THE § 17 RULE, PROVED TO BE DATA. `vorp` is declared a carrier in this
+    // locale and `snerk` is not, so the SAME negator in the SAME clause at the SAME
+    // distance suppresses across one and not across the other. Nothing in
+    // `detector.ts` has heard of either word, and no rule in it knows what a
+    // reassurance is.
+    expect(
+      detectMaterialClaims('Nix vorp grobbled.', { lexicons: [SYNTHETIC] }),
+      'a carrier is crossed, so the negator governs the completion and it is a plan',
+    ).toEqual([]);
+    const claims = detectMaterialClaims('Nix snerk vorp grobbled.', { lexicons: [SYNTHETIC] });
+    expect(
+      claims.map((claim) => claim.family),
+      'an UNDECLARED token ends the reach, so the negator governs `snerk` and the completion is asserted - ' +
+        'which is the synthetic form of `אין בעיה הפגישה נקבעה`',
+    ).toEqual(['MEETING']);
+  });
+
+  it('and bounds that reach in tokens as well, which can only ever ADD a detection', () => {
+    // Five carriers is past `MAX_CARRIERS_A_SUPPRESSOR_MAY_REACH_ACROSS`, so the
+    // negator stops reaching and the completion is detected. The bound is the belt
+    // over the carrier list: its only effect is to make suppression stricter, so it
+    // cannot turn a detection into a miss.
+    expect(familiesIn('Nix vorp vorp vorp vorp grobbled.', [SYNTHETIC])).toEqual([]);
+    expect(familiesIn('Nix vorp vorp vorp vorp vorp grobbled.', [SYNTHETIC])).toEqual(['MEETING']);
+  });
+
+  it('and applies the same reach to that language own BARE PARTICIPLE rule', () => {
+    // One definition of "governs" in the module, not two. `kanna` is this locale's
+    // `can`: adjacent to the participle it silences it, and behind an undeclared
+    // token it does not. Without this, a mood word pooled from ANOTHER locale could
+    // silence a participle it has nothing to do with - which is how a Hebrew
+    // `אין בעיה` silenced an English `meeting booked`.
+    expect(detectMaterialClaims('Vorp kanna grobbelt dez vorpen.', { lexicons: [SYNTHETIC] })).toEqual([]);
+    expect(familiesIn('Vorp kanna snerk grobbelt dez vorpen.', [SYNTHETIC])).toEqual(['MEETING']);
+  });
+});
+
+describe('a negator suppresses only the completion form it GOVERNS', () => {
+  /**
+   * The § 17 defect, on the pure detector.
+   *
+   * Every sentence in the first table was returned to a real caller AND PERSISTED as
+   * a spoken agent turn with an empty ledger - independent QA round 3 drove the first
+   * five through the real `AgentTurnService` against real SQLite. The mechanism was
+   * that suppression asked only WHERE a negator stood and never whether it had
+   * anything to do with the form it silenced, and Hebrew's ordinary reassurances are
+   * built on the two words `lexicon/he.ts` cannot omit from `negators`.
+   *
+   * The control is the same sentence one comma later, which was always caught. That
+   * is the whole finding: for the second time in this gate the verdict depended on a
+   * punctuation mark a 7B model happened to type.
+   */
+  const leaked: readonly (readonly [string, string])[] = [
+    ['אין בעיה הפגישה נקבעה למחר בשעה 14:00.', 'MEETING'],
+    ['אין בעיה קבעתי לך פגישה למחר בשעה 14:00.', 'MEETING'],
+    ['אין דאגה הפגישה נקבעה למחר בשעה 14:00.', 'MEETING'],
+    ['לא נורא הפגישה נקבעה למחר בשעה 14:00.', 'MEETING'],
+    ['אין צורך לדאוג הפגישה נקבעה למחר בשעה 14:00.', 'MEETING'],
+    // Wider than the report, measured on the detector rather than assumed.
+    ['אין שום בעיה הפגישה נקבעה למחר בשעה 14:00.', 'MEETING'],
+    ['אין בעיה הפגישה בוטלה.', 'CANCELLATION'],
+    ['אין בעיה אתקשר אליך מחר בשעה 15:00.', 'CALLBACK'],
+    // Wider than HEBREW, which the finding did not claim: `Don't worry` carries a
+    // DECLARED English negator and leaked too with no comma after it.
+    ["Don't worry your meeting is booked for Thursday at 2pm.", 'MEETING'],
+    ['I cannot take payments your meeting is booked for Thursday at 2pm.', 'MEETING'],
+    ['If that works for you your meeting is booked for Thursday at 2pm.', 'MEETING'],
+    // The cross-locale participle path, which is different code: `blockerStandsBefore`
+    // pools mood tokens from every registered locale.
+    ['אין בעיה meeting booked for Thursday at 2pm.', 'MEETING'],
+  ];
+
+  for (const [text, family] of leaked) {
+    it(`detects the claim behind a reassurance with no punctuation: ${JSON.stringify(text)}`, () => {
+      expect(familiesIn(text)).toContain(family);
+    });
+  }
+
+  it('and the comma control, which was the only spelling that ever worked', () => {
+    expect(familiesIn('אין בעיה, הפגישה נקבעה למחר בשעה 14:00.')).toContain('MEETING');
+  });
+
+  /**
+   * QA-3's five precision controls, which are the reason the fix is a governance rule
+   * and not a deletion from `negators`.
+   *
+   * The obvious way to stop `אין בעיה הפגישה נקבעה` leaking is to drop `לא` and `אין`
+   * from `lexicon/he.ts`. Every one of these sentences would then become a blocked
+   * false claim - and each is what a model must be able to say when nothing is
+   * booked, which is the failure mode that gets a gate switched off.
+   */
+  const governed: readonly string[] = [
+    'הפגישה לא נקבעה עדיין.',
+    'עדיין לא נקבע כלום.',
+    'אין פגישה ביומן.',
+    'לא קבעתי כלום עדיין.',
+    'אין לי אפשרות לשלוח אימייל.',
+  ];
+
+  for (const text of governed) {
+    it(`keeps the truthful negation clean: ${JSON.stringify(text)}`, () => {
+      expect(detectMaterialClaims(text)).toEqual([]);
+    });
+  }
+
+  it('and keeps it clean with a reassurance stacked in front of it', () => {
+    // The direction a governance rule breaks in: the filler must not make a
+    // genuinely governed negation start firing either.
+    expect(detectMaterialClaims('אין בעיה הפגישה לא נקבעה עדיין.')).toEqual([]);
+    expect(detectMaterialClaims("Don't worry nothing is booked yet.")).toEqual([]);
+    expect(detectMaterialClaims('אין צורך לדאוג nothing is booked yet.')).toEqual([]);
+  });
+
+  it('and reaches an identifier MARKER across the verb of giving it is the object of', () => {
+    // A completion form is a PREDICATE and negation is pre-predicate, so the negator
+    // stands next to it. An identifier marker is a NOUN PHRASE in object position, so
+    // the verb the negator really negates stands between them. `lexicon/en.ts` lists
+    // those verbs with that argument, and this is the sentence that needs them.
+    expect(detectMaterialClaims('I cannot give you a confirmation number for that.')).toEqual([]);
+    // And the positive spelling is still a claim, so the reach has not swallowed the
+    // rule it bounds. An identifier marker is `IDENTIFIER_ASSERTED` rather than an
+    // effect, which is why this asserts on the kind.
+    expect(
+      detectMaterialClaims('I can give you a booking reference for that.').map((claim) => claim.kind),
+    ).toContain('IDENTIFIER_ASSERTED');
+  });
+
+  it('and a multi-token conditional marker does not suppress through ONE of its words', () => {
+    // Found by `SUPPRESSION_MATRIX` rather than reported. `would you like` and
+    // `do you want` are multi-token `conditionalMarkers`, and splitting them into
+    // single mood tokens made bare `you` suppress on its own - so a filler that
+    // merely ENDED in `you` silenced the claim behind it.
+    expect(familiesIn('If that works for you meeting booked for Thursday at 2pm.')).toContain('MEETING');
+    // And the phrase itself still suppresses, because `readSuppression` matches whole
+    // forms rather than single tokens.
+    expect(detectMaterialClaims('Would you like me to get your meeting booked for Thursday?')).toEqual([]);
   });
 });

@@ -182,15 +182,96 @@ export interface ClaimLexicon {
    */
   readonly identifierMarkers: readonly string[];
   /**
-   * Tokens that reverse the sense of a completion form in the same CLAUSE.
+   * Tokens that reverse the sense of a completion form THEY GOVERN.
    *
-   * Clause-scoped and precedence-scoped, and `../detector.ts` argues both at
-   * length. `אין דאגה,` is a different CLAUSE from `הפגישה נקבעה בהצלחה`, which
-   * is why the real `aya-expanse:8b` defect is caught with `אין` declared here
-   * and - unlike the first revision of this gate - is caught whether the model
-   * wrote `!` or `,` between the two.
+   * Clause-scoped, precedence-scoped AND governance-scoped, and `../detector.ts`
+   * argues all three at length. `אין דאגה,` is a different CLAUSE from
+   * `הפגישה נקבעה בהצלחה`, which is why the real `aya-expanse:8b` defect is caught
+   * with `אין` declared here and - unlike the first revision of this gate - is
+   * caught whether the model wrote `!` or `,` between the two.
+   *
+   * GOVERNANCE IS THE THIRD NARROWING AND IT WAS THE FOURTH FAIL-OPEN DEFECT.
+   * Clause scope and precedence are not enough, because Hebrew's ordinary
+   * reassurance fillers are BUILT on the two words this list has to contain:
+   * `אין בעיה`, `אין דאגה`, `אין צורך לדאוג`, `לא נורא`. With no punctuation
+   * between the filler and the claim, the negator and the completion land in one
+   * clause and the whole detector fell silent - five wordings reached real callers
+   * and were persisted. `suppressionCarriers` below is what decides whether a
+   * negator standing at or before a form actually GOVERNS it.
    */
   readonly negators: readonly string[];
+  /**
+   * Tokens a negator or a conditional may reach ACROSS on its way to the form it
+   * governs. Anything else ENDS its reach.
+   *
+   * WHY THIS FIELD EXISTS - THE FOURTH FAIL-OPEN DEFECT IN THIS GATE
+   * -------------------------------------------------------------------------
+   * `negators` and `conditionalMarkers` used to suppress every completion form
+   * standing at or after them in the same clause, with no bound and no test of
+   * whether the negation had anything to do with the form. That is fail-OPEN BY
+   * DEFAULT: any filler containing a negator word silences everything after it to
+   * the end of the clause. Independent QA drove five ordinary Hebrew reassurances
+   * through the real turn service and watched all five release and PERSIST a false
+   * booking:
+   *
+   *     אין בעיה הפגישה נקבעה למחר בשעה 14:00.        RELEASED, persisted
+   *     אין בעיה קבעתי לך פגישה למחר בשעה 14:00.      RELEASED, persisted
+   *     אין דאגה הפגישה נקבעה למחר בשעה 14:00.        RELEASED, persisted
+   *     לא נורא הפגישה נקבעה למחר בשעה 14:00.         RELEASED, persisted
+   *     אין צורך לדאוג הפגישה נקבעה למחר בשעה 14:00.  RELEASED, persisted
+   *     אין בעיה, הפגישה נקבעה למחר בשעה 14:00.       the CONTROL - one comma, blocked
+   *
+   * The class was wider than the report: `אין בעיה הפגישה בוטלה.` (CANCELLATION)
+   * and `אין בעיה אתקשר אליך מחר בשעה 15:00.` (CALLBACK) missed too, while the
+   * English analogue `No problem your meeting is booked for Thursday at 2pm.` was
+   * caught - which localises the cause to this locale's negator list rather than to
+   * the engine, because `en.ts` deliberately omits bare `no` for exactly this
+   * reason and Hebrew cannot omit `אין` and `לא`.
+   *
+   * WHY THIS IS A LIST OF WHAT MAY BE CROSSED AND NOT A LIST OF FILLERS
+   * -------------------------------------------------------------------------
+   * The three previous fixes each enumerated the reported strings and the next
+   * finding arrived one phrasing-shape sideways (`docs/MISSION_2D_CLAIM_GATE.md`
+   * § 16.6). Listing the reassurance collocations - `אין בעיה`, `אין דאגה`, ... -
+   * would be the fourth round of that: a filler nobody listed is a LEAK.
+   *
+   * So the enumeration is INVERTED, exactly as `frameBlockers` was. A negator
+   * reaches a form only across tokens named HERE; every other token ends its
+   * reach and the form is DETECTED. A word missing from this list therefore costs
+   * one regeneration of a sentence that was true, and can never cost a released
+   * false claim. That is the direction `../detector.ts`'s fail-safe rule requires,
+   * and it is the only reason an enumeration is acceptable at all here.
+   *
+   * WHAT BELONGS HERE: PRE-PREDICATE MATERIAL, AND NOTHING ELSE
+   * -------------------------------------------------------------------------
+   * A completion form is a PREDICATE, and in both registered languages negation is
+   * pre-predicate. What may legitimately stand between a negator and the predicate
+   * it negates is closed-class: subject and object pronouns, auxiliaries,
+   * prepositions, quantifiers and a handful of light adjectives. That is why this
+   * list is enumerable in a way the reassurance nouns and the adverbs are not - it
+   * is a function-word inventory, not an open class.
+   *
+   * The engine ADDS, from every registered locale and without being asked:
+   * `frameDeterminers` (a possessive or an article is noun-phrase material -
+   * `Once your meeting is booked` has to stay clean), `domainObjects` (the head of
+   * the very noun phrase the predication is about), `negators`,
+   * `conditionalMarkers` (a second negator between the first and the verb is part
+   * of the same negation - `הפגישה עדיין לא נקבעה`) and `frameBlockers` (a modal
+   * or an intention verb IS the pre-predicate slot - `I need to get your meeting
+   * booked`). Declaring any of those again here would be duplication.
+   *
+   * A locale MUST still answer for the rest, which is why the field is required.
+   * The one class that is NOT function words is named where it is declared: the
+   * verbs an identifier MARKER is the object of (`I cannot GIVE you a confirmation
+   * number`), because a marker is a noun phrase rather than a predicate and the
+   * verb the negator really negates stands between the two. `en.ts` lists those
+   * with that argument beside them.
+   *
+   * Empty is NOT a plausible answer for a natural language, and a locale that
+   * declares it empty gets the strictest possible rule: only an ADJACENT negator
+   * suppresses. That is safe, so it is allowed - it simply costs precision.
+   */
+  readonly suppressionCarriers: readonly string[];
   /**
    * Forms that make a completion form CONDITIONAL rather than asserted -
    * `once`, `as soon as`, `shall i`.

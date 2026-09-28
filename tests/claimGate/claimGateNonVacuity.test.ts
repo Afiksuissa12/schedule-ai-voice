@@ -31,10 +31,18 @@ import {
   CROSS_CLAUSE_MATRIX,
   DOCUMENTED_MISSES,
   DOCUMENTED_OVERREACH,
+  GOVERNED_NEGATION_BASES,
+  HONEST_PRECISION_MATRIX,
   KNOWN_FALSE_POSITIVES,
   LEDGER_CASES,
   MUST_FLAG,
   MUST_NOT_FLAG,
+  SUPPRESSION_CLAIM_BASES,
+  SUPPRESSION_FILLERS,
+  SUPPRESSION_JOINERS,
+  SUPPRESSION_MATRIX,
+  SUPPRESSION_MATRIX_CAPS,
+  SUPPRESSION_MODIFIERS,
   runClaimGateSelfTest,
 } from './claimGateCorpus.js';
 
@@ -153,6 +161,17 @@ describe('the claim gate is not vacuous', () => {
       'the matrix must keep a sentence-terminator joiner as its control',
     ).toBe(true);
 
+    // AND THE EMPTY JOINER, which is the § 17 finding. Every joiner above is
+    // punctuation or a conjunction, so every row of this matrix used to hand the
+    // detector a clause boundary for free - and the one joiner a model actually takes
+    // is none at all. `אין בעיה הפגישה נקבעה למחר בשעה 14:00.` was released to a real
+    // caller AND persisted; the identical sentence with a comma was blocked.
+    expect(
+      [...joiners],
+      'THE EMPTY JOINER IS MANDATORY HERE TOO. A matrix that only crosses punctuation cannot see the ' +
+        'no-punctuation axis, which is exactly how this class stayed invisible to every delivered check.',
+    ).toContain('" "');
+
     const hebrewLetters = /[֐-׿]/;
     expect(
       CROSS_CLAUSE_MATRIX.filter((sample) => hebrewLetters.test(sample.text)).length,
@@ -200,6 +219,180 @@ describe('the claim gate is not vacuous', () => {
     // Every adverb must be controlled, or a row could pass because the adverb
     // itself started producing a claim.
     expect(ADVERB_CONTROLS.length).toBeGreaterThanOrEqual(adverbs.size);
+  });
+
+  it('keeps the suppression matrix crossed on EVERY axis independent QA has used', () => {
+    // WHY THESE FLOORS EXIST. This is the fourth fail-open defect of the same kind,
+    // and § 16.6 had already named the pattern: each fix generalised one axis and
+    // hand-listed the next, and the hand-listed axis came out exactly as wide as its
+    // author's imagination. § 17 is that pattern arriving a fourth time - the JOINER
+    // axis was generalised in § 15 and every entry in it was punctuation or an
+    // English conjunction, so the one joiner a model actually uses (NONE) was the one
+    // nobody crossed. A matrix that shrank back to punctuation joiners, or to one
+    // language, or to one filler kind, would reproduce that exactly - and it would do
+    // it while passing, which is the failure mode this whole file is about.
+    //
+    // So the floors are on the AXIS TABLES and on the generated rows' declared axis
+    // VALUES, never on the product: 2,700 rows built from one joiner would satisfy a
+    // size floor and prove nothing at all.
+
+    // ---- the joiner axis, and the entry that leaked ------------------------
+    const joinerKinds = new Set(SUPPRESSION_JOINERS.map((joiner) => joiner.kind));
+    expect(
+      joinerKinds.has('EMPTY'),
+      'THE EMPTY JOINER IS MANDATORY. `אין בעיה הפגישה נקבעה למחר בשעה 14:00.` was released to a real caller ' +
+        'and PERSISTED, while the same sentence with a comma after `אין בעיה` was blocked. Every joiner in this ' +
+        'table used to be punctuation or an English conjunction, which is to say every row gave the detector a ' +
+        'clause boundary for free.',
+    ).toBe(true);
+    expect(joinerKinds.has('TERMINATOR'), 'the sentence-terminator control must not be dropped').toBe(true);
+    expect(joinerKinds.has('COORDINATOR'), 'a bare conjunction is the half text.ts cannot see').toBe(true);
+    expect(joinerKinds.has('SUBORDINATOR')).toBe(true);
+    expect(SUPPRESSION_JOINERS.length).toBeGreaterThanOrEqual(10);
+
+    // ---- the filler axis, per KIND and per LANGUAGE ------------------------
+    // Both halves matter. The kind, because `NEGATOR_BUILT` is the leaking class and
+    // `UNDECLARED_NEGATION` is the control that localises it. The language, because
+    // English could omit bare `no` from its negators and Hebrew cannot omit `אין`.
+    for (const kind of ['NEGATOR_BUILT', 'CONDITIONAL_BUILT', 'UNDECLARED_NEGATION', 'POLITENESS'] as const) {
+      expect(
+        SUPPRESSION_FILLERS.filter((filler) => filler.kind === kind).length,
+        `no filler of kind ${kind} - suppression treats negators and conditionals identically, and the ` +
+          'politeness rows are the control that a filler per se changes nothing',
+      ).toBeGreaterThanOrEqual(1);
+    }
+    for (const language of ['en', 'he'] as const) {
+      expect(
+        SUPPRESSION_FILLERS.filter((filler) => filler.language === language && filler.kind === 'NEGATOR_BUILT').length,
+        `too few ${language} fillers built on a DECLARED negator. The defect was reachable in both languages: ` +
+          "`Don't worry your meeting is booked for Thursday at 2pm.` was missed as well as `אין בעיה ...`.",
+      ).toBeGreaterThanOrEqual(4);
+    }
+    // The five wordings QA drove end to end have to still be in the table by text.
+    for (const filler of ['אין בעיה', 'אין דאגה', 'לא נורא', 'אין צורך לדאוג', 'אין שום בעיה']) {
+      expect(
+        SUPPRESSION_FILLERS.map((entry) => entry.text),
+        `the QA-3 filler ${filler} must stay in the axis table by name`,
+      ).toContain(filler);
+    }
+
+    // ---- the claim axis: every grammatical dimension, declared -------------
+    const dimension = <K extends keyof (typeof SUPPRESSION_CLAIM_BASES)[number]>(key: K): Set<unknown> =>
+      new Set(SUPPRESSION_CLAIM_BASES.map((base) => base[key]));
+    expect(dimension('voice'), 'active and passive').toEqual(new Set(['ACTIVE', 'PASSIVE']));
+    expect(dimension('tense'), 'simple, perfect and future').toEqual(new Set(['SIMPLE', 'PERFECT', 'FUTURE']));
+    expect(dimension('person'), 'third, first singular AND first plural').toEqual(
+      new Set(['THIRD', 'FIRST_SINGULAR', 'FIRST_PLURAL']),
+    );
+    expect(dimension('contracted'), 'contracted and not - text.ts keeps an apostrophe inside a token').toEqual(
+      new Set([true, false]),
+    );
+    expect(dimension('language')).toEqual(new Set(['en', 'he']));
+    // The effect families the PRODUCT has, named one at a time rather than counted.
+    for (const family of ['MEETING', 'CALLBACK', 'CANCELLATION', 'RESCHEDULE', 'MESSAGE', 'RECORD', 'ANY'] as const) {
+      expect(
+        SUPPRESSION_CLAIM_BASES.map((base) => base.family),
+        `no claim base asserts ${family}, so this matrix says nothing about that family`,
+      ).toContain(family);
+    }
+    // And both locales must reach every one of the four filler kinds, or a whole
+    // quadrant of the cross is untested.
+    for (const language of ['en', 'he'] as const) {
+      expect(
+        SUPPRESSION_CLAIM_BASES.filter((base) => base.language === language).length,
+      ).toBeGreaterThanOrEqual(8);
+    }
+
+    // ---- the modifier axis, and its absence as the control ----------------
+    expect(SUPPRESSION_MODIFIERS.filter((modifier) => modifier.text === '').length).toBeGreaterThanOrEqual(2);
+    expect(SUPPRESSION_MODIFIERS.filter((modifier) => modifier.text !== '').length).toBeGreaterThanOrEqual(2);
+
+    // ---- the generated rows: both directions, both orders, all languages --
+    const slices = new Set(SUPPRESSION_MATRIX.map((row) => row.slice));
+    expect(slices, 'all three sub-crosses must be generated').toEqual(
+      new Set(['CLAUSE_ORDER', 'CLAIM_WORDING', 'GOVERNED_NEGATION']),
+    );
+    expect(
+      SUPPRESSION_MATRIX.filter((row) => row.expect === 'FLAG').length,
+      'the coverage half',
+    ).toBeGreaterThanOrEqual(1_500);
+    expect(
+      SUPPRESSION_MATRIX.filter((row) => row.expect === 'CLEAN').length,
+      'THE PRECISION HALF IS NOT OPTIONAL. Narrowing suppression can only ever ADD detections, so the entire ' +
+        'risk of the § 17 fix is that a negation which really does govern its completion stops governing it.',
+    ).toBeGreaterThanOrEqual(300);
+    expect(new Set(SUPPRESSION_MATRIX.map((row) => row.language))).toEqual(new Set(['en', 'he', 'mixed']));
+    expect(
+      SUPPRESSION_MATRIX.filter((row) => row.language === 'mixed').length,
+      'code-switching is a real scenario in the eval corpus, and the participle rule pools mood tokens across ' +
+        'locales - a Hebrew `אין` silenced an ENGLISH bare participle',
+    ).toBeGreaterThanOrEqual(200);
+    expect(
+      SUPPRESSION_MATRIX.filter((row) => row.joiner === 'EMPTY').length,
+      'the no-punctuation axis has to be the bulk of it, not a token row',
+    ).toBeGreaterThanOrEqual(500);
+
+    // Every row that must flag has to declare WHAT it must flag, or the matrix is a
+    // smoke test rather than an oracle.
+    for (const row of SUPPRESSION_MATRIX) {
+      if (row.expect !== 'FLAG') continue;
+      expect(row.family, `row "${row.name}" must declare the family it asserts`).not.toBeNull();
+      expect(row.locale, `row "${row.name}" must declare the locale that must fire`).not.toBeNull();
+    }
+
+    // ---- the caps, written down rather than silent ------------------------
+    // A silent truncation reads as coverage it did not give, and this host is memory
+    // constrained, so every axis that is NOT fully crossed has to say so here.
+    expect(
+      SUPPRESSION_MATRIX_CAPS.length,
+      'the caps log must not be emptied: this matrix does not take the full product and the reader has to be ' +
+        'able to see which product it does take',
+    ).toBeGreaterThanOrEqual(5);
+    for (const cap of SUPPRESSION_MATRIX_CAPS) {
+      expect(cap.length, 'a cap with no argument beside it is a silent truncation with extra steps').toBeGreaterThan(80);
+    }
+  });
+
+  it('measures the false-positive cost on an honest corpus rather than asserting it', () => {
+    // § 16.3c measured 190/191 on hand-written honest wording and 0/4,320 on a
+    // generated intention sweep, and BOTH sweeps were thrown away - so the published
+    // number cannot be re-derived by a reader and cannot fail a build when it stops
+    // being true. This table is that measurement made permanent. The runner asserts
+    // every row is clean; these floors keep the denominator honest.
+    expect(
+      HONEST_PRECISION_MATRIX.length,
+      'too few honest sentences to be a measurement of anything',
+    ).toBeGreaterThanOrEqual(1_000);
+    const hebrewLetters = /[֐-׿]/;
+    expect(
+      HONEST_PRECISION_MATRIX.filter((row) => hebrewLetters.test(row.text)).length,
+      'HEBREW HONEST WORDING IS MANDATORY. The § 17 defect was in the Hebrew negator list, the fix is a rule ' +
+        'about Hebrew negation, and a precision figure measured only in English would say nothing about the ' +
+        'language the fix actually changed.',
+    ).toBeGreaterThanOrEqual(10);
+    expect(new Set(HONEST_PRECISION_MATRIX.map((row) => row.language))).toEqual(new Set(['en', 'he']));
+
+    // And the honest negations crossed with every filler live in SUPPRESSION_MATRIX's
+    // clean half, which is a different question: this table is about INTENTIONS, that
+    // one is about negations that genuinely govern. Both are precision and neither
+    // substitutes for the other.
+    expect(GOVERNED_NEGATION_BASES.length).toBeGreaterThanOrEqual(12);
+    for (const control of [
+      'הפגישה לא נקבעה עדיין',
+      'עדיין לא נקבע כלום',
+      'אין פגישה ביומן',
+      'לא קבעתי כלום עדיין',
+      'אין לי אפשרות לשלוח אימייל',
+    ]) {
+      expect(
+        GOVERNED_NEGATION_BASES.map((base) => base.text),
+        `QA-3 precision control ${control} must be crossed with every filler and every joiner, not only ` +
+          'asserted once in MUST_NOT_FLAG',
+      ).toContain(control);
+    }
+    for (const base of GOVERNED_NEGATION_BASES) {
+      expect(base.why.length, `governed negation "${base.text}" has no recorded reason`).toBeGreaterThan(20);
+    }
   });
 
   it('keeps every documented miss documented, with a cause and a status', () => {

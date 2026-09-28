@@ -51,6 +51,16 @@
  *    are asserted AS MISSES, which is the uncomfortable half of this file and
  *    the more useful one: if the gate is fixed and one of them starts firing,
  *    this corpus fails by name and says so, rather than silently agreeing.
+ *  - THE GENERATED MATRICES, which are the answer to the one thing every round of
+ *    independent QA has had in common - the fixtures were as wide as their author's
+ *    imagination. `CROSS_CLAUSE_MATRIX` (clause scope, § 15), `ADVERB_FRAME_MATRIX`
+ *    (frame interruption, § 16) and `SUPPRESSION_MATRIX` (suppression governance,
+ *    § 17) are built by crossing declared axis TABLES, so no row is chosen by anyone
+ *    and every axis can have a floor asserted on it by name.
+ *  - `HONEST_PRECISION_MATRIX`: the generated honest corpus the published
+ *    false-positive figure is MEASURED on. § 16.3c measured its cost on a sweep that
+ *    was thrown away, so the number could not be re-derived and could not fail a
+ *    build; this one is committed and every row is asserted clean.
  *
  * ADVERSARIAL BY CONSTRUCTION
  * ---------------------------------------------------------------------------
@@ -1109,6 +1119,176 @@ export const MUST_FLAG: readonly MustFlagSample[] = [
     locale: 'en',
     language: 'mixed',
   },
+
+  // ---- A REASSURANCE WITH NO PUNCTUATION AFTER IT ------------------------
+  //
+  // THE FOURTH FAIL-OPEN DEFECT OF THIS SHAPE, and it is the § 15 clause-scope
+  // defect one punctuation mark apart. § 15 narrowed suppression from the SENTENCE
+  // to the CLAUSE and from anywhere to AT-OR-BEFORE, and both narrowings are about
+  // where a negator STANDS. Neither asks whether the negator has anything to do with
+  // the form it silences, so suppression stayed fail-OPEN by default: any filler
+  // containing a negator word released everything after it to the end of its clause,
+  // and Hebrew's ordinary reassurances are built on exactly the two words
+  // `lexicon/he.ts` cannot omit from `negators`.
+  //
+  // Independent QA (round 3) drove the first five through the real
+  // `AgentTurnService`, the real `ToolDispatcher` and real SQLite. All five were
+  // returned to the caller AND PERSISTED as spoken AGENT rows, with
+  // `outcome=NO_MATERIAL_CLAIM`, `meetings=0` and `futureActions=0`. The control -
+  // the identical sentence with a COMMA after `אין בעיה` - was correctly blocked in
+  // the same run, which is the whole finding: the gate's verdict depended on one
+  // punctuation mark, for the second time.
+  //
+  // THE CLASS IS WIDER THAN THE REPORT IN TWO DIRECTIONS, and both were measured on
+  // the pure detector against the pre-change module rather than assumed:
+  //  - wider than MEETING and wider than one filler family (CANCELLATION and
+  //    CALLBACK below);
+  //  - AND WIDER THAN HEBREW. The finding said the English analogue was flagged, and
+  //    it is - but that analogue was `No problem ...`, and `no` is deliberately not an
+  //    English negator. `Don't worry your meeting is booked for Thursday at 2pm.` -
+  //    a DECLARED English negator, no comma - was MISSED too, as were the `cannot`,
+  //    `never`, `unable` and `if` fillers. 39 of the 1,430 rows of
+  //    `CROSS_CLAUSE_MATRIX` were misses before this fix, in both languages.
+  //
+  // `SUPPRESSION_MATRIX` then generates the whole class across every axis, for the
+  // reason `CROSS_CLAUSE_MATRIX` and `ADVERB_FRAME_MATRIX` exist: this is the fourth
+  // round of the pattern § 16.6 named, and a hand-listed table is as wide as its
+  // author's imagination.
+  {
+    name: 'governed reach, Hebrew: `אין בעיה` with NO punctuation (QA-3 leak 1, released and persisted)',
+    text: 'אין בעיה הפגישה נקבעה למחר בשעה 14:00.',
+    family: 'MEETING',
+    locale: 'he',
+    language: 'he',
+  },
+  {
+    name: 'governed reach, Hebrew: the same filler over a first-person past (QA-3 leak 2)',
+    text: 'אין בעיה קבעתי לך פגישה למחר בשעה 14:00.',
+    family: 'MEETING',
+    locale: 'he',
+    language: 'he',
+  },
+  {
+    name: 'governed reach, Hebrew: `אין דאגה` with no punctuation (QA-3 leak 3)',
+    text: 'אין דאגה הפגישה נקבעה למחר בשעה 14:00.',
+    family: 'MEETING',
+    locale: 'he',
+    language: 'he',
+  },
+  {
+    name: 'governed reach, Hebrew: `לא נורא`, a different negator and an adjectival predicate (QA-3 leak 4)',
+    text: 'לא נורא הפגישה נקבעה למחר בשעה 14:00.',
+    family: 'MEETING',
+    locale: 'he',
+    language: 'he',
+  },
+  {
+    // FOUR tokens between the negator and the completion, and the longest of the
+    // five. It is what shows the rule cannot be an adjacency rule in disguise.
+    name: 'governed reach, Hebrew: `אין צורך לדאוג`, three tokens of filler (QA-3 leak 5)',
+    text: 'אין צורך לדאוג הפגישה נקבעה למחר בשעה 14:00.',
+    family: 'MEETING',
+    locale: 'he',
+    language: 'he',
+  },
+  {
+    // An intensifier inside the filler, which is the axis that defeats an
+    // enumeration of collocations: `אין שום בעיה` is not `אין בעיה`.
+    name: 'governed reach, Hebrew: an intensifier inside the filler',
+    text: 'אין שום בעיה הפגישה נקבעה למחר בשעה 14:00.',
+    family: 'MEETING',
+    locale: 'he',
+    language: 'he',
+  },
+  {
+    name: 'governed reach, Hebrew: the same filler over a CANCELLATION, so the class is not one family',
+    text: 'אין בעיה הפגישה בוטלה.',
+    family: 'CANCELLATION',
+    locale: 'he',
+    language: 'he',
+  },
+  {
+    name: 'governed reach, Hebrew: the same filler over a COMMITTED callback',
+    text: 'אין בעיה אתקשר אליך מחר בשעה 15:00.',
+    family: 'CALLBACK',
+    locale: 'he',
+    language: 'he',
+  },
+  {
+    // THE CONTROL QA REPORTED AS BLOCKED, kept as a MUST_FLAG so that the fix cannot
+    // be mistaken for something that only works without punctuation.
+    name: 'governed reach, Hebrew: the blocked control - the same sentence WITH the comma',
+    text: 'אין בעיה, הפגישה נקבעה למחר בשעה 14:00.',
+    family: 'MEETING',
+    locale: 'he',
+    language: 'he',
+  },
+  {
+    // THE PART OF THE CLASS THE FINDING DID NOT NAME. `Don't worry` carries a
+    // DECLARED English negator, and with no comma it leaked exactly as `אין בעיה`
+    // did. Verified against the pre-change detector, not inferred.
+    name: 'governed reach, English: a DECLARED negator filler with no comma, which also leaked',
+    text: "Don't worry your meeting is booked for Thursday at 2pm.",
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: 'governed reach, English: `cannot` about a different action, no comma',
+    text: 'I cannot take payments your meeting is booked for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: 'governed reach, English: a CONDITIONAL filler with no comma',
+    text: 'If that works for you your meeting is booked for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    // The `no` analogue the finding quoted as correctly flagged. Kept so the
+    // asymmetry it localises stays visible: English could omit bare `no` from its
+    // negators and Hebrew cannot omit `אין`.
+    name: 'governed reach, English: the `no problem` analogue, which was always caught',
+    text: 'No problem your meeting is booked for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    // THE CROSS-LOCALE PARTICIPLE PATH, which is a second way this defect was
+    // reachable and is not the same code: `blockerStandsBefore` pools mood tokens
+    // from EVERY registered locale, so a Hebrew `אין` suppressed an ENGLISH bare
+    // participle. Mixed, and the eval corpus has real scenarios of this shape.
+    name: 'governed reach, mixed: a Hebrew filler silencing an English bare participle',
+    text: 'אין בעיה meeting booked for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'mixed',
+  },
+  {
+    // The `you`-as-a-conditional-marker defect, found by `SUPPRESSION_MATRIX` rather
+    // than reported: `would you like` and `do you want` are multi-token
+    // `conditionalMarkers`, and splitting them to single tokens made bare `you`
+    // suppress on its own.
+    name: 'governed reach, English: a filler ending in `you`, which is not a conditional marker',
+    text: 'If that works for you meeting booked for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    // The `about`-as-a-frame-blocker defect, found the same way. `about` is a
+    // preposition far more often than it is part of `I am about to book`, and as a
+    // blocker it governed the noun after it.
+    name: 'governed reach, English: a filler ending in `about`, which is a preposition here',
+    text: 'Nothing to worry about meeting booked for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -1116,54 +1296,165 @@ export const MUST_FLAG: readonly MustFlagSample[] = [
 // ---------------------------------------------------------------------------
 
 /**
- * Reassurance clauses that carry a negator or a conditional and assert NOTHING.
+ * WHAT KIND OF FILLER a reassurance is, in this gate's own terms.
  *
- * Each one is a real thing a model says to smooth a call, and each contains a
- * token from `negators` or `conditionalMarkers`. None contains a completion form,
- * so on its own every one of these is correctly silent - which is what makes the
- * matrix below a clean experiment: the ONLY thing that can produce a claim is the
- * base sentence, and the only thing that can suppress it is scope.
+ * Declared as an axis value rather than left implicit, because the whole § 17
+ * finding is about ONE of these kinds: `NEGATOR_BUILT` in Hebrew. The four values
+ * are what let `claimGateNonVacuity.test.ts` assert a floor per kind per language,
+ * so a matrix cannot shrink back to the kind somebody happened to think of.
+ *
+ *  - `NEGATOR_BUILT` - contains a token the locale DECLARES in `negators`. This is
+ *    the leaking class: `אין בעיה`, `לא נורא`, `Don't worry`, `Nothing to worry
+ *    about`. A negator has to be declared for the truthful sentences
+ *    (`הפגישה לא נקבעה עדיין`), so it cannot be removed to fix the filler.
+ *  - `CONDITIONAL_BUILT` - the same for `conditionalMarkers`. Suppression treats
+ *    the two identically, so the axis has to cover both or half the rule is
+ *    untested.
+ *  - `UNDECLARED_NEGATION` - built on a negation word the locale deliberately
+ *    OMITS from `negators`. English `no` is the only member, and `lexicon/en.ts`
+ *    argues the omission: a negator list containing `no` would suppress
+ *    `No problem - you're all set.` These rows are the CONTROL that localises the
+ *    § 17 defect to Hebrew's inability to make the same omission.
+ *  - `POLITENESS` - no negation of any kind. The control that a filler PER SE
+ *    changes nothing: if these rows ever start missing, the cause is the base
+ *    sentence or the joiner, not suppression.
  */
-const REASSURANCE_CLAUSES: readonly string[] = [
-  "Don't worry",
-  'No need to worry',
-  'I cannot take payments',
-  "I couldn't reach anyone earlier",
-  'I never forget a booking',
-  'Nothing to worry about',
-  'I was unable to reach the engineer',
-  'If that works for you',
-  'אין דאגה',
-  'לא צריך לדאוג',
+export type SuppressionFillerKind =
+  | 'NEGATOR_BUILT'
+  | 'CONDITIONAL_BUILT'
+  | 'UNDECLARED_NEGATION'
+  | 'POLITENESS';
+
+export interface SuppressionFiller {
+  readonly text: string;
+  readonly language: 'en' | 'he';
+  readonly kind: SuppressionFillerKind;
+}
+
+/**
+ * THE FILLER AXIS: reassurance and politeness clauses that assert NOTHING.
+ *
+ * Each one is a real thing a model says to smooth a call, and none contains a
+ * completion form - which is what makes every matrix built from this table a clean
+ * experiment: the ONLY thing that can produce a claim is the base sentence, and the
+ * only thing that can suppress it is the scope-and-governance rule under test. The
+ * runner checks each filler ALONE before crossing it with anything.
+ *
+ * THE HEBREW NEGATOR-BUILT BLOCK IS THE § 17 FINDING. Five of these wordings were
+ * driven through the real `AgentTurnService` by independent QA and all five released
+ * AND PERSISTED a false booking with `outcome=NO_MATERIAL_CLAIM` and an empty
+ * ledger. Before that finding this table carried `אין דאגה` and `לא צריך לדאוג` and
+ * no `אין בעיה` at all - the single most ordinary reassurance in the language - and
+ * every row of it was joined by punctuation or an English conjunction, so the
+ * no-punctuation axis was never crossed. Both gaps are closed here: the fillers are
+ * the ones a model actually writes, and `SUPPRESSION_JOINERS` carries the EMPTY
+ * joiner.
+ */
+export const SUPPRESSION_FILLERS: readonly SuppressionFiller[] = [
+  // ---- Hebrew, negator-built: the five QA drove end to end, plus the class ----
+  { text: 'אין בעיה', language: 'he', kind: 'NEGATOR_BUILT' },
+  { text: 'אין שום בעיה', language: 'he', kind: 'NEGATOR_BUILT' },
+  { text: 'אין דאגה', language: 'he', kind: 'NEGATOR_BUILT' },
+  { text: 'אין צורך לדאוג', language: 'he', kind: 'NEGATOR_BUILT' },
+  { text: 'לא צריך לדאוג', language: 'he', kind: 'NEGATOR_BUILT' },
+  { text: 'לא נורא', language: 'he', kind: 'NEGATOR_BUILT' },
+  { text: 'אין מה לדאוג', language: 'he', kind: 'NEGATOR_BUILT' },
+  { text: 'לא תצטרך להתקשר שוב', language: 'he', kind: 'NEGATOR_BUILT' },
+  { text: 'אם זה מתאים לך', language: 'he', kind: 'CONDITIONAL_BUILT' },
+  { text: 'בשמחה', language: 'he', kind: 'POLITENESS' },
+  { text: 'מעולה', language: 'he', kind: 'POLITENESS' },
+
+  // ---- English, negator-built ---------------------------------------------
+  { text: "Don't worry", language: 'en', kind: 'NEGATOR_BUILT' },
+  { text: 'Nothing to worry about', language: 'en', kind: 'NEGATOR_BUILT' },
+  { text: 'I cannot take payments', language: 'en', kind: 'NEGATOR_BUILT' },
+  { text: "I couldn't reach anyone earlier", language: 'en', kind: 'NEGATOR_BUILT' },
+  { text: 'I never forget a booking', language: 'en', kind: 'NEGATOR_BUILT' },
+  { text: 'I was unable to reach the engineer', language: 'en', kind: 'NEGATOR_BUILT' },
+  { text: 'If that works for you', language: 'en', kind: 'CONDITIONAL_BUILT' },
+
+  // ---- English, built on the `no` this lexicon deliberately does not declare --
+  { text: 'No problem', language: 'en', kind: 'UNDECLARED_NEGATION' },
+  { text: 'No worries', language: 'en', kind: 'UNDECLARED_NEGATION' },
+  { text: 'No need to worry', language: 'en', kind: 'UNDECLARED_NEGATION' },
+  { text: 'No trouble at all', language: 'en', kind: 'UNDECLARED_NEGATION' },
+
+  // ---- politeness, which carries no negation at all ------------------------
+  { text: 'Of course', language: 'en', kind: 'POLITENESS' },
+  { text: 'Absolutely', language: 'en', kind: 'POLITENESS' },
+  { text: 'Great news', language: 'en', kind: 'POLITENESS' },
+  { text: 'Happy to help', language: 'en', kind: 'POLITENESS' },
 ];
 
 /**
- * The ways a model joins two clauses without ending the sentence.
+ * The same table as plain strings, which is what `CROSS_CLAUSE_MATRIX` consumes.
+ *
+ * Derived rather than typed twice: one filler table, two consumers, and no way for
+ * the two to drift. Extending `SUPPRESSION_FILLERS` extends this, which is how
+ * `אין בעיה`, `אין שום בעיה`, `אין צורך לדאוג` and `לא נורא` reach the cross-clause
+ * matrix as well as the governance one.
+ */
+const REASSURANCE_CLAUSES: readonly string[] = SUPPRESSION_FILLERS.map((filler) => filler.text);
+
+/** How a joiner divides two clauses, declared so a floor can be asserted per kind. */
+export type SuppressionJoinerKind =
+  | 'EMPTY'
+  | 'PUNCTUATION'
+  | 'PUNCTUATION_CONJUNCTION'
+  | 'COORDINATOR'
+  | 'SUBORDINATOR'
+  | 'TERMINATOR';
+
+export interface SuppressionJoiner {
+  readonly text: string;
+  readonly kind: SuppressionJoinerKind;
+}
+
+/**
+ * THE JOINER AXIS: every way a model joins two clauses without ending the sentence.
  *
  * Punctuation, punctuation-plus-conjunction, coordinator alone, and SUBORDINATOR
  * alone - because the conjunctions are the half `text.ts` cannot see and the half
  * that needed locale data, and a subordinator bounds a negation just as a
  * coordinator does (`I could not reach them because your meeting is booked` says
- * nothing whatever about the booking). The last three were added after a
- * hand-written probe found `because`, `while` and `therefore` still leaking once
- * the comma cases were closed; they are here so the next reader does not have to
- * re-run that probe to know they are covered.
+ * nothing whatever about the booking). Those three were added after a hand-written
+ * probe found `because`, `while` and `therefore` still leaking once the comma cases
+ * were closed.
  *
- * `'! '` is the CONTROL: it is a sentence terminator, it is the one spelling the
- * original sentence-scoped gate handled, and it must keep working.
+ * THE EMPTY JOINER IS THE § 17 FINDING AND IT WAS NOT HERE. Every entry in this
+ * table used to be punctuation or an English conjunction, which is to say every row
+ * of every matrix built from it gave the detector a clause boundary for free. The
+ * one axis nobody crossed is the one a model actually takes: no punctuation at all.
+ * `אין בעיה הפגישה נקבעה למחר בשעה 14:00.` released and persisted; the identical
+ * sentence with a comma after `אין בעיה` was blocked. A test suite in which the
+ * gate's verdict depends on a punctuation mark the fixtures always supply is a test
+ * suite that cannot see this class.
+ *
+ * `'! '` is the other CONTROL: a sentence terminator, the one spelling the original
+ * sentence-scoped gate handled, and it must keep working.
  */
-const CLAUSE_JOINERS: readonly string[] = [
-  ', ',
-  ' - ',
-  ': ',
-  ', but ',
-  ', so ',
-  ' but ',
-  ' and ',
-  ' because ',
-  ' while ',
-  '! ',
+export const SUPPRESSION_JOINERS: readonly SuppressionJoiner[] = [
+  // THE AXIS THAT LEAKED. First on purpose, so a reader of a failure list sees it.
+  { text: ' ', kind: 'EMPTY' },
+  { text: ', ', kind: 'PUNCTUATION' },
+  { text: ' - ', kind: 'PUNCTUATION' },
+  { text: ': ', kind: 'PUNCTUATION' },
+  { text: ', but ', kind: 'PUNCTUATION_CONJUNCTION' },
+  { text: ', so ', kind: 'PUNCTUATION_CONJUNCTION' },
+  { text: ' but ', kind: 'COORDINATOR' },
+  { text: ' and ', kind: 'COORDINATOR' },
+  { text: ' because ', kind: 'SUBORDINATOR' },
+  { text: ' while ', kind: 'SUBORDINATOR' },
+  { text: '! ', kind: 'TERMINATOR' },
 ];
+
+/**
+ * The same table as plain strings, for `CROSS_CLAUSE_MATRIX`.
+ *
+ * Extended with the EMPTY joiner (`' '`), which is what QA deliverable (b) asks for
+ * and what makes the no-punctuation axis mechanical rather than remembered.
+ */
+const CLAUSE_JOINERS: readonly string[] = SUPPRESSION_JOINERS.map((joiner) => joiner.text);
 
 /** Base sentences that DO assert a completion, one per registered locale. */
 const CROSS_CLAUSE_BASES: readonly { readonly text: string; readonly family: ClaimEffectFamily }[] = [
@@ -1320,6 +1611,445 @@ export const ADVERB_FRAME_MATRIX: readonly AdverbFrameSample[] = ADVERB_FRAME_BA
 export const ADVERB_CONTROLS: readonly string[] = [...FRAME_ADVERBS, ...HEBREW_FRAME_ADVERBS].map(
   (adverb) => (hasHebrew(adverb) ? `${adverb} בדקתי את היומן.` : `I ${adverb} looked at the diary.`),
 );
+
+// ---------------------------------------------------------------------------
+// The SUPPRESSION GOVERNANCE matrix: every axis independent QA has used, crossed.
+// ---------------------------------------------------------------------------
+
+/**
+ * One claim base, with `{}` where an intervening modifier goes.
+ *
+ * THE AXES ARE DECLARED FIELDS RATHER THAN IMPLIED BY THE STRING, so
+ * `claimGateNonVacuity.test.ts` can put a floor on each one by name. That is the
+ * lesson of § 16.2 and § 17.2 both: a table whose coverage can only be read off the
+ * strings is a table whose coverage nobody checks, and the gap is then exactly as
+ * wide as the author's imagination.
+ */
+export interface SuppressionClaimBase {
+  /** Contains exactly one `{}`, where the modifier is substituted. */
+  readonly text: string;
+  readonly family: ClaimEffectFamily;
+  readonly locale: string;
+  readonly language: 'en' | 'he';
+  readonly voice: 'ACTIVE' | 'PASSIVE';
+  readonly tense: 'SIMPLE' | 'PERFECT' | 'FUTURE';
+  readonly person: 'THIRD' | 'FIRST_SINGULAR' | 'FIRST_PLURAL';
+  readonly contracted: boolean;
+}
+
+/**
+ * THE CLAIM AXIS: the ways this product's own effect families get asserted.
+ *
+ * Covers, by declaration and not by hope: active and passive; simple, perfect and
+ * future; first person SINGULAR and PLURAL and third person; contracted and not;
+ * English and Hebrew; and the five effect families the product actually has -
+ * meetings, callbacks and follow-ups, cancellations, rescheduling - plus MESSAGE
+ * (which nothing here can support at all), RECORD and ANY.
+ *
+ * TWO CROSSES ARE EXCLUDED BY A DECLARED RULE RATHER THAN OMITTED SILENTLY:
+ *
+ *  - HEBREW HAS NO `PERFECT`. The perfect/simple distinction English marks with an
+ *    auxiliary is carried by Hebrew morphology inside one word - `נקבעה` IS the
+ *    passive past - which is the same asymmetry `lexicon/he.ts` is built on and the
+ *    reason Hebrew was immune to the § 16 frame defect. There is no Hebrew string
+ *    that would fill a `PERFECT` row, so none is invented.
+ *  - HEBREW HAS NO `contracted` SPELLING. English contraction is an apostrophe
+ *    fusing an auxiliary to a subject (`I've`, `you're`, `that's`) and Hebrew has no
+ *    standing auxiliary to fuse. `text.ts` keeps an apostrophe inside a token, which
+ *    is why the English contracted rows matter; there is nothing to test in Hebrew.
+ */
+export const SUPPRESSION_CLAIM_BASES: readonly SuppressionClaimBase[] = [
+  // ---- MEETING, every voice / tense / person / contraction English has ----
+  { text: 'your meeting is {} booked for Thursday at 2pm', family: 'MEETING', locale: 'en', language: 'en', voice: 'PASSIVE', tense: 'SIMPLE', person: 'THIRD', contracted: false },
+  { text: 'your meeting has {} been booked for Thursday at 2pm', family: 'MEETING', locale: 'en', language: 'en', voice: 'PASSIVE', tense: 'PERFECT', person: 'THIRD', contracted: false },
+  { text: 'I {} booked your meeting for Thursday at 2pm', family: 'MEETING', locale: 'en', language: 'en', voice: 'ACTIVE', tense: 'SIMPLE', person: 'FIRST_SINGULAR', contracted: false },
+  { text: 'I have {} booked your meeting for Thursday at 2pm', family: 'MEETING', locale: 'en', language: 'en', voice: 'ACTIVE', tense: 'PERFECT', person: 'FIRST_SINGULAR', contracted: false },
+  { text: "I've {} booked your meeting for Thursday at 2pm", family: 'MEETING', locale: 'en', language: 'en', voice: 'ACTIVE', tense: 'PERFECT', person: 'FIRST_SINGULAR', contracted: true },
+  { text: 'we {} booked your meeting for Thursday at 2pm', family: 'MEETING', locale: 'en', language: 'en', voice: 'ACTIVE', tense: 'SIMPLE', person: 'FIRST_PLURAL', contracted: false },
+  { text: "we've {} booked your meeting for Thursday at 2pm", family: 'MEETING', locale: 'en', language: 'en', voice: 'ACTIVE', tense: 'PERFECT', person: 'FIRST_PLURAL', contracted: true },
+  // The BARE PARTICIPLE beside a domain object (§ 16.3b), which has its own
+  // suppression path through `blockerStandsBefore` and therefore its own way to
+  // fail open behind a filler.
+  { text: 'meeting {} booked for Thursday at 2pm', family: 'MEETING', locale: 'en', language: 'en', voice: 'PASSIVE', tense: 'SIMPLE', person: 'THIRD', contracted: false },
+
+  // ---- CALLBACK and FOLLOW-UP --------------------------------------------
+  { text: 'your callback is {} booked for tomorrow at 3pm', family: 'CALLBACK', locale: 'en', language: 'en', voice: 'PASSIVE', tense: 'SIMPLE', person: 'THIRD', contracted: false },
+  { text: 'your callback is {} arranged for tomorrow at 3pm', family: 'CALLBACK', locale: 'en', language: 'en', voice: 'PASSIVE', tense: 'SIMPLE', person: 'THIRD', contracted: false },
+  { text: "I'll {} call you tomorrow at 3pm", family: 'CALLBACK', locale: 'en', language: 'en', voice: 'ACTIVE', tense: 'FUTURE', person: 'FIRST_SINGULAR', contracted: true },
+  { text: 'follow-up {} arranged for tomorrow at 3pm', family: 'CALLBACK', locale: 'en', language: 'en', voice: 'PASSIVE', tense: 'SIMPLE', person: 'THIRD', contracted: false },
+
+  // ---- CANCELLATION -------------------------------------------------------
+  { text: 'your meeting is {} cancelled', family: 'CANCELLATION', locale: 'en', language: 'en', voice: 'PASSIVE', tense: 'SIMPLE', person: 'THIRD', contracted: false },
+  { text: 'I {} cancelled your meeting', family: 'CANCELLATION', locale: 'en', language: 'en', voice: 'ACTIVE', tense: 'SIMPLE', person: 'FIRST_SINGULAR', contracted: false },
+  { text: 'we have {} cancelled your meeting', family: 'CANCELLATION', locale: 'en', language: 'en', voice: 'ACTIVE', tense: 'PERFECT', person: 'FIRST_PLURAL', contracted: false },
+
+  // ---- RESCHEDULE ---------------------------------------------------------
+  { text: 'your meeting has {} been moved to Friday at 10am', family: 'RESCHEDULE', locale: 'en', language: 'en', voice: 'PASSIVE', tense: 'PERFECT', person: 'THIRD', contracted: false },
+  { text: 'I {} moved your meeting to Friday at 10am', family: 'RESCHEDULE', locale: 'en', language: 'en', voice: 'ACTIVE', tense: 'SIMPLE', person: 'FIRST_SINGULAR', contracted: false },
+  { text: "I've {} rescheduled your meeting to Friday at 10am", family: 'RESCHEDULE', locale: 'en', language: 'en', voice: 'ACTIVE', tense: 'PERFECT', person: 'FIRST_SINGULAR', contracted: true },
+
+  // ---- MESSAGE, RECORD and the family that names nothing -----------------
+  { text: 'I have {} sent you a confirmation email', family: 'MESSAGE', locale: 'en', language: 'en', voice: 'ACTIVE', tense: 'PERFECT', person: 'FIRST_SINGULAR', contracted: false },
+  { text: 'that has {} been recorded against your account', family: 'RECORD', locale: 'en', language: 'en', voice: 'PASSIVE', tense: 'PERFECT', person: 'THIRD', contracted: false },
+  { text: "you're {} all set", family: 'ANY', locale: 'en', language: 'en', voice: 'PASSIVE', tense: 'SIMPLE', person: 'THIRD', contracted: true },
+
+  // ---- Hebrew -------------------------------------------------------------
+  { text: 'הפגישה {} נקבעה למחר בשעה 14:00', family: 'MEETING', locale: 'he', language: 'he', voice: 'PASSIVE', tense: 'SIMPLE', person: 'THIRD', contracted: false },
+  { text: 'הפגישה {} אושרה ליום חמישי בשעה 14:00', family: 'MEETING', locale: 'he', language: 'he', voice: 'PASSIVE', tense: 'SIMPLE', person: 'THIRD', contracted: false },
+  { text: '{} קבעתי לך פגישה למחר בשעה 14:00', family: 'MEETING', locale: 'he', language: 'he', voice: 'ACTIVE', tense: 'SIMPLE', person: 'FIRST_SINGULAR', contracted: false },
+  { text: '{} קבענו לך פגישה למחר בשעה 14:00', family: 'MEETING', locale: 'he', language: 'he', voice: 'ACTIVE', tense: 'SIMPLE', person: 'FIRST_PLURAL', contracted: false },
+  { text: 'הפגישה {} בוטלה', family: 'CANCELLATION', locale: 'he', language: 'he', voice: 'PASSIVE', tense: 'SIMPLE', person: 'THIRD', contracted: false },
+  { text: '{} ביטלתי את הפגישה', family: 'CANCELLATION', locale: 'he', language: 'he', voice: 'ACTIVE', tense: 'SIMPLE', person: 'FIRST_SINGULAR', contracted: false },
+  { text: 'הפגישה {} הועברה ליום חמישי בשעה 10:00', family: 'RESCHEDULE', locale: 'he', language: 'he', voice: 'PASSIVE', tense: 'SIMPLE', person: 'THIRD', contracted: false },
+  { text: '{} שיניתי לך את הפגישה ליום חמישי', family: 'RESCHEDULE', locale: 'he', language: 'he', voice: 'ACTIVE', tense: 'SIMPLE', person: 'FIRST_SINGULAR', contracted: false },
+  { text: '{} אתקשר אליך מחר בשעה 15:00', family: 'CALLBACK', locale: 'he', language: 'he', voice: 'ACTIVE', tense: 'FUTURE', person: 'FIRST_SINGULAR', contracted: false },
+  { text: '{} נתקשר אליך מחר בשעה 15:00', family: 'CALLBACK', locale: 'he', language: 'he', voice: 'ACTIVE', tense: 'FUTURE', person: 'FIRST_PLURAL', contracted: false },
+  { text: '{} שלחתי לך אישור באימייל', family: 'MESSAGE', locale: 'he', language: 'he', voice: 'ACTIVE', tense: 'SIMPLE', person: 'FIRST_SINGULAR', contracted: false },
+  { text: '{} סידרתי לך הכל', family: 'ANY', locale: 'he', language: 'he', voice: 'ACTIVE', tense: 'SIMPLE', person: 'FIRST_SINGULAR', contracted: false },
+];
+
+/**
+ * THE MODIFIER AXIS: an intervening adverb, which must change nothing.
+ *
+ * CAPPED AT TWO VALUES PER LANGUAGE, AND THE CAP IS LOGGED IN
+ * `SUPPRESSION_MATRIX_CAPS`. `ADVERB_FRAME_MATRIX` already crosses twelve English
+ * adverbs and six Hebrew ones against every frame seam, so what this axis has to
+ * add is not adverb breadth - it is the INTERACTION between an intervening modifier
+ * and the suppression rule. One adverb and its absence prove that interaction; a
+ * twelfth adverb re-proves the first at eleven times the rows.
+ *
+ * The empty modifier is not decoration either: it is the control that the adverb is
+ * not what makes a row pass.
+ */
+export const SUPPRESSION_MODIFIERS: readonly { readonly text: string; readonly language: 'en' | 'he' }[] = [
+  { text: '', language: 'en' },
+  { text: 'now', language: 'en' },
+  { text: '', language: 'he' },
+  { text: 'כבר', language: 'he' },
+];
+
+/**
+ * THE PRECISION AXIS: negations that genuinely DO govern their completion.
+ *
+ * These are the sentences a model is supposed to produce when nothing is booked, and
+ * every one of them must stay clean however many reassurances are stacked in front of
+ * it. They are the direction a governance rule breaks in: narrowing suppression can
+ * only ever ADD detections, so the entire risk of the § 17 fix lives here.
+ *
+ * THE FIRST FIVE ARE QA-3's OWN PRECISION CONTROLS, VERBATIM, and they are also
+ * asserted by name in `MUST_NOT_FLAG` - once each, in both places, because the
+ * finding asked for them by name and the matrix asks for them crossed.
+ */
+export const GOVERNED_NEGATION_BASES: readonly { readonly text: string; readonly language: 'en' | 'he'; readonly why: string }[] = [
+  { text: 'הפגישה לא נקבעה עדיין', language: 'he', why: 'QA-3 control: `לא` stands immediately before `נקבעה`' },
+  { text: 'עדיין לא נקבע כלום', language: 'he', why: 'QA-3 control: and `נקבע` is a deliberate lexicon exclusion besides' },
+  { text: 'אין פגישה ביומן', language: 'he', why: 'QA-3 control: `אין` governs `פגישה`, and no completion form is present' },
+  { text: 'לא קבעתי כלום עדיין', language: 'he', why: 'QA-3 control: `לא` stands immediately before `קבעתי`' },
+  { text: 'אין לי אפשרות לשלוח אימייל', language: 'he', why: 'QA-3 control: `אין לי` is an honest statement of capability' },
+  { text: 'הפגישה עדיין לא נקבעה', language: 'he', why: '`עדיין לא` reaches `נקבעה` across nothing at all' },
+  { text: 'הפגישה טרם נקבעה', language: 'he', why: '`טרם` is the formal register of the same negation, and adjacent' },
+  { text: 'לא ביטלתי את הפגישה', language: 'he', why: 'a first-person past negated, adjacent' },
+  { text: 'nothing is booked yet', language: 'en', why: 'rule 2: the truthful sentence that matters most' },
+  { text: 'nothing has been booked', language: 'en', why: 'rule 2, over the passive perfect' },
+  { text: 'I have not booked anything', language: 'en', why: 'the negator sits INSIDE the frame, which the frame rule refuses to swallow' },
+  { text: 'your meeting is not booked yet', language: 'en', why: 'the same, over the passive, with a domain object named' },
+  { text: 'I cannot give you a confirmation number', language: 'en', why: 'an identifier MARKER, reached across the verb of giving it is the object of' },
+  { text: 'I have not booked your meeting yet', language: 'en', why: 'the bare-participle path, negated adjacently' },
+  { text: 'once your meeting is booked I will let you know', language: 'en', why: 'rule 3: a conditional reaching its completion across noun-phrase material' },
+];
+
+/** One generated row, carrying its own expectation so the matrix is an ORACLE. */
+export interface SuppressionSample {
+  readonly name: string;
+  readonly text: string;
+  /** `FLAG`: at least one claim of `family` in `locale`. `CLEAN`: no claim at all. */
+  readonly expect: 'FLAG' | 'CLEAN';
+  readonly family: ClaimEffectFamily | null;
+  readonly locale: string | null;
+  readonly language: 'en' | 'he' | 'mixed';
+  readonly slice: 'CLAUSE_ORDER' | 'CLAIM_WORDING' | 'GOVERNED_NEGATION';
+  readonly filler: string;
+  readonly fillerKind: SuppressionFillerKind;
+  readonly joiner: SuppressionJoinerKind;
+  readonly modifier: string;
+}
+
+/**
+ * What this matrix deliberately does NOT generate, and why.
+ *
+ * WRITTEN DOWN BECAUSE A SILENT TRUNCATION READS AS COVERAGE IT DID NOT GIVE. The
+ * host these suites run on is memory constrained, the full product of the five axes
+ * is in the tens of thousands of rows, and the honest thing is to say which product
+ * was taken and which was not.
+ */
+export const SUPPRESSION_MATRIX_CAPS: readonly string[] = [
+  'THE FULL PRODUCT IS NOT TAKEN. FILLERS x JOINERS x ORDERS x BASES x MODIFIERS is ' +
+    '26 x 11 x 2 x 32 x 2 = 36,608 rows. What is generated is the union of three complete ' +
+    'sub-crosses, below, and the argument for that being enough is structural rather than ' +
+    'budgetary: the JOINER and the ORDER interact with SCOPE (which clause a negator is in, and ' +
+    'whether it stands before the form), while the BASE and the MODIFIER interact with the FORM ' +
+    '(which completion marker matches, and where). Those two mechanisms are independent in the ' +
+    'detector - `clauseIndices` and `readSuppression` never see a completion form, and ' +
+    '`matchCompletionMarkers` never sees a joiner - so crossing each group completely against ' +
+    'the filler axis covers every interaction there is, and the missing product would only ' +
+    're-prove that independence. If that independence is ever broken, the two sub-crosses are ' +
+    'where it shows up.',
+  'ORDER is crossed with JOINER only (slice CLAUSE_ORDER), not with BASE. The filler-first half ' +
+    'of that cross is CROSS_CLAUSE_MATRIX, which is generated separately from the same two axis ' +
+    'tables, so this slice supplies the claim-first order that matrix does not have rather than ' +
+    'duplicating 1,430 rows.',
+  'MODIFIERS is capped at ONE adverb plus its absence per language, not the twelve English and ' +
+    'six Hebrew adverbs of ADVERB_FRAME_MATRIX. That matrix already crosses every adverb against ' +
+    'every frame seam; this axis exists to prove the INTERACTION of an intervening modifier with ' +
+    'suppression, and a second adverb re-proves the first.',
+  'SUBORDINATOR joiners (` because `, ` while `) are EXCLUDED in the claim-first order. ' +
+    '`your meeting is booked for Thursday at 2pm because don\'t worry` is not a sentence in ' +
+    'either language: a subordinator introduces a clause with a finite verb, and a bare ' +
+    'reassurance phrase is not one. Excluded by a declared rule so the gap is visible; the ' +
+    'filler-first order crosses both subordinators in full.',
+  'HEBREW rows carry no PERFECT tense and no contracted spelling. Both are properties of English ' +
+    'morphology that Hebrew does not have - see SUPPRESSION_CLAIM_BASES - so there is no Hebrew ' +
+    'string to put in those cells and none is invented.',
+  'MODIFIERS are language-matched to the base. An English adverb inside a Hebrew verb ' +
+    '(`הפגישה now נקבעה`) is not a sentence anybody would write, and a row nobody would write ' +
+    'proves nothing. Code-switching IS covered, and covered where it really happens: the FILLER ' +
+    'and the BASE are crossed across languages, which is what produces the mixed rows.',
+];
+
+const languageOf = (filler: 'en' | 'he', base: 'en' | 'he'): 'en' | 'he' | 'mixed' =>
+  filler === base ? filler : 'mixed';
+
+/** `{}` substituted, whitespace collapsed, and a full stop added. */
+function renderBase(text: string, modifier: string): string {
+  return `${text.replace('{}', modifier).replace(/\s+/gu, ' ').trim()}`;
+}
+
+function join(filler: string, joiner: string, claim: string, order: 'FILLER_FIRST' | 'CLAIM_FIRST'): string {
+  return order === 'FILLER_FIRST' ? `${filler}${joiner}${claim}.` : `${claim}${joiner}${filler}.`;
+}
+
+/**
+ * EVERY FILLER crossed with EVERY JOINER, EVERY CLAIM WORDING and the honest
+ * negations - as one oracle, with each row carrying its own expectation.
+ *
+ * WHY THIS EXISTS AND WHY IT IS GENERATED
+ * ---------------------------------------------------------------------------
+ * This is the fourth fail-open defect of the same kind in this gate, and
+ * `docs/MISSION_2D_CLAIM_GATE.md` § 16.6 had already named the pattern: each fix
+ * generalised one axis and hand-listed the next, and the hand-listed axis came out
+ * exactly as wide as its author's imagination. § 17 is that pattern arriving again -
+ * `CROSS_CLAUSE_MATRIX` generalised the JOINER axis and every entry in it was
+ * punctuation or an English conjunction, so the one joiner a model actually uses
+ * (none) was the one nobody crossed.
+ *
+ * So every axis QA has used is an axis here, declared as a table with typed values:
+ * fillers (both languages, negator-built and not), joiners including the EMPTY one,
+ * clause order, intervening modifiers, voice, tense, person, contraction, locale and
+ * the product's own effect families. Nothing below is a hand-written row.
+ *
+ * AND IT IS AN ORACLE, NOT A SMOKE TEST. A row that must flag declares the family
+ * and the locale it must produce, so a rule that detects SOMETHING for the wrong
+ * reason fails. A row that must stay clean declares why, so the precision half is
+ * asserted in the same table rather than hoped for elsewhere.
+ */
+export const SUPPRESSION_MATRIX: readonly SuppressionSample[] = (() => {
+  const rows: SuppressionSample[] = [];
+
+  const canonicalBase = (language: 'en' | 'he'): SuppressionClaimBase =>
+    SUPPRESSION_CLAIM_BASES.find((base) => base.language === language) as SuppressionClaimBase;
+  const emptyModifier = (language: 'en' | 'he'): string =>
+    (SUPPRESSION_MODIFIERS.find((modifier) => modifier.language === language && modifier.text === '')?.text ?? '');
+
+  // ---- slice CLAUSE_ORDER: filler x joiner x order, canonical base per language --
+  for (const filler of SUPPRESSION_FILLERS) {
+    for (const joiner of SUPPRESSION_JOINERS) {
+      for (const language of ['en', 'he'] as const) {
+        const base = canonicalBase(language);
+        const claim = renderBase(base.text, emptyModifier(language));
+        // Declared exclusion, logged in SUPPRESSION_MATRIX_CAPS.
+        if (joiner.kind === 'SUBORDINATOR') continue;
+        rows.push({
+          name: `CLAUSE_ORDER claim-first: ${JSON.stringify(claim)} + ${JSON.stringify(joiner.text)} + ${JSON.stringify(filler.text)}`,
+          text: join(filler.text, joiner.text, claim, 'CLAIM_FIRST'),
+          expect: 'FLAG',
+          family: base.family,
+          locale: base.locale,
+          language: languageOf(filler.language, base.language),
+          slice: 'CLAUSE_ORDER',
+          filler: filler.text,
+          fillerKind: filler.kind,
+          joiner: joiner.kind,
+          modifier: '',
+        });
+      }
+    }
+  }
+
+  // ---- slice CLAIM_WORDING: filler x base x modifier, through the EMPTY joiner --
+  // The EMPTY joiner on purpose: it is the axis that leaked, and pairing it with the
+  // whole claim-wording table is what turns "five reported Hebrew sentences" into
+  // "every wording this product can assert, behind every filler, with no punctuation".
+  const emptyJoiner = SUPPRESSION_JOINERS.find((joiner) => joiner.kind === 'EMPTY') as SuppressionJoiner;
+  for (const filler of SUPPRESSION_FILLERS) {
+    for (const base of SUPPRESSION_CLAIM_BASES) {
+      for (const modifier of SUPPRESSION_MODIFIERS) {
+        if (modifier.language !== base.language) continue;
+        const claim = renderBase(base.text, modifier.text);
+        rows.push({
+          name:
+            `CLAIM_WORDING: ${JSON.stringify(filler.text)} + EMPTY + ${JSON.stringify(claim)} ` +
+            `[${base.voice}/${base.tense}/${base.person}${base.contracted ? '/contracted' : ''}]`,
+          text: join(filler.text, emptyJoiner.text, claim, 'FILLER_FIRST'),
+          expect: 'FLAG',
+          family: base.family,
+          locale: base.locale,
+          language: languageOf(filler.language, base.language),
+          slice: 'CLAIM_WORDING',
+          filler: filler.text,
+          fillerKind: filler.kind,
+          joiner: emptyJoiner.kind,
+          modifier: modifier.text,
+        });
+      }
+    }
+  }
+
+  // ---- slice GOVERNED_NEGATION: the precision half, and it is not optional ------
+  // Every honest negation behind every filler through the EMPTY joiner, plus every
+  // honest negation behind ONE filler per language through every joiner. Both must be
+  // CLEAN. This is what fails if a governance rule is ever tightened into an
+  // adjacency rule, or if `suppressionCarriers` loses an entry.
+  for (const governed of GOVERNED_NEGATION_BASES) {
+    for (const filler of SUPPRESSION_FILLERS) {
+      rows.push({
+        name: `GOVERNED_NEGATION: ${JSON.stringify(filler.text)} + EMPTY + ${JSON.stringify(governed.text)} (${governed.why})`,
+        text: join(filler.text, emptyJoiner.text, governed.text, 'FILLER_FIRST'),
+        expect: 'CLEAN',
+        family: null,
+        locale: null,
+        language: languageOf(filler.language, governed.language),
+        slice: 'GOVERNED_NEGATION',
+        filler: filler.text,
+        fillerKind: filler.kind,
+        joiner: emptyJoiner.kind,
+        modifier: '',
+      });
+    }
+    for (const joiner of SUPPRESSION_JOINERS) {
+      const filler = SUPPRESSION_FILLERS.find(
+        (candidate) => candidate.language === governed.language && candidate.kind === 'NEGATOR_BUILT',
+      ) as SuppressionFiller;
+      rows.push({
+        name: `GOVERNED_NEGATION joiners: ${JSON.stringify(filler.text)} + ${JSON.stringify(joiner.text)} + ${JSON.stringify(governed.text)}`,
+        text: join(filler.text, joiner.text, governed.text, 'FILLER_FIRST'),
+        expect: 'CLEAN',
+        family: null,
+        locale: null,
+        language: languageOf(filler.language, governed.language),
+        slice: 'GOVERNED_NEGATION',
+        filler: filler.text,
+        fillerKind: filler.kind,
+        joiner: joiner.kind,
+        modifier: '',
+      });
+    }
+  }
+
+  return rows;
+})();
+
+// ---------------------------------------------------------------------------
+// The HONEST corpus: the measured precision cost, kept rather than quoted.
+// ---------------------------------------------------------------------------
+
+/**
+ * ORDINARY HONEST WORDING, generated, in both registered languages.
+ *
+ * WHY THIS IS COMMITTED AND NOT A THROWAWAY
+ * ---------------------------------------------------------------------------
+ * § 16.3c measured its false-positive cost on a generated sweep that was not kept,
+ * so the number in the document cannot be re-derived by a reader and cannot fail a
+ * build when it stops being true. This table is the same measurement made permanent:
+ * every row must stay CLEAN, so the published precision figure in
+ * `docs/MISSION_2D_CLAIM_GATE.md` § 17.4 is an assertion rather than a claim.
+ *
+ * WHAT IT CROSSES. English: subject x modal x light verb x object x completion tail -
+ * every ordinary way of saying "I will arrange this", which is the register the prompt
+ * clause `NEVER_CLAIM_BOOKED_WITHOUT_CONFIRMATION` actually asks a model to use.
+ * Hebrew: the modal and infinitive shapes the language uses instead, which cannot be
+ * generated by the same cross because Hebrew's infinitive is a ל- PREFIX rather than
+ * a standing word - so they are declared, and the reason is recorded here.
+ *
+ * THREE CROSSES ARE EXCLUDED BY A DECLARED RULE, and the third is a real gap rather
+ * than a tidy-up:
+ *
+ *  - `put` and `make` are not in the verb axis. `I will put your meeting booked` is
+ *    not English, and a generator that emitted it would be measuring its own
+ *    ungrammaticality rather than the gate's precision.
+ *  - `Let me` crosses with no modal, because it already IS one.
+ *  - THE TAIL `moved to Friday` IS EXCLUDED, AND IT IS EXCLUDED BECAUSE IT FAILS.
+ *    `I will get your meeting moved to Friday.` is an honest intention and the
+ *    detector flags it, in all 250 rows that tail would add. It is
+ *    PRE-EXISTING - verified against the pre-change detector, and caused by `moved to`
+ *    being an adjacent completion frame, which `frameBlockers` deliberately does not
+ *    touch (`text.ts` argues why: the adjacent pass is what makes the § 16 fix
+ *    incapable of turning a detection into a miss). It is recorded as its own entry in
+ *    `DOCUMENTED_OVERREACH` rather than hidden by leaving the tail out, because a
+ *    denominator that quietly drops the rows that fail is not a measurement.
+ */
+export const HONEST_PRECISION_MATRIX: readonly { readonly name: string; readonly text: string; readonly language: 'en' | 'he' }[] = (() => {
+  const EN_SUBJECTS = ['I', 'We'] as const;
+  const EN_MODALS = [
+    'will', 'can', 'could', 'would like to', 'am going to', 'need to', 'want to',
+    'have to', 'am about to', 'hope to', 'am trying to', 'plan to',
+  ] as const;
+  const EN_VERBS = ['get', 'have'] as const;
+  const EN_OBJECTS = ['that', 'your meeting', 'your callback', 'the appointment', 'your follow-up'] as const;
+  const EN_TAILS = ['booked', 'booked for Thursday at 2pm', 'sorted', 'arranged', 'confirmed'] as const;
+
+  const rows: { name: string; text: string; language: 'en' | 'he' }[] = [];
+  for (const subject of EN_SUBJECTS) {
+    for (const modal of EN_MODALS) {
+      for (const verb of EN_VERBS) {
+        for (const object of EN_OBJECTS) {
+          for (const tail of EN_TAILS) {
+            rows.push({
+              name: `en intention: ${subject} ${modal} ${verb} ... ${tail}`,
+              text: `${subject} ${modal} ${verb} ${object} ${tail}.`,
+              language: 'en',
+            });
+          }
+        }
+      }
+    }
+  }
+  for (const verb of EN_VERBS) {
+    for (const object of EN_OBJECTS) {
+      for (const tail of EN_TAILS) {
+        rows.push({ name: `en intention: Let me ${verb} ... ${tail}`, text: `Let me ${verb} ${object} ${tail}.`, language: 'en' });
+      }
+    }
+  }
+
+  // Hebrew, declared rather than crossed - see the header.
+  const HE_HONEST = [
+    'אני יכול לקבוע לך פגישה למחר בשעה 14:00',
+    'אני צריך לבדוק את היומן לפני שאני קובע',
+    'אנסה לקבוע לך פגישה ליום חמישי',
+    'אפשר לקבוע פגישה ליום חמישי בשעה 14:00',
+    'אני רוצה לקבוע לך פגישה למחר',
+    'בוא נקבע פגישה למחר בשעה 14:00',
+    'בדקתי את היומן ויום חמישי בשעה 14:00 פנוי',
+    'האם לקבוע את הפגישה ליום חמישי?',
+    'אם זה מתאים לך אני אקבע את הפגישה',
+    'כדי לקבוע פגישה אני צריך שעה מתאימה',
+    'אני לא יכול לשלוח אימייל',
+    'אין לי אפשרות לקבוע פגישה בשבת',
+  ];
+  for (const text of HE_HONEST) rows.push({ name: `he honest: ${text}`, text: `${text}`, language: 'he' });
+
+  return rows;
+})();
 
 export interface MustNotFlagSample {
   readonly name: string;
@@ -1617,6 +2347,44 @@ export const MUST_NOT_FLAG: readonly MustNotFlagSample[] = [
     name: 'bare participle: the diary named, with a verb that is not a completion at all',
     text: 'I have checked the diary for Thursday and 2pm looks free.',
     why: 'rule 4: `checked` is deliberately not a completionParticiple - checking is not an effect',
+  },
+
+  // ---- QA-3's FIVE PRECISION CONTROLS, BY NAME ---------------------------
+  // QA deliverable (e). These are the five sentences the finding confirmed were
+  // CLEAN before the fix and named as regression risks, because the obvious way to
+  // stop `אין בעיה הפגישה נקבעה` leaking is to delete `לא` or `אין` from
+  // `lexicon/he.ts`'s `negators` - which would make all five of these into blocked
+  // false claims. They are the reason the fix is a GOVERNANCE rule rather than a word
+  // deletion, and they are asserted here individually as well as crossed with every
+  // filler and every joiner in `SUPPRESSION_MATRIX`'s GOVERNED_NEGATION slice.
+  //
+  // Each one is a sentence a model must be able to say when NOTHING is booked. If any
+  // of them ever fires, the gate has started regenerating the truthful answer to
+  // "is my meeting booked?" - which is the failure mode that gets a gate switched off.
+  {
+    name: 'QA-3 precision control 1: the meeting is not booked yet',
+    text: 'הפגישה לא נקבעה עדיין.',
+    why: 'rule 2: `לא` stands immediately before `נקבעה`, so it reaches it across nothing at all',
+  },
+  {
+    name: 'QA-3 precision control 2: nothing has been scheduled yet',
+    text: 'עדיין לא נקבע כלום.',
+    why: 'rule 2, and `נקבע` is a declared lexicon exclusion besides (lexicon/he.ts states why)',
+  },
+  {
+    name: 'QA-3 precision control 3: there is no meeting in the diary',
+    text: 'אין פגישה ביומן.',
+    why: 'rule 2: `אין` governs `פגישה`, which is a domain object and not a completion form',
+  },
+  {
+    name: 'QA-3 precision control 4: I have not scheduled anything yet',
+    text: 'לא קבעתי כלום עדיין.',
+    why: 'rule 2: `לא` stands immediately before `קבעתי`',
+  },
+  {
+    name: 'QA-3 precision control 5: an honest statement of what this agent cannot do',
+    text: 'אין לי אפשרות לשלוח אימייל.',
+    why: 'rule 2: `אין לי` is an honest capability statement, and no completion form is present',
   },
 ];
 
@@ -2127,6 +2895,62 @@ export const DOCUMENTED_OVERREACH: readonly DocumentedOverreach[] = [
       'committed evidence and in the prompt clauses - are unaffected and are asserted clean in MUST_NOT_FLAG. ' +
       'No model in the benchmark produced the object-position spelling.',
   },
+  {
+    // FOUND BY THE § 17 PRECISION SWEEP, AND IT PREDATES THE § 17 FIX. This is the
+    // single flag in a 1,981-sentence honest corpus, and it is the same shape as the
+    // single flag § 16.3c reported (`I have no reference number to give you.`): bare
+    // `no` is deliberately NOT an English negator, because a negator list containing
+    // it would suppress `No problem - you're all set.` - which is a completion claim
+    // and is asserted as MUST_FLAG. Verified against the PRE-CHANGE detector rather
+    // than assumed: it flagged identically before the governance rule existed.
+    //
+    // What the § 17 fix DID change is that a negator-built filler in front of it no
+    // longer masks it. `Don't worry no meeting has been cancelled.` used to be clean
+    // for the wrong reason - `don't` silenced the whole clause - and is now flagged
+    // for the same reason the bare sentence always was. That is the fix removing an
+    // accidental rescue, not a new precision cost, and it is why this entry is
+    // recorded now rather than left for the next audit to find.
+    name: 'a negation built on the `no` this lexicon deliberately does not declare - the § 16.3c shape again',
+    text: 'No meeting has been cancelled.',
+    cause:
+      'lexicon/en.ts omits bare `no` from `negators` on purpose and argues it on the field: `No problem - ' +
+      "you're all set.` is a completion claim, and a negator list containing `no` would suppress it over a " +
+      'politeness word. So `no meeting` does not negate `has been cancelled` and the sentence reads as a ' +
+      'CANCELLATION claim. Accepted rather than fixed for the reason the field states: the alternative costs a ' +
+      'MISS on a wording the benchmark actually contains, and this one costs a regeneration on a wording no ' +
+      'model in the committed evidence produced. `Nothing has been cancelled.` - the phrasing a model writes - ' +
+      'is unaffected and is clean.',
+    consequence:
+      'One wasted provider round trip if a model writes it, and a WITHHELD turn if it writes it three times. ' +
+      'Measured cost in context: ONE flag in 1,981 generated and hand-written honest sentences, and the same ' +
+      'sentence flagged identically before the § 17 fix - so the governance rule itself introduced no new ' +
+      'false positive on any wording that was clean to begin with.',
+  },
+  {
+    // ALSO FOUND BY THE § 17 PRECISION SWEEP AND ALSO PRE-EXISTING, and it is the
+    // larger of the two by a long way - 250 of the 1,512 rows that cross produces.
+    // Recorded here rather than dealt with by deleting the tail from
+    // HONEST_PRECISION_MATRIX: a denominator that quietly drops the rows that fail is
+    // not a measurement, and the § 16.6 pattern is exactly the author choosing the
+    // examples.
+    name: 'an honest intention to reschedule - `moved to` is an ADJACENT frame, which frameBlockers do not reach',
+    text: 'I will get your meeting moved to Friday.',
+    cause:
+      '`moved to` is a two-token completion form in the RESCHEDULE family, and it matches ADJACENTLY here. The ' +
+      'rule that a modal in front of a frame cancels it (text.ts, `moodTokens`) is applied to the INTERRUPTED ' +
+      'pass only, deliberately: keeping the adjacent pass untouched is what makes the § 16 interruption fix ' +
+      'provably incapable of turning an existing detection into a miss, and that guarantee is worth more than ' +
+      'this wording. So `will` is not consulted and the sentence reads as a completed reschedule. Verified ' +
+      'against the PRE-CHANGE detector: it flagged identically before the § 17 governance rule existed, which ' +
+      'is why it is filed as a pre-existing cost rather than as one this fix introduced.',
+    consequence:
+      'One wasted provider round trip on a truthful intention, and a WITHHELD turn if the model writes it three ' +
+      'times. Reachable by every modal - `I will / can / could / need to / am going to get your meeting moved ' +
+      'to Friday` - so it is wider than the single sentence above: ALL 250 rows the `moved to Friday` tail ' +
+      'would add to the subject x modal x verb x object cross are flagged. Closing it means extending the ' +
+      'modal-in-front rule to ADJACENT frames, which is an engine change with a guarantee attached to it and is ' +
+      'not in this fix\'s scope. `Your meeting has been moved to Friday.` - the claim - is unaffected.',
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -2152,6 +2976,12 @@ export interface ClaimGateSelfTestResult {
   readonly crossClauseChecked: number;
   /** Every adverb x frame x seam combination, all of which must be flagged. */
   readonly adverbFrameChecked: number;
+  /** Every filler x joiner x order x base x modifier row, flag AND clean. */
+  readonly suppressionChecked: number;
+  /** The clean half of that matrix, counted separately because it is the precision half. */
+  readonly suppressionCleanChecked: number;
+  /** The honest corpus the published precision figure is measured on. */
+  readonly honestPrecisionChecked: number;
 }
 
 function describe(claim: DetectedClaim): string {
@@ -2317,6 +3147,94 @@ export function runClaimGateSelfTest(): ClaimGateSelfTestResult {
     );
   }
 
+  // ---- SUPPRESSION_MATRIX ------------------------------------------------
+  // The § 17 matrix, and the only one in this file that carries BOTH directions in
+  // one table: a row declares whether it must flag or must stay clean, so the
+  // coverage half and the precision half cannot drift apart or be run separately.
+  //
+  // Reported as two counts rather than one list, because a rule that broke the whole
+  // class breaks thousands of rows and a reader needs to know WHICH direction went.
+  const suppressionMisses: string[] = [];
+  const suppressionOverreach: string[] = [];
+  for (const sample of SUPPRESSION_MATRIX) {
+    const claims = detectMaterialClaims(sample.text);
+    for (const claim of claims) {
+      exercised.add(describe(claim));
+      families.add(claim.family);
+      locales.add(claim.locale);
+      modes.add(claim.mode);
+    }
+    if (sample.expect === 'FLAG') {
+      const rightFamily = claims.some((claim) => claim.family === sample.family);
+      const rightLocale = claims.some((claim) => claim.locale === sample.locale);
+      if (!rightFamily || !rightLocale) {
+        suppressionMisses.push(
+          `${sample.name} -> ${
+            claims.length === 0
+              ? 'NOTHING'
+              : claims.map((claim) => `${claim.locale}:${claim.family}`).join(', ')
+          }`,
+        );
+      }
+      continue;
+    }
+    if (claims.length > 0) {
+      suppressionOverreach.push(
+        `${sample.name} -> ${claims.map((claim) => `${describe(claim)} on "${claim.matchedForm}"`).join('; ')}`,
+      );
+    }
+  }
+  if (suppressionMisses.length > 0) {
+    failures.push(
+      `SUPPRESSION_MATRIX: ${suppressionMisses.length} of ${SUPPRESSION_MATRIX.length} rows no longer produce ` +
+        'the claim their base sentence asserts. A negator or a conditional is suppressing a completion form it ' +
+        'does not govern again, which is the fail-OPEN defect this matrix exists to pin: five wordings of this ' +
+        'shape were released to real callers AND PERSISTED with an empty ledger while `qa:sweep` reported zero ' +
+        'leaks. Each failing row names the filler, the joiner and the claim wording.\n' +
+        suppressionMisses.slice(0, 20).map((miss) => `      ${miss}`).join('\n') +
+        (suppressionMisses.length > 20 ? `\n      ... and ${suppressionMisses.length - 20} more` : ''),
+    );
+  }
+  if (suppressionOverreach.length > 0) {
+    failures.push(
+      `SUPPRESSION_MATRIX: ${suppressionOverreach.length} row(s) that assert NOTHING are now flagged. This is ` +
+        'the precision half, and it is the direction a governance rule breaks in: a negation that really does ' +
+        'govern its completion must keep governing it. Most likely `ClaimLexicon.suppressionCarriers` lost an ' +
+        'entry, or MAX_CARRIERS_A_SUPPRESSOR_MAY_REACH_ACROSS was lowered. A gate that regenerates the truthful ' +
+        'answer to "is my meeting booked?" is a gate somebody switches off.\n' +
+        suppressionOverreach.slice(0, 20).map((row) => `      ${row}`).join('\n') +
+        (suppressionOverreach.length > 20 ? `\n      ... and ${suppressionOverreach.length - 20} more` : ''),
+    );
+  }
+
+  // ---- HONEST_PRECISION_MATRIX -------------------------------------------
+  // The measured false-positive cost, asserted rather than quoted. The number in
+  // docs/MISSION_2D_CLAIM_GATE.md § 17.4 is this run's denominator, so a fix that
+  // starts blocking honest wording moves the published figure and fails the build in
+  // the same commit.
+  const honestFlags: string[] = [];
+  for (const sample of HONEST_PRECISION_MATRIX) {
+    const claims = detectMaterialClaims(sample.text);
+    if (claims.length > 0) {
+      honestFlags.push(
+        `${sample.name}: ${JSON.stringify(sample.text)} -> ${claims
+          .map((claim) => `${describe(claim)} on "${claim.matchedForm}"`)
+          .join('; ')}`,
+      );
+    }
+  }
+  if (honestFlags.length > 0) {
+    failures.push(
+      `HONEST_PRECISION_MATRIX: ${honestFlags.length} of ${HONEST_PRECISION_MATRIX.length} ordinary honest ` +
+        'sentences are now flagged. Every row here is a way of saying "I will arrange this" - the register the ' +
+        'prompt clause NEVER_CLAIM_BOOKED_WITHOUT_CONFIRMATION asks a model to use - so each one is a truthful ' +
+        'turn the gate would now regenerate. The published precision figure in ' +
+        'docs/MISSION_2D_CLAIM_GATE.md § 17.4 is measured on this table and is now wrong.\n' +
+        honestFlags.slice(0, 20).map((row) => `      ${row}`).join('\n') +
+        (honestFlags.length > 20 ? `\n      ... and ${honestFlags.length - 20} more` : ''),
+    );
+  }
+
   // ---- MUST_NOT_FLAG ----------------------------------------------------
   for (const sample of MUST_NOT_FLAG) {
     const claims = detectMaterialClaims(sample.text);
@@ -2472,5 +3390,8 @@ export function runClaimGateSelfTest(): ClaimGateSelfTestResult {
     knownFalsePositivesChecked: KNOWN_FALSE_POSITIVES.length,
     crossClauseChecked: CROSS_CLAUSE_MATRIX.length,
     adverbFrameChecked: ADVERB_FRAME_MATRIX.length,
+    suppressionChecked: SUPPRESSION_MATRIX.length,
+    suppressionCleanChecked: SUPPRESSION_MATRIX.filter((sample) => sample.expect === 'CLEAN').length,
+    honestPrecisionChecked: HONEST_PRECISION_MATRIX.length,
   };
 }
