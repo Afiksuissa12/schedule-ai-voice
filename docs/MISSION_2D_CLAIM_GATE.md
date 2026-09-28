@@ -3307,6 +3307,130 @@ path: `Not all of your meetings are booked.` and `I cannot see that your meeting
 booked.` Recording that distinction is the point of running the A/B rather than
 inferring the cost.
 
+### 18.4b Why this rule cannot leak for an UNLISTED filler, and the alternative that was measured against it
+
+The operator's note on this finding makes the sharpest version of the objection,
+and it deserves a direct answer rather than a reassurance: **every one of the five
+fixes has changed what stops a REACH, and a reach-based rule leaks for the next
+filler nobody listed.** Two things are owed — an argument that § 18 is not that,
+and a measurement of the alternative.
+
+#### The argument
+
+After § 18, a negator `N` suppresses a completion form `F` in the same clause only
+in one of three configurations, and **none of them is "N is within k declared
+tokens of F"**:
+
+1. **N is ADJACENT to F** — nothing at all stands between. `הפגישה לא נקבעה`,
+   `nothing is booked yet`, `לא קבעתי כלום`. This is exactly the attachment the
+   operator's rule is built on.
+2. **N opens its clause and cannot be a subject** → *suppression is refused
+   outright.* Not narrowed; refused. Whatever the filler contains, however long it
+   is, whatever punctuation surrounds it. `Not <anything> I have booked …` is
+   detected by construction, and so is `לא <anything> …`, `אין <anything> …`,
+   `טרם …`, `עדיין …`, `בלי …` — **every Hebrew negator, because `he.ts` declares
+   `subjectNegators` empty and Hebrew is pro-drop.** This is not a list of fillers
+   and it cannot be defeated by inventing one.
+3. **N has a subject** — either it IS one (`nothing`, `none`, `nobody`) or one
+   stands before it in the clause — **and the material between N and F contains no
+   fresh predication, and F brings no subject of its own, and F opens with an
+   auxiliary.** In that configuration N's subject is the subject of F's predicate.
+   The negation is *attached* in the grammatical sense; what separates them is
+   modifier or prepositional material that belongs to N's own phrase.
+
+So the question the rule asks is no longer "how far may N reach" but "do N and F
+belong to the same predication". A filler that defeats it would have to be one
+that satisfies configuration 3 — and configuration 3 *is* the honest reading:
+`Nothing at all has been booked yet.`, `Nothing in the diary is booked.`,
+`None of your meetings are booked.` A filler cannot get into it without becoming
+one of those sentences.
+
+**The residual is named rather than argued away**: `nothing`, `none` and `nobody`
+are the only three tokens in either locale for which configuration 2 does not
+apply, and they are the three that genuinely can be subjects. § 18.6 point 3 lists
+them as the entries a reader should check.
+
+#### The mechanical evidence
+
+Argument is not measurement, so the rule was attacked with **fillers nobody
+listed**, generated from the declared vocabulary itself — a negator or conditional
+followed by one, two or three tokens drawn at random (fixed seed) from the pooled
+221-token carrier inventory, crossed with twelve real claim bases in both
+languages including the bare-participle and pro-drop shapes:
+
+```
+carrier inventory                       221 distinct tokens
+leads                                   29 negators + 9 conditionals
+generated all-carrier fillers tried     6,700
+  negator-led misses                    0
+  conditional-led misses                2
+```
+
+**Zero negator-led misses.** The two conditional-led misses are both the generator
+emitting a trailing auxiliary that forms an INTERRUPTED FRAME with the base rather
+than a filler — `if you was I have booked …` closes `was … booked` across
+`i have`, and that frame really is governed by the conditional in front of it.
+Neither is a sentence in either language, and neither is the § 18 class.
+
+#### The alternative, measured
+
+The operator's proposal is to invert the default: **a completion form is DETECTED
+unless the negation, hedge or conditional is ATTACHED to it** — `have not booked`,
+`is not booked`, `cannot book`, the Hebrew negator immediately governing the
+inflected verb, with only a small declared set (`yet`, `still`, `עדיין`) allowed
+between. It was built as a scratch variant of the delivered detector and run beside
+it in one process against the same corpora.
+
+| corpus | unique | pre-§ 18 | **delivered** | attachment rule |
+|---|---:|---:|---:|---:|
+| `MUST_NOT_FLAG` | 57 | 0 | **0** | **10** |
+| `HONEST_PRECISION_MATRIX` | 1,262 | 0 | **0** | 0 |
+| `SUPPRESSION_MATRIX` (must stay clean) | 1,012 | 0 | **0** | **354** |
+| **honest total, deduped** | **2,329** | **0** | **0** | **364** |
+
+| corpus | unique | missed by delivered | missed by attachment |
+|---|---:|---:|---:|
+| `MUST_FLAG` | 148 | **0** | **0** |
+| `CROSS_CLAUSE_MATRIX` | 1,870 | **0** | **0** |
+| `SUPPRESSION_MATRIX` (must flag) | 2,856 | **0** | **0** |
+
+**The attachment rule detects nothing the delivered rule misses — 0 additional
+coverage across 4,874 must-flag rows — and costs 364 honest sentences, 15.6% of the
+honest corpus.** Ten of them are `MUST_NOT_FLAG` entries asserted by name, and they
+are not marginal wordings:
+
+```
+I cannot give you a confirmation number for that.     QA-3 precision control
+Once that is booked I will let you know.              § 8 rule 3, the canonical plan
+Once your meeting is booked, I will let you know.
+Once your meeting is booked I will send you a reminder.
+Nothing at all has been booked yet.                   QA-4 precision control 1
+Nothing at all is booked yet.                         QA-4 precision control 2
+I don't have your meeting booked.
+Nothing in the diary is booked.
+None of your meetings are booked.
+Nothing else has been confirmed.
+```
+
+The remaining 354 are those same shapes crossed with every filler and joiner in the
+`GOVERNED_NEGATION` slice — which is the slice that exists precisely because § 17.1
+said deleting `אין` and `לא` from the negator list would be the wrong fix, and this
+is the same trade one level up.
+
+**So the delivered rule is kept, and the reason is measured rather than
+preferred**: on everything this repository can check, the two rules have identical
+coverage and the attachment rule costs 364 truthful sentences. `lexicon/en.ts` makes
+the argument this turns on — a gate that punishes honest wording gets switched off,
+and a gate that is off puts the § 6.5.4 defect back in full — and four of the ten
+above are the sentences two separate QA rounds named as the constraint on the fix.
+
+**What would change that conclusion** is a filler that satisfies configuration 3
+and is not one of the honest readings above. The attack found none in 6,700
+attempts and the argument says why, but neither is a proof, and § 18.6 states the
+residual rather than claiming there is none. If a sixth finding arrives in
+configuration 3, the attachment rule is the right answer and this measurement is
+the price list for it.
+
 ### 18.5 The coverage, and where each piece of it lives
 
 | deliverable | where | what it adds |
@@ -3355,6 +3479,18 @@ of any of those words.
 4. **Everything in § 17.8's "not guaranteed" list stands**, including residual 1 —
    the oracle is not a second detector — which is exactly why this defect was found
    by a reviewer and not by the sweep.
+5. **The generated matrices are NOT oracle-covered, and that is the same residual
+   wearing a different hat.** `SUPPRESSION_MATRIX`'s 3,891 rows and
+   `CROSS_CLAUSE_MATRIX`'s 1,870 carry their own expectation (`FLAG` with a
+   declared family and locale, or `CLEAN`) and are judged by the DETECTOR. The
+   independent oracle judges the sweep's released sentences, which are declared
+   one by one in `releaseTexts.ts` — so the `ALL_CARRIER` class is oracle-covered
+   through the ten family-M specs `r52`–`r61` and the fifteen e2e specs, and not
+   through the 856 generated rows. Covering generated rows would mean generating
+   declarations, and a declaration a generator wrote is the circle § 17.5 exists
+   to break. The two mechanisms are deliberately different and neither substitutes
+   for the other: the matrices prove the detector sees a CLASS, the oracle proves
+   a specific released sentence was safe to say.
 
 ### 18.7 The corrections this section owes, made in place
 
@@ -3395,7 +3531,7 @@ was changed. Nothing was merged anywhere.**
 |---:|---|---|---:|
 | 1 | `npm run typecheck` | no diagnostics | **0** |
 | 2 | `npm run test` | **`Test Files 67 passed \| 1 skipped (68)`** · **`Tests 1654 passed \| 2 skipped (1656)`** · 277.6 s | **0** |
-| 3 | `npm run qa:sweep` | **1,067 scenarios · 11,233 applicable (20,812 evaluated) · 0 violations · 0 network attempts** · 174.2 s · `RESULT: PASS` | **0** |
+| 3 | `npm run qa:sweep` | **1,067 scenarios · 11,233 applicable (20,812 evaluated) · 0 violations · 0 network attempts** · 201.5 s · `RESULT: PASS` | **0** |
 
 **INV-18, from run 3:**
 
