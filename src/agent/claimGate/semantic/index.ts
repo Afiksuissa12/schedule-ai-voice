@@ -9,6 +9,7 @@
  *   SemanticClaimVerifier and its verdict union   `src/ports/claimVerifier.ts`
  *   SemanticVerifierOutputSchema, grounding       `./schema.ts`
  *   SEMANTIC_VERIFIER_INSTRUCTION                 `./instruction.ts`   model-facing only
+ *   segmentForClassification, renderSegments      `./segmentation.ts`  presentation only
  *   LlmSemanticClaimVerifier                      `./llmSemanticClaimVerifier.ts`
  *   ScriptedSemanticClaimVerifier                 `./doubles.ts`
  *   RuleDrivenSemanticClaimVerifier               `./doubles.ts`
@@ -18,4 +19,5 @@ export * from './doubles.js';
 export * from './instruction.js';
 export * from './llmSemanticClaimVerifier.js';
 export * from './schema.js';
+export * from './segmentation.js';
 export * from './union.js';
