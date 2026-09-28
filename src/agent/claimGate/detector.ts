@@ -936,10 +936,20 @@ type TokenRole = SuppressionCarrierRole | 'DETERMINER';
  * clause asks a model to use. The number is therefore set by the honest corpus and
  * not by the adversarial one, which is the right way round for a precision knob.
  *
- * It also stops the one pathological case the carrier list alone allows: a long run
- * of pooled domain objects and determiners (`אין בעיה` is safe because `בעיה` is not
- * a carrier, but a filler built entirely out of carriers would otherwise reach any
- * distance).
+ * IT DOES NOT STOP THE ALL-CARRIER FILLER, AND THIS COMMENT USED TO SAY IT DID.
+ * The sentence here read: "it also stops the one pathological case the carrier list
+ * alone allows - a filler built entirely out of carriers would otherwise reach any
+ * distance". That was false, and independent QA quoted it back while reporting the
+ * fifth fail-open defect in this gate. A bound in TOKENS only stops a LONG filler,
+ * and the leaking ones are two to four tokens long: `Not at all` crosses two
+ * carriers to reach `i have booked`, `לא צריך כלום` crosses three to reach
+ * `הפגישה נקבעה`. Both sit comfortably inside four and both released a false
+ * booking to a real caller. What actually stops them is `governs` below - a
+ * question about what the crossed tokens ARE rather than how many there are - and
+ * `docs/MISSION_2D_CLAIM_GATE.md` § 18.7 records the correction.
+ *
+ * The bound is kept because it is still the belt: it is the only defence that does
+ * not depend on a word list being complete, and it costs nothing to keep.
  */
 const MAX_CARRIERS_A_SUPPRESSOR_MAY_REACH_ACROSS = 4;
 

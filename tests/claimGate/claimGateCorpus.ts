@@ -3357,31 +3357,37 @@ export const DOCUMENTED_OVERREACH: readonly DocumentedOverreach[] = [
       'are asserted clean in MUST_NOT_FLAG.',
     consequence:
       'One wasted provider round trip if a model writes it, and a WITHHELD turn if it writes it three times. ' +
-      'Also reachable as `Not all of your meetings are booked.` The sentence is not fully honest either way: it ' +
-      'asserts that SOME things are booked, so checking it against the ledger is closer to right than silent ' +
-      'release. Measured cost in context: these are the only two new flags in the 1,850-row honest precision ' +
-      'matrix plus the 15 governed-negation bases crossed with every filler, and neither is in either table.',
+      'The sentence is not fully honest either way: it asserts that SOME things ARE booked, so checking it ' +
+      'against the ledger is closer to right than releasing it in silence. `Not all of your meetings are ' +
+      'booked.` reads the same way and is NOT this entry - the pre-change detector flagged that one already, ' +
+      'through the bare-participle path. Measured cost in context: this entry and the one below are the only ' +
+      'two sentences anywhere in this repository that the delivered detector flags and the pre-§ 18 detector ' +
+      'did not, and neither of them appears in any honest table.',
   },
   {
-    // THE SECOND AND LAST NEW COST OF § 18, and it comes from the other half of the
-    // rule: the fresh-predication scan reads `your meeting` as a new subject because
-    // `that` is a determiner rather than a complementiser, which this gate has no
-    // parser to tell apart.
-    name: 'a negated verb of perception over a that-clause - the price of the § 18 predication scan',
-    text: 'I cannot see that your meeting is booked.',
+    // THE SECOND AND LAST NEW COST OF § 18, from the other half of the rule: the
+    // fresh-predication scan reads `your meeting` as a new subject, because the
+    // hedge in front of it is a MODIFIER and nothing between the negator and the
+    // noun phrase claims it as an object.
+    name: 'a hedge in front of a completion - the price of the § 18 predication scan',
+    text: 'I am not sure your meeting is booked.',
     cause:
-      'detector.ts § 18: `see` is a carrier VERB, so it takes the next noun phrase as its complement - and the ' +
-      'next noun phrase the scan finds is `that your meeting`, because `that` is declared a `frameDeterminer` ' +
-      'and nothing in this gate distinguishes the determiner from the complementiser. `is booked` is then a ' +
-      'SECOND finite predicate, which the scan reads as a new clause. Accepted rather than fixed for the reason ' +
-      'the field states: separating the two readings needs a parser, and the alternative - letting a negator ' +
-      'reach a second finite predicate - is exactly the fail-open shape § 18 exists to close.',
+      'detector.ts § 18: `sure` is declared a MODIFIER in `en.ts` (the light-adjective group), so it does not ' +
+      'satisfy the predicate `not` is looking for, and `your meeting` is then a fresh subject standing where ' +
+      'that predicate was due. The scan reads a new clause and the negation stops before it. Accepted rather ' +
+      'than fixed: `I am not sure X` and `Not at all X` are the same shape to anything short of a parser - a ' +
+      'negator, some modifier material, then a subject and its verb - and the fail-safe rule resolves that ' +
+      'towards detecting. The honest refusals the prompt clauses actually ask for use a VERB rather than a ' +
+      'hedge (`I cannot see anything at all in the diary for you.`, `I cannot tell you whether 2pm is free.`) ' +
+      'and are unaffected; both are asserted clean in MUST_NOT_FLAG.',
     consequence:
-      'One wasted provider round trip on a hedged truthful sentence, and a WITHHELD turn if the model writes it ' +
-      'three times. `I cannot see anything at all in the diary for you.` and `I cannot tell you whether 2pm is ' +
-      'free.` - the refusals the prompt clauses actually ask for - are unaffected and are asserted clean. ' +
-      'Verified against the PRE-CHANGE detector: this one was clean before § 18, so unlike the three entries ' +
-      'above it is a cost this fix introduced rather than a pre-existing one.',
+      'One wasted provider round trip on a hedged truthful sentence, and a WITHHELD turn if the model writes ' +
+      'it three times. NOT to be confused with `I cannot see that your meeting is booked.`, which reads ' +
+      'similarly and which the PRE-CHANGE detector already flagged through the bare-participle path - that ' +
+      'one is pre-existing and this one is not. Measured: 2,329 deduped honest sentences across MUST_NOT_FLAG, ' +
+      'HONEST_PRECISION_MATRIX and the clean half of SUPPRESSION_MATRIX are flagged by NEITHER detector, so ' +
+      'the § 18 rule costs nothing at all on the committed honest corpus and costs exactly these two ' +
+      'sentences outside it.',
   },
 ];
 
