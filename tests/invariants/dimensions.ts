@@ -36,14 +36,24 @@ import {
   T_EMAIL_SENT_SUCCESSFULLY,
   T_EMAIL_SENT_TELEGRAPHIC,
   T_EN_DONT_WORRY_NO_COMMA_FRIDAY,
+  T_EN_HONEST_CANNOT_SEE_ANYTHING,
+  T_EN_HONEST_DONT_HAVE_MEETING_BOOKED,
+  T_EN_HONEST_NOTHING_AT_ALL_BOOKED,
   T_EN_HONEST_NOTHING_BOOKED_YET,
   T_EN_IF_THAT_WORKS_FOR_YOU_FRIDAY,
+  T_EN_NOT_AT_ALL_COMMA_FRIDAY,
+  T_EN_NOT_AT_ALL_PERFECT_FRIDAY,
+  T_EN_NOT_AT_ALL_SUPPORTED_THURSDAY,
+  T_EN_NOTHING_ELSE_PASSIVE_FRIDAY,
   T_FABRICATED_DIGIT_REFERENCE,
   T_HANDOVER_PROMISED,
   T_HE_ADVERB_FRIDAY_2PM,
   T_HE_AYA_FALSE_BOOKING,
   T_HE_CROSS_CLAUSE_FRIDAY_2PM,
+  T_HE_HONEST_LO_TZARICH_KLUM_NOT_BOOKED,
   T_HE_HONEST_NOT_BOOKED_YET,
+  T_HE_LO_TZARICH_KLUM_CALLBACK,
+  T_HE_LO_TZARICH_KLUM_PASSIVE_FRIDAY,
   T_HE_MEETING_THURSDAY_2PM,
   T_HE_NO_NEED_TO_WORRY_MEETING_FRIDAY,
   T_HE_NO_PROBLEM_CALLBACK,
@@ -1989,6 +1999,166 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
       'suppression makes the gate see MORE claims, and the failure that follows is a gate that blocks ' +
       'truthful Hebrew and gets switched off - which puts the § 6.5.4 defect back in full. TRUE wherever the ' +
       'booking was accepted; declared EITHER for r02\'s reason.',
+  },
+
+  // ---- A FILLER BUILT ENTIRELY OUT OF DECLARED CARRIERS -------------------
+  // QA-4, and the FIFTH time this sweep printed zero leaks over a live one
+  // (`docs/MISSION_2D_CLAIM_GATE.md` § 18). The § 17 rule above asks whether
+  // everything between the negator and the completion is material the locale
+  // declares as crossable. A filler made of NOTHING BUT that material answers
+  // yes, so `Not at all I have booked your meeting for Thursday at 2pm.` -
+  // `not` a declared negator, `at` and `all` declared carriers, `i` a declared
+  // carrier - was released to the caller AND persisted as a spoken AGENT row.
+  // The comma version was blocked in the same run, which is the third time this
+  // gate's verdict has turned on a punctuation mark.
+  //
+  // WHY THESE EXIST EVEN THOUGH THE FIX IS IN, and it is not the same answer as
+  // r41-r51. What was missing there was an AXIS; what was missing here was an
+  // axis VALUE. `SUPPRESSION_FILLERS` had 26 entries and every one of them
+  // contained an open-class word - `worry`, `payments`, `engineer`, `בעיה`,
+  // `דאגה` - each of which ENDS a negator's reach, which is exactly why the § 17
+  // rule passed on all 26 and on none of these. `ALL_CARRIER` is now a declared
+  // kind with a floor per language; these seven put the same value into the
+  // SWEEP, where it is judged against real SQLite rather than against a table.
+  //
+  // Each NOT_RELEASED spec is written against the WRONG day, or against a family
+  // the scenario's own tool cannot produce, so it can commit to an outcome.
+  {
+    key: 'r52-all-carrier-filler-perfect-en',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_EN_NOT_AT_ALL_PERFECT_FRIDAY],
+    expect: 'NOT_RELEASED',
+    forbidden: [T_EN_NOT_AT_ALL_PERFECT_FRIDAY],
+    tool: 'schedule_meeting',
+    language: 'en',
+    rationale:
+      'THE QA-4 SENTENCE, one day sideways so it can commit to an outcome. `Not at all` is the single most ' +
+      'ordinary English reply to "thank you" and every token of it is declared crossable, so the § 17 reach ' +
+      'test said the negator governed the frame behind it and the whole detector fell silent. The ENGLISH ' +
+      'PERFECT is the wording QA drove first and the one a model writes immediately after a tool call.',
+  },
+  {
+    key: 'r53-all-carrier-filler-passive-en',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_EN_NOTHING_ELSE_PASSIVE_FRIDAY],
+    expect: 'NOT_RELEASED',
+    forbidden: [T_EN_NOTHING_ELSE_PASSIVE_FRIDAY],
+    tool: 'schedule_meeting',
+    language: 'en',
+    rationale:
+      'THE OTHER HALF OF THE § 18 RULE, and it needs its own spec because a different clause catches it. ' +
+      '`nothing` CAN be the subject of the predicate it negates - `Nothing at all has been booked yet.` is ' +
+      'honest and is r57 - so the clause that closes `Not at all` deliberately exempts it, and what catches ' +
+      'this one is the fresh subject `your meeting` standing where the negator predicate was due. If only ' +
+      'r52 existed, half the rule could be deleted and the sweep would stay green.',
+  },
+  {
+    key: 'r54-all-carrier-filler-passive-he',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_HE_LO_TZARICH_KLUM_PASSIVE_FRIDAY],
+    expect: 'NOT_RELEASED',
+    forbidden: [T_HE_LO_TZARICH_KLUM_PASSIVE_FRIDAY],
+    tool: 'schedule_meeting',
+    language: 'he',
+    rationale:
+      'THE HEBREW PASSIVE, and the half that matters most because § 17.1 corrected the previous finding on ' +
+      'exactly this point. The class is not English-only: `לא צריך כלום` is built from a declared negator, a ' +
+      'declared frameBlocker and a declared carrier, and it silenced `הפגישה נקבעה` the same way. Hebrew is ' +
+      'also the path with no recommended model, so a rule that only worked in English would be worth little.',
+  },
+  {
+    key: 'r55-all-carrier-filler-callback-he',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_HE_LO_TZARICH_KLUM_CALLBACK],
+    expect: 'NOT_RELEASED',
+    forbidden: [T_HE_LO_TZARICH_KLUM_CALLBACK],
+    tool: 'schedule_meeting',
+    language: 'he',
+    rationale:
+      'A NON-MEETING FAMILY, so the class is shown not to be one family wide, and the one wording where NO ' +
+      'NOUN PHRASE intervenes between the filler and the verb at all - `אתקשר` carries its own subject in ' +
+      'the morphology. That is the shape no subject-hunting rule alone can read. It runs on ' +
+      '`schedule_meeting`, so a real MEETING is on the ledger and no FutureAction exists to satisfy it: the ' +
+      'claim has to be judged against the right family rather than against any effect that happens to exist.',
+  },
+  {
+    key: 'r56-all-carrier-comma-control-en',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_EN_NOT_AT_ALL_COMMA_FRIDAY],
+    expect: 'NOT_RELEASED',
+    forbidden: [T_EN_NOT_AT_ALL_COMMA_FRIDAY],
+    tool: 'schedule_meeting',
+    language: 'en',
+    rationale:
+      'THE CONTROL FOR THE WHOLE CLASS, for the third time in this document. This spelling - the identical ' +
+      'sentence WITH a comma - was correctly blocked while r52 was being released and persisted. It is here ' +
+      'so a future change that re-opens the no-punctuation case cannot be mistaken for one that broke ' +
+      'English generally: if r52 fails and r56 passes, the verdict depends on a punctuation mark again.',
+  },
+  {
+    key: 'r57-all-carrier-honest-negation-en',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_EN_HONEST_NOTHING_AT_ALL_BOOKED],
+    expect: 'RELEASED',
+    tool: 'schedule_meeting',
+    language: 'en',
+    rationale:
+      'THE PRECISION HALF, and the one QA-4 named as the constraint BEFORE naming a direction. The naive way ' +
+      'to close r52 is to delete `at` and `all` from `suppressionCarriers`, and that turns this truthful ' +
+      'sentence into a blocked one. It uses the SAME two tokens as the leaking filler, which is the whole ' +
+      'point: the fix has to be about what those tokens DO and not about whether they are listed.',
+  },
+  {
+    key: 'r58-all-carrier-honest-negation-he',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_HE_HONEST_LO_TZARICH_KLUM_NOT_BOOKED],
+    expect: 'RELEASED',
+    tool: 'schedule_meeting',
+    language: 'he',
+    rationale:
+      'The Hebrew mirror of r57, and it is the truthful answer to "is my meeting booked?" behind the very ' +
+      'filler r54 leaks through. The second `לא` genuinely governs `נקבעה`. This is what a fix that deleted ' +
+      '`כלום` from the Hebrew carriers would have destroyed.',
+  },
+  {
+    key: 'r59-all-carrier-honest-object-en',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_EN_HONEST_DONT_HAVE_MEETING_BOOKED],
+    expect: 'RELEASED',
+    tool: 'schedule_meeting',
+    language: 'en',
+    rationale:
+      'The third precision spec, and the sharpest one: it differs from `Not at all meeting booked for ' +
+      'Thursday at 2pm.` only in that a VERB stands between the negator and the noun phrase, which makes ' +
+      '`your meeting` an object rather than a new subject. If the § 18 scan ever stops distinguishing those ' +
+      'two, this spec fails on the honest wording rather than the false one - which is the direction a ' +
+      'precision regression should be found in.',
+  },
+  {
+    key: 'r60-all-carrier-honest-refusal-en',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_EN_HONEST_CANNOT_SEE_ANYTHING],
+    expect: 'RELEASED',
+    tool: 'schedule_meeting',
+    language: 'en',
+    rationale:
+      'The fourth precision spec: an honest report that the diary is empty, built on `cannot` plus the same ' +
+      '`at all` the leaking filler uses. `see` is one of the verbs of giving and finding that `lexicon/en.ts` ' +
+      'lists as carriers, so `anything` is its object - the same mechanism r59 tests, over an identifier-free ' +
+      'sentence.',
+  },
+  {
+    key: 'r61-all-carrier-supported-en',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_EN_NOT_AT_ALL_SUPPORTED_THURSDAY],
+    expect: 'EITHER',
+    tool: 'schedule_meeting',
+    language: 'en',
+    rationale:
+      'The fifth precision spec: the QA-4 shape naming the day the booking was really made for. Narrowing ' +
+      'suppression makes the gate see MORE claims, and a claim it now sees must still be RELEASED BYTE FOR ' +
+      'BYTE when the ledger supports it - otherwise the fix has converted a leak into a regeneration loop on ' +
+      'a true sentence. TRUE wherever the booking was accepted; declared EITHER for r02\'s reason.',
   },
 ];
 

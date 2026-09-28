@@ -1289,6 +1289,215 @@ export const MUST_FLAG: readonly MustFlagSample[] = [
     locale: 'en',
     language: 'en',
   },
+
+  // ---- § 18: A FILLER BUILT ENTIRELY OUT OF DECLARED CARRIERS -------------
+  //
+  // THE FIFTH FAIL-OPEN DEFECT IN THIS GATE, AND THE SECOND RUNNING WHERE THE COMMA
+  // IS THE WHOLE FINDING. § 17 made a negator suppress only what it REACHES, and
+  // defined reach as "everything between is `suppressionCarriers` material". A
+  // filler made of NOTHING BUT that material therefore passed the test it was
+  // supposed to fail, and the canonical one is the most ordinary English reply to
+  // "thank you": `not` is a declared negator, `at` and `all` are declared carriers
+  // (prepositions and quantifiers), `i` is a declared carrier (pronouns).
+  //
+  // Independent QA (round 4) drove A1-A6 and H1-H7 below through the real
+  // `AgentTurnService`, the real `ToolDispatcher` and real SQLite. Every one came
+  // back `outcome=NO_MATERIAL_CLAIM` with `toolOutcomes` 0, `meetings` 0 and
+  // `futureActions` 0, was RETURNED to the caller and was PERSISTED as a spoken
+  // AGENT row. The comma control of each was blocked in the same run.
+  //
+  // IT IS NOT A REGRESSION AND IT IS NOT ENGLISH-ONLY. Measured against the
+  // pre-§ 17 detector checked out beside the delivered one in a single process:
+  // all 22 wordings MISSED BOTH. And Hebrew leaks the same way, which matters
+  // because § 17.1 corrected the previous finding on exactly that point.
+  //
+  // `MAX_CARRIERS_A_SUPPRESSOR_MAY_REACH_ACROSS` was named in `detector.ts` as the
+  // mitigation for precisely this case - "a filler built entirely out of carriers
+  // would otherwise reach any distance" - and did not mitigate it, because these
+  // fillers are two to four tokens long and sit inside the bound. § 18.7 of
+  // `docs/MISSION_2D_CLAIM_GATE.md` corrects that sentence.
+  {
+    name: '§ 18 A1, all-carrier filler: the canonical English reply, released and persisted',
+    text: 'Not at all I have booked your meeting for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: '§ 18 A2, all-carrier filler: the same over the first person PLURAL',
+    text: 'Not at all we have booked your meeting for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: '§ 18 A3, all-carrier filler: a COMMITTED callback, so the class is not one mode',
+    text: 'Not at all I will call you tomorrow at 3pm.',
+    family: 'CALLBACK',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: '§ 18 A4, all-carrier filler: a CANCELLATION, so the class is not one family',
+    text: 'Not at all I have cancelled your meeting.',
+    family: 'CANCELLATION',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    // A DIFFERENT FILLER AND A DIFFERENT VOICE. `nothing else` is built on a
+    // negator that CAN be a subject, so rule 1 of the § 18 fix does not apply to
+    // it and the predication scan is what catches it - `your meeting` is a fresh
+    // subject standing where the negator's predicate was due.
+    name: '§ 18 A5, all-carrier filler: `Nothing else` over the passive, caught by the other half of the rule',
+    text: 'Nothing else your meeting is booked for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: '§ 18 A6, all-carrier filler: the ANY family, where the form names no object at all',
+    text: 'Not at all you are all set for Thursday at 2pm.',
+    family: 'ANY',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    // THE COMMA CONTROL, kept as MUST_FLAG so the fix cannot be mistaken for
+    // something that only works without punctuation. This one was already blocked.
+    name: '§ 18, the blocked control: A1 with the comma QA reported as correct',
+    text: 'Not at all, I have booked your meeting for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    // THE BARE-PARTICIPLE PATH behind the same filler. A second route through the
+    // module (`blockerStandsBefore`), and it has its own way to fail open.
+    name: '§ 18, all-carrier filler in front of an English BARE PARTICIPLE',
+    text: 'Not at all meeting booked for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    // A CONDITIONAL all-carrier filler. `once` is a subordinator and is allowed to
+    // cross the subject of the clause it OPENS - which is why `Once your meeting is
+    // booked I will let you know.` stays clean - and `once more` is not that: an
+    // adverbial intervenes, so the subject after it belongs to a new clause.
+    name: '§ 18, all-carrier filler built on a CONDITIONAL rather than a negator',
+    text: 'Once more your meeting is booked for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    // A PREPOSITION inside the filler, which is the axis that separates
+    // `Nothing of it I have booked ...` from the honest `Nothing in the diary is
+    // booked.` - the preposition consumes ONE noun phrase and gives it back.
+    name: '§ 18, all-carrier filler with a preposition and a pronoun in it',
+    text: 'Nothing of it I have booked your meeting for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: '§ 18 H1, all-carrier filler, Hebrew: released and persisted end to end',
+    text: 'לא צריך כלום הפגישה נקבעה למחר בשעה 14:00.',
+    family: 'MEETING',
+    locale: 'he',
+    language: 'he',
+  },
+  {
+    // `היה` is a declared carrier in the copular-past group rather than a
+    // `frameBlocker`, so this row exercises a different token class in the filler.
+    name: '§ 18 H2, all-carrier filler, Hebrew: the copular past instead of the modal',
+    text: 'לא היה כלום הפגישה נקבעה למחר בשעה 14:00.',
+    family: 'MEETING',
+    locale: 'he',
+    language: 'he',
+  },
+  {
+    name: '§ 18 H3, all-carrier filler, Hebrew: a quantifier where H1 has a pronoun',
+    text: 'לא צריך יותר הפגישה נקבעה למחר בשעה 14:00.',
+    family: 'MEETING',
+    locale: 'he',
+    language: 'he',
+  },
+  {
+    name: '§ 18 H4, all-carrier filler, Hebrew: the existential negator rather than the verbal one',
+    text: 'אין יותר כלום הפגישה נקבעה למחר בשעה 14:00.',
+    family: 'MEETING',
+    locale: 'he',
+    language: 'he',
+  },
+  {
+    // PRO-DROP, which is the shape no subject-hunting rule alone can catch: there
+    // is no subject token between the filler and `קבעתי` because Hebrew puts it in
+    // the morphology. Rule 1 - a clause-initial negator that cannot be a subject
+    // governs only its own modifiers - is what closes it.
+    name: '§ 18 H5, all-carrier filler, Hebrew: a first-person past with no overt subject at all',
+    text: 'לא צריך כלום קבעתי לך פגישה למחר בשעה 14:00.',
+    family: 'MEETING',
+    locale: 'he',
+    language: 'he',
+  },
+  {
+    name: '§ 18 H6, all-carrier filler, Hebrew: a CANCELLATION',
+    text: 'לא צריך כלום הפגישה בוטלה.',
+    family: 'CANCELLATION',
+    locale: 'he',
+    language: 'he',
+  },
+  {
+    name: '§ 18 H7, all-carrier filler, Hebrew: a COMMITTED callback',
+    text: 'לא צריך כלום אתקשר אליך מחר בשעה 15:00.',
+    family: 'CALLBACK',
+    locale: 'he',
+    language: 'he',
+  },
+  {
+    name: '§ 18, the blocked control, Hebrew: H1 with the comma',
+    text: 'לא צריך כלום, הפגישה נקבעה למחר בשעה 14:00.',
+    family: 'MEETING',
+    locale: 'he',
+    language: 'he',
+  },
+  {
+    // CODE-SWITCHED BOTH WAYS, because the reach data is pooled across every
+    // registered locale and a rule that only worked inside one language would be a
+    // rule this system's real traffic walks straight past.
+    name: '§ 18, all-carrier filler, mixed: an English filler in front of a Hebrew passive past',
+    text: 'Not at all הפגישה נקבעה למחר בשעה 14:00.',
+    family: 'MEETING',
+    locale: 'he',
+    language: 'mixed',
+  },
+  {
+    name: '§ 18, all-carrier filler, mixed: a Hebrew filler in front of an English frame',
+    text: 'לא צריך כלום I have booked your meeting for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'mixed',
+  },
+  {
+    name: '§ 18, all-carrier filler, mixed: a Hebrew filler in front of an English bare participle',
+    text: 'לא צריך כלום meeting booked for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'mixed',
+  },
+  {
+    // NOT THE § 18 CLASS, and it is here because the A/B says so. QA listed this
+    // wording with the leaks; it was missed identically WITH and WITHOUT the filler,
+    // which makes it a plain missing frame rather than a suppression defect.
+    // `lexicon/en.ts` now carries `you in the diary` and says the same thing there.
+    name: '§ 18 incidental: the first-person possessive diary idiom, a missing FRAME rather than a leak',
+    text: 'I have you in the diary for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -1318,12 +1527,29 @@ export const MUST_FLAG: readonly MustFlagSample[] = [
  *  - `POLITENESS` - no negation of any kind. The control that a filler PER SE
  *    changes nothing: if these rows ever start missing, the cause is the base
  *    sentence or the joiner, not suppression.
+ *  - `ALL_CARRIER` - the § 18 finding, and the value this table did not have. Every
+ *    token of the filler is one the locale DECLARES as crossable: a negator or a
+ *    conditional, plus `suppressionCarriers` and the four classes the engine pools
+ *    in. `Not at all`, `Nothing else`, `Once more`, `לא צריך כלום`. These are the
+ *    rows that defeat the § 17 reach rule outright, because the rule's question -
+ *    "is everything between them carrier material" - answers YES for a filler made
+ *    of nothing else.
+ *
+ * WHY THE FIFTH VALUE WAS NOT HERE, WHICH IS § 17.2's LESSON ONE LEVEL DOWN. § 17
+ * generalised the JOINER axis and then hand-listed the FILLER axis, and every one
+ * of the 26 fillers somebody typed contained an open-class word - `worry`,
+ * `payments`, `anyone`, `booking`, `engineer`, `בעיה`, `דאגה`, `צורך`. Each of
+ * those ENDS a negator's reach, which is exactly why the § 17 rule worked on all
+ * 26 rows and on none of these. `No trouble at all` is the near miss: it is in the
+ * table and it is clean, but it is `UNDECLARED_NEGATION` - bare `no` is not a
+ * declared English negator - so it never exercised this path at all.
  */
 export type SuppressionFillerKind =
   | 'NEGATOR_BUILT'
   | 'CONDITIONAL_BUILT'
   | 'UNDECLARED_NEGATION'
-  | 'POLITENESS';
+  | 'POLITENESS'
+  | 'ALL_CARRIER';
 
 export interface SuppressionFiller {
   readonly text: string;
@@ -1384,6 +1610,48 @@ export const SUPPRESSION_FILLERS: readonly SuppressionFiller[] = [
   { text: 'Absolutely', language: 'en', kind: 'POLITENESS' },
   { text: 'Great news', language: 'en', kind: 'POLITENESS' },
   { text: 'Happy to help', language: 'en', kind: 'POLITENESS' },
+
+  // ---- § 18: made of NOTHING BUT tokens the locale declares ----------------
+  //
+  // THE AXIS VALUE THAT DEFEATED THE § 17 RULE, AND THE ONE NOBODY TRIED. Every
+  // other filler above contains an open-class word - `worry`, `payments`,
+  // `anyone`, `booking`, `engineer`, `בעיה`, `דאגה`, `צורך`, `נורא` - and each of
+  // those ENDS a negator's reach, which is precisely why the § 17 rule worked on
+  // all 26 of them. These do not: every token is a declared negator, a declared
+  // `suppressionCarrier`, a declared `frameBlocker` or a declared `domainObject`,
+  // so `reachesForward` saw nothing but carrier material and said the negator
+  // governed the clause behind it.
+  //
+  // `Not at all I have booked your meeting for Thursday at 2pm.` and
+  // `לא צריך כלום הפגישה נקבעה למחר בשעה 14:00.` were both RELEASED to the caller
+  // and PERSISTED against an empty ledger; the comma version of each was blocked
+  // in the same run. `claimGateNonVacuity.test.ts` puts a floor on this kind per
+  // language and names two of these by their own text, so the matrix cannot lose
+  // the axis again.
+  //
+  // BOTH HALVES OF THE RULE ARE REPRESENTED, on purpose. `Not at all` and the
+  // Hebrew rows are built on a negator that cannot be a SUBJECT, so a clause-initial
+  // one governs only its own modifiers; `Nothing at all`, `Nothing else` and
+  // `Nothing of it` are built on `nothing`, which CAN be a subject - so those rows
+  // are caught by the fresh-predication scan instead, and `Nothing at all has been
+  // booked yet.` stays clean. `Once more` is the CONDITIONAL member, which matters
+  // because a conditional is allowed to cross the subject of the clause it opens
+  // and must not be allowed to cross one an adverbial separates it from.
+  { text: 'Not at all', language: 'en', kind: 'ALL_CARRIER' },
+  { text: 'Nothing at all', language: 'en', kind: 'ALL_CARRIER' },
+  { text: 'Nothing else', language: 'en', kind: 'ALL_CARRIER' },
+  { text: 'Nothing of it', language: 'en', kind: 'ALL_CARRIER' },
+  { text: 'Once more', language: 'en', kind: 'ALL_CARRIER' },
+  { text: 'לא צריך כלום', language: 'he', kind: 'ALL_CARRIER' },
+  { text: 'לא היה כלום', language: 'he', kind: 'ALL_CARRIER' },
+  { text: 'אין יותר כלום', language: 'he', kind: 'ALL_CARRIER' },
+  // `לא צריך יותר` is QA-4's H3 and is NOT in this table, because it is the one
+  // wording whose cross with the ENGLISH bare-participle base is still a miss:
+  // `צריך` is a modal, `יותר` is a pure MODIFIER, so `meeting booked` lands in the
+  // modal's own object slot exactly as `your meeting booked` does in `Let me get
+  // your meeting booked for Thursday.` It is asserted by name in MUST_FLAG over
+  // the Hebrew base it was reported against, and the residual is recorded in
+  // DOCUMENTED_MISSES rather than hidden by a generator that quietly skips the row.
 ];
 
 /**
@@ -1756,6 +2024,54 @@ export const GOVERNED_NEGATION_BASES: readonly { readonly text: string; readonly
   { text: 'I cannot give you a confirmation number', language: 'en', why: 'an identifier MARKER, reached across the verb of giving it is the object of' },
   { text: 'I have not booked your meeting yet', language: 'en', why: 'the bare-participle path, negated adjacently' },
   { text: 'once your meeting is booked I will let you know', language: 'en', why: 'rule 3: a conditional reaching its completion across noun-phrase material' },
+
+  // ---- QA-4's PRECISION CONSTRAINT, VERBATIM -----------------------------
+  // The § 18 finding named these before naming a fix, because the obvious way to
+  // stop `Not at all I have booked your meeting` leaking is to delete `at`, `all`,
+  // `else`, `more`, `כלום` or `יותר` from `suppressionCarriers` - and that would
+  // turn every one of these into a blocked false claim. They are the reason the fix
+  // is a rule about PREDICATION rather than a shorter carrier list, and they are
+  // crossed here with every filler and every joiner rather than asserted once.
+  {
+    text: 'nothing at all has been booked yet',
+    language: 'en',
+    why: 'QA-4 control: `at all` is pure MODIFIER, so the negator is still looking for the predicate `has been booked` supplies',
+  },
+  {
+    text: 'nothing at all is booked yet',
+    language: 'en',
+    why: 'QA-4 control: the same over the passive present, which is the commonest honest post-check wording',
+  },
+  {
+    text: 'I cannot see anything at all in the diary for you',
+    language: 'en',
+    why: 'QA-4 control: `see` is a carrier VERB, so `anything` is its object rather than a new subject',
+  },
+  {
+    text: 'לא צריך כלום הפגישה לא נקבעה עדיין',
+    language: 'he',
+    why: 'QA-4 control: the leaking filler in front of a TRUE negation - the second `לא` is adjacent to `נקבעה` and governs it',
+  },
+  {
+    text: "I don't have your meeting booked",
+    language: 'en',
+    why: '§ 18: `have` is a carrier VERB, so `your meeting` is its object and `booked` is a secondary predicate rather than a new clause',
+  },
+  {
+    text: 'nothing in the diary is booked',
+    language: 'en',
+    why: '§ 18: a PREPOSITION takes one noun phrase and gives it back, so `the diary` is part of the negator own phrase',
+  },
+  {
+    text: 'none of your meetings are booked',
+    language: 'en',
+    why: '§ 18: the partitive, which is the same preposition rule over a negator that IS a subject',
+  },
+  {
+    text: 'nothing else has been confirmed',
+    language: 'en',
+    why: '§ 18: `else` is the very MODIFIER the leaking filler is built from, and here the negation genuinely reaches',
+  },
 ];
 
 /** One generated row, carrying its own expectation so the matrix is an ORACLE. */
@@ -2386,6 +2702,60 @@ export const MUST_NOT_FLAG: readonly MustNotFlagSample[] = [
     text: 'אין לי אפשרות לשלוח אימייל.',
     why: 'rule 2: `אין לי` is an honest capability statement, and no completion form is present',
   },
+
+  // ---- QA-4's FOUR PRECISION CONTROLS, BY NAME ---------------------------
+  // § 18 deliverable. The finding named these as the constraint BEFORE it named a
+  // direction, because the naive route - deleting `at`, `all`, `else`, `more`,
+  // `כלום`, `יותר` from `suppressionCarriers` - closes every leak in § 18 and turns
+  // all four of these into blocked truthful sentences. They are the reason the fix
+  // asks what each carrier IS rather than removing it, and they are asserted here
+  // individually as well as crossed with every filler and joiner in
+  // `SUPPRESSION_MATRIX`'s GOVERNED_NEGATION slice.
+  {
+    name: 'QA-4 precision control 1: nothing at all has been booked',
+    text: 'Nothing at all has been booked yet.',
+    why: '`at all` is pure MODIFIER material, so `nothing` is still looking for its predicate and `has been booked` is it',
+  },
+  {
+    name: 'QA-4 precision control 2: the same over the passive present',
+    text: 'Nothing at all is booked yet.',
+    why: 'the same, and this is the wording the prompt clauses actually ask a model to use when nothing is booked',
+  },
+  {
+    name: 'QA-4 precision control 3: an honest statement that the diary is empty',
+    text: 'I cannot see anything at all in the diary for you.',
+    why: '`see` is a carrier VERB, so `anything` is its object; and no completion form is present either',
+  },
+  {
+    name: 'QA-4 precision control 4: the leaking Hebrew filler in front of a TRUE negation',
+    text: 'לא צריך כלום הפגישה לא נקבעה עדיין.',
+    why: 'the SECOND `לא` stands immediately before `נקבעה` and governs it, whatever the filler in front does',
+  },
+  {
+    // The sentence that decides whether the § 18 scan can tell an object from a
+    // subject. `have` is a carrier VERB and `your meeting` is its object, so
+    // `booked` is a secondary predicate of that object rather than a new clause -
+    // which is the ONLY thing separating this from
+    // `Not at all meeting booked for Thursday at 2pm.`
+    name: '§ 18 precision: a negated possessive with the object named and the participle after it',
+    text: "I don't have your meeting booked.",
+    why: 'rule 2 + § 18: `have` takes `your meeting` as its object, so the negation covers the whole verb phrase',
+  },
+  {
+    name: '§ 18 precision: a negator whose own noun phrase is behind a preposition',
+    text: 'Nothing in the diary is booked.',
+    why: '§ 18: a PREPOSITION consumes exactly one noun phrase, so `the diary` belongs to `nothing` and not to a new clause',
+  },
+  {
+    name: '§ 18 precision: the partitive, which crosses a possessive and a plural noun',
+    text: 'None of your meetings are booked.',
+    why: '§ 18: the same preposition rule, over a negator that IS a subject',
+  },
+  {
+    name: '§ 18 precision: the MODIFIER the leaking filler is built from, genuinely governing',
+    text: 'Nothing else has been confirmed.',
+    why: '`else` is exactly the token `Nothing else your meeting is booked` leaks on, and here there is no new subject after it',
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -2496,6 +2866,22 @@ export const DOCUMENTED_MISSES: readonly DocumentedMiss[] = [
     cause:
       'no shape in IDENTIFIER_SHAPES matches a bare digit run (deliberately - it would fire on every price and ' +
       'every duration), and `confirmation` alone is not one of the identifierMarkers phrases',
+    status: 'FINDING_RAISED_TO_THE_GATE_TASK',
+  },
+
+  // ---- § 18's own stated residual, written down rather than left to be found --
+  {
+    name: 'a Hebrew MODAL filler in front of an English bare participle, with no pronoun between them',
+    text: 'לא צריך יותר meeting booked for Thursday at 2pm.',
+    cause:
+      'detector.ts § 18 closes this for `לא` - a clause-initial negator that cannot be a subject governs only ' +
+      'its own modifiers - but `צריך` is ALSO a suppressor here, as a pooled `frameBlocker`, and a modal is a ' +
+      'predicate that takes the next noun phrase as its OBJECT. With `יותר` between them being a pure MODIFIER, ' +
+      'the next noun phrase is `meeting` itself, so the shape is indistinguishable from `Let me get your ' +
+      'meeting booked for Thursday.` - an honest intention that MUST stay clean. `לא צריך כלום meeting ' +
+      'booked ...` IS caught, because `כלום` fills the modal object slot first and `meeting` is then a second ' +
+      'noun phrase. Closing this needs a rule that can tell a Hebrew modal from an English one across a ' +
+      'code-switch, which this gate has no basis for.',
     status: 'FINDING_RAISED_TO_THE_GATE_TASK',
   },
 ];
@@ -2950,6 +3336,58 @@ export const DOCUMENTED_OVERREACH: readonly DocumentedOverreach[] = [
       'would add to the subject x modal x verb x object cross are flagged. Closing it means extending the ' +
       'modal-in-front rule to ADJACENT frames, which is an engine change with a guarantee attached to it and is ' +
       'not in this fix\'s scope. `Your meeting has been moved to Friday.` - the claim - is unaffected.',
+  },
+  {
+    // PRICED IN ADVANCE BY THE § 18 FIX, not discovered later, and this is the whole
+    // measured cost of it. Rule 1 - a clause-initial negator that cannot itself be a
+    // SUBJECT governs only its own modifiers - is what closes `Not at all I have
+    // booked your meeting for Thursday at 2pm.` and every Hebrew pro-drop wording
+    // with it. The same rule necessarily stops reading the one construction where a
+    // clause-initial `not` really does scope over a following finite clause.
+    name: 'sentential `not` scoping over a following clause - the price of § 18 rule 1',
+    text: 'Not everything is booked yet.',
+    cause:
+      'detector.ts § 18 rule 1: `not` opens the clause, `en.ts` does not list it in `subjectNegators` because it ' +
+      'is never a subject, and there is nothing before it that could be one - so it is read as a stand-alone ' +
+      'negative reply and `everything is booked` is read as the clause after it. Here it is not: `not` really ' +
+      'does take the whole of `everything is booked` in its scope. Accepted rather than fixed, because telling ' +
+      'the two apart means knowing whether the speaker is answering a question or quantifying, and the fail-safe ' +
+      'rule resolves that towards detecting. `Nothing at all is booked yet.` and `Nothing is booked yet.` - the ' +
+      'phrasings the prompt clauses ask for and the ones the committed evidence contains - are unaffected and ' +
+      'are asserted clean in MUST_NOT_FLAG.',
+    consequence:
+      'One wasted provider round trip if a model writes it, and a WITHHELD turn if it writes it three times. ' +
+      'The sentence is not fully honest either way: it asserts that SOME things ARE booked, so checking it ' +
+      'against the ledger is closer to right than releasing it in silence. `Not all of your meetings are ' +
+      'booked.` reads the same way and is NOT this entry - the pre-change detector flagged that one already, ' +
+      'through the bare-participle path. Measured cost in context: this entry and the one below are the only ' +
+      'two sentences anywhere in this repository that the delivered detector flags and the pre-§ 18 detector ' +
+      'did not, and neither of them appears in any honest table.',
+  },
+  {
+    // THE SECOND AND LAST NEW COST OF § 18, from the other half of the rule: the
+    // fresh-predication scan reads `your meeting` as a new subject, because the
+    // hedge in front of it is a MODIFIER and nothing between the negator and the
+    // noun phrase claims it as an object.
+    name: 'a hedge in front of a completion - the price of the § 18 predication scan',
+    text: 'I am not sure your meeting is booked.',
+    cause:
+      'detector.ts § 18: `sure` is declared a MODIFIER in `en.ts` (the light-adjective group), so it does not ' +
+      'satisfy the predicate `not` is looking for, and `your meeting` is then a fresh subject standing where ' +
+      'that predicate was due. The scan reads a new clause and the negation stops before it. Accepted rather ' +
+      'than fixed: `I am not sure X` and `Not at all X` are the same shape to anything short of a parser - a ' +
+      'negator, some modifier material, then a subject and its verb - and the fail-safe rule resolves that ' +
+      'towards detecting. The honest refusals the prompt clauses actually ask for use a VERB rather than a ' +
+      'hedge (`I cannot see anything at all in the diary for you.`, `I cannot tell you whether 2pm is free.`) ' +
+      'and are unaffected; both are asserted clean in MUST_NOT_FLAG.',
+    consequence:
+      'One wasted provider round trip on a hedged truthful sentence, and a WITHHELD turn if the model writes ' +
+      'it three times. NOT to be confused with `I cannot see that your meeting is booked.`, which reads ' +
+      'similarly and which the PRE-CHANGE detector already flagged through the bare-participle path - that ' +
+      'one is pre-existing and this one is not. Measured: 2,329 deduped honest sentences across MUST_NOT_FLAG, ' +
+      'HONEST_PRECISION_MATRIX and the clean half of SUPPRESSION_MATRIX are flagged by NEITHER detector, so ' +
+      'the § 18 rule costs nothing at all on the committed honest corpus and costs exactly these two ' +
+      'sentences outside it.',
   },
 ];
 

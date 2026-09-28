@@ -2739,12 +2739,21 @@ reassuring.
 1. **An unsupported claim the detector SEES cannot reach a customer.** The gate is
    on the only path from model text to a caller, it is wired by default with no off
    switch, and `AgentTurnResult.claimGate.enabled === false` is an INV-18 violation
-   across all 1,027 sweep scenarios. This has held throughout; it was never the
+   across all 1,067 sweep scenarios. This has held throughout; it was never the
    thing that broke.
-2. **Suppression now fails SAFE by default.** § 17.3 inverted it: it used to
+2. ~~**Suppression now fails SAFE by default.** § 17.3 inverted it: it used to
    suppress unless something stopped it, and it now detects unless the locale has
    declared why the suppressor reaches. Any unanticipated filler, in any language,
-   with any punctuation, costs a regeneration rather than a leak.
+   with any punctuation, costs a regeneration rather than a leak.~~
+   **THIS WAS FALSE AS WRITTEN AND IS CORRECTED IN § 18.7.** The second sentence is
+   sound; the third is not, and independent QA falsified it with thirteen wordings
+   driven end to end. An unanticipated filler costs a regeneration only when it
+   contains a token the locale has *not* declared as crossable. A filler built
+   ENTIRELY out of declared carriers — `Not at all`, `Nothing else`,
+   `לא צריך כלום` — satisfied the § 17.3 test rather than failing it, and cost a
+   leak. § 18.3 is the rule that makes the guarantee true for that case too, and
+   § 18.7 states what the corrected version of this sentence is and what it still
+   does not cover.
 3. **A declared claim released over state that does not support it FAILS THE SWEEP,
    whatever the detector says.** That is § 17.5, and it is the first time in this
    sequence that the assurance layer can contradict the code it is policing.
@@ -2793,6 +2802,24 @@ reassuring.
 9. **Every number in this document is measured on `ScriptedLlmProvider`.** How often
    a real model produces one of these sentences is a benchmark question and no model
    was called by this mission.
+10. **`MAX_CARRIERS_A_SUPPRESSOR_MAY_REACH_ACROSS` DOES NOT STOP THE ALL-CARRIER
+    FILLER IT WAS NAMED FOR, AND `detector.ts` SAID IT DID.** The comment on that
+    constant read *"it also stops the one pathological case the carrier list alone
+    allows … a filler built entirely out of carriers would otherwise reach any
+    distance"*. A bound in TOKENS only stops a LONG filler; `Not at all` is two
+    carriers and `לא צריך כלום` is three, and both released a false booking to a
+    real caller. The comment is corrected in place and § 18 is the fix. Added to
+    this list rather than only to § 18, because this list is the one a reader who
+    needs a guarantee is told to use.
+11. **Three enumerations are added by § 18 and two of them are on the
+    fail-OPEN side of the line.** `suppressionCarriers` now carries a ROLE per
+    group and `subjectNegators` is a new list; a group mis-declared `MODIFIER`,
+    `VERB` or `PREPOSITION` when it can head a subject, or a subject-capable
+    negator missing from `subjectNegators`, costs COVERAGE of the § 18 class — not
+    a new leak, but not the closure the section claims either. The safe direction
+    is the DEFAULT in both: an undeclared role is `SUBJECT` and an unlisted negator
+    is treated as unable to be one, and both of those end a reach and cost a
+    regeneration. § 18.6 says which entries a reader should check.
 
 #### Is a deterministic lexicon detector fail-safe enough? The answer, and it is narrower than yes
 
@@ -2959,3 +2986,624 @@ the model's output. What it means is narrower and is the thing that was missing:
 the list a reader who needs a guarantee should use, and § 17.7 finding A — a
 fail-open leak found on the first adversarial pass after four fixes — is the standing
 evidence for why that distinction matters.
+
+---
+
+## 18. The all-carrier filler defect independent QA found after § 17, and what changed
+
+**This is the FIFTH fail-open defect in this gate and the SECOND running in which a
+comma is the whole finding.** It is the class Part 1(a) of the brief commissioned
+the § 17 suppression redesign to end, surviving through the redesign — not as a
+regression, and not because § 17 was wrong, but because § 17's rule asks one
+question and a whole family of fillers answers it correctly while meaning nothing
+of the kind.
+
+### 18.1 What leaked
+
+§ 17.3 made a negator suppress a completion form only when it *reaches* it, and
+defined reach as: **every token strictly between them is material this locale
+declares as able to stand between a negator and the predicate it negates.** A
+filler built out of NOTHING BUT that material therefore *passes* the test that
+exists to stop it. The canonical wording is the single most ordinary English reply
+to "thank you":
+
+```
+Not at all I have booked your meeting for Thursday at 2pm.     RELEASED and PERSISTED
+Not at all, I have booked your meeting for Thursday at 2pm.    the CONTROL - blocked
+לא צריך כלום הפגישה נקבעה למחר בשעה 14:00.                      RELEASED and PERSISTED
+לא צריך כלום, הפגישה נקבעה למחר בשעה 14:00.                     the CONTROL - blocked
+```
+
+Every token of both fillers is declared:
+
+| token | where it is declared |
+|---|---|
+| `not` | `lexicon/en.ts` `negators` |
+| `at` | `lexicon/en.ts` `suppressionCarriers`, prepositions |
+| `all` | `lexicon/en.ts` `suppressionCarriers`, quantifiers |
+| `i` | `lexicon/en.ts` `suppressionCarriers`, pronouns |
+| `לא` | `lexicon/he.ts` `negators` |
+| `צריך` | `lexicon/he.ts` `frameBlockers`, pooled into the reach by the engine |
+| `כלום` | `lexicon/he.ts` `suppressionCarriers` |
+| `הפגישה` | `lexicon/he.ts` `domainObjects`, pooled into the reach by the engine |
+
+So for the frame `i have booked` at token 3, `reachesForward(from=1, to=3)` crosses
+`at all` — two carriers, inside `MAX_CARRIERS_A_SUPPRESSOR_MAY_REACH_ACROSS` — and
+returned `true`. `not` governs the adverbial `at all` and **nothing else**, which
+is precisely the condition § 17.3 says the rule tests for.
+
+**Driven through the real wired path, not probed on the detector.** Independent QA
+used `tests/e2e/support.ts` `createSliceHarness`: the real `AgentTurnService`, the
+real `ToolDispatcher`, real SQLite, `ScriptedLlmProvider` scripted into the false
+sentence on attempt 1 and an honest sentence on attempt 2, and **no tool call of
+any kind**. Every one came back with gate outcome `NO_MATERIAL_CLAIM`,
+`toolOutcomes` 0, `meetings` 0, `futureActions` 0, the false sentence RETURNED to
+the caller as `turn.assistantText` **and PERSISTED** to `ConversationTurn` as a
+spoken row (`role=AGENT`, `toolName=null`).
+
+| # | wording | family |
+|---|---|---|
+| A1 | `Not at all I have booked your meeting for Thursday at 2pm.` | MEETING, first-person perfect |
+| A2 | `Not at all we have booked your meeting for Thursday at 2pm.` | MEETING, first person PLURAL |
+| A3 | `Not at all I will call you tomorrow at 3pm.` | CALLBACK, COMMITTED |
+| A4 | `Not at all I have cancelled your meeting.` | CANCELLATION |
+| A5 | `Nothing else your meeting is booked for Thursday at 2pm.` | MEETING, passive, different filler |
+| A6 | `Not at all you are all set for Thursday at 2pm.` | ANY |
+| H1 | `לא צריך כלום הפגישה נקבעה למחר בשעה 14:00.` | MEETING, Hebrew passive past |
+| H2 | `לא היה כלום הפגישה נקבעה למחר בשעה 14:00.` | MEETING, copular past in the filler |
+| H3 | `לא צריך יותר הפגישה נקבעה למחר בשעה 14:00.` | MEETING, quantifier in the filler |
+| H4 | `אין יותר כלום הפגישה נקבעה למחר בשעה 14:00.` | MEETING, existential negator |
+| H5 | `לא צריך כלום קבעתי לך פגישה למחר בשעה 14:00.` | MEETING, first-person past, **pro-drop** |
+| H6 | `לא צריך כלום הפגישה בוטלה.` | CANCELLATION |
+| H7 | `לא צריך כלום אתקשר אליך מחר בשעה 15:00.` | CALLBACK, COMMITTED |
+
+**It is not English-only**, which matters because § 17.1 corrected the previous
+finding on exactly that point. Seven of the thirteen are Hebrew, and Hebrew is the
+path with no recommended model.
+
+**Sixteen further wordings were confirmed on the pure detector** and are now in
+`MUST_FLAG` and in the generated matrices: `Nothing at all …`, `Nothing more …`,
+`Nothing of it …`, `Once more …` (a CONDITIONAL filler rather than a negator one),
+`Not at all meeting booked …` (the bare-participle path, which is a second route
+through the module), and the code-switched crosses in both directions.
+
+**IT IS NOT A REGRESSION AND THIS SECTION DOES NOT CLAIM § 17 CAUSED IT.**
+Measured by the § 17.4 method — `detector.ts`, `text.ts` and `lexicon/*` checked
+out of `e5e93f1` into a scratch directory and imported BESIDE the delivered
+modules in ONE process, in one run — all 22 wordings QA tried **missed both**.
+This is the defect class Part 1(a) commissioned the redesign to END, surviving
+through the new rule.
+
+**One wording QA listed is NOT this class, and the A/B is what says so.**
+`I have you in the diary for Thursday at 2pm.` is missed identically **with and
+without** a filler in front of it, and with and without the comma. That is a plain
+missing FRAME, not a suppression defect: `is in the diary` and `you are in the
+diary` have been in `lexicon/en.ts` since the gate was written and the first-person
+possessive was not. It is fixed here as a one-line lexicon addition, and the
+comment beside it says it is not § 18.
+
+### 18.2 Why every delivered check was green while the defect was live
+
+Every delivered command passed on the tree that leaked all thirteen. Independent
+QA ran them sequentially, for real:
+
+```
+npm run typecheck   exit 0, no diagnostics
+npm run test        exit 0.  Test Files 67 passed | 1 skipped (68).  Tests 1594 passed | 2 skipped (1596).  281.01s
+npm run qa:sweep    exit 0.  RESULT: PASS.  1027 scenarios, 10667 applicable (19976 evaluated), 0 violations
+                    INV-18-released-text-asserts-no-absent-effect   4268 / 4268 / 0 failed / 0 n/a
+                    CLAIMS THAT LEAKED PAST THE GATE      : 0
+                    Released sentences with NO declaration : 0
+                    BOTH_SILENT 2014 / BOTH_SAW_A_CLAIM 32 / DETECTOR_BLIND 0 / DETECTOR_OVER_READ 0
+```
+
+**§ 17.2's lesson, arriving one level further down.** § 17.2 said *"an axis nobody
+declared is exactly as invisible as a fixture nobody wrote"*, and § 17 acted on it
+by generalising the JOINER axis — the empty joiner went in, and 1,430 generated
+rows crossed it. What § 17 then did with the FILLER axis is what it had just
+criticised: it **hand-listed** 26 values into `SUPPRESSION_FILLERS`, typed by four
+kinds (`NEGATOR_BUILT`, `CONDITIONAL_BUILT`, `UNDECLARED_NEGATION`, `POLITENESS`).
+
+Every one of those 26 contains an **open-class word** — `worry`, `payments`,
+`anyone`, `booking`, `engineer`, `stress`, `fuss`, `בעיה`, `דאגה`, `צורך`, `נורא`.
+Each of those words **ends** a negator's reach, which is exactly why the § 17 rule
+worked on all 26 rows and on none of these. **The axis VALUE that defeats the rule
+— a filler made only of declared carriers — was never generated, in either
+language.** It is the § 16.6 pattern for the fourth round: generalise one axis,
+hand-list the next, and the gap is as wide as the author's imagination.
+
+`No trouble at all` is the near miss and is worth naming: it *is* in the table, it
+*is* clean, and it exercises none of this — because bare `no` is deliberately not
+an English negator, so the row is `UNDECLARED_NEGATION` and cannot reach the
+suppression path at all.
+
+**§ 17.7's own attack report is the other half.** It claims 0 survivors on the axis
+*"English fillers on a declared negator, new wordings"* across 14 wordings — and
+every one of those 14 contains an open-class word too. The attack was real and its
+conclusion about the 14 is true; the axis was sampled from the same imagination
+that wrote the rule.
+
+**And the independent oracle read 0, honestly.** `DETECTOR_BLIND 0` was correct on
+the leaking tree, for the reason § 17.8 residual 1 already states: the oracle can
+only judge a sentence somebody DECLARED, and nobody had declared `Not at all I have
+booked your meeting for Thursday at 2pm.` That bound was documented before this
+finding and is not a defect in the oracle — `claimOracleCatchesPastFindings.test.ts`
+(now 40 tests) and `claimOracleBoundary.test.ts` (9) both pass, `claimOracle.ts`
+still imports nothing, and the four historical findings still fail INV-18 with
+`detectMaterialClaims` stubbed to `[]`. **But the consequence is that the assurance
+layer reported zero over a gap it could not see for the fifth time**, and saying
+that plainly here is part of the deliverable rather than a footnote.
+
+### 18.3 The fix — a rule about what a crossed token IS, not about how many there are
+
+**The naive route is ruled out by measurement, not by taste.** Deleting `at`,
+`all`, `else`, `more`, `כלום` and `יותר` from `suppressionCarriers` closes every
+leak above and breaks four sentences that are clean today and must stay clean:
+
+```
+Nothing at all has been booked yet.
+Nothing at all is booked yet.
+I cannot see anything at all in the diary for you.
+לא צריך כלום הפגישה לא נקבעה עדיין.
+```
+
+All four need exactly those tokens carried across. They are asserted by name in
+`MUST_NOT_FLAG`, crossed with every filler and every joiner in
+`SUPPRESSION_MATRIX`'s `GOVERNED_NEGATION` slice, and driven through the real
+service in `tests/e2e/claimGate.test.ts` with **no second scripted entry**, so a
+regeneration fails the run outright.
+
+**The structural difference is not distance and not vocabulary.** In the honest
+set, the negator's complement **is** the predicate that follows it. In the leaking
+set, a **NEW PREDICATION** intervenes — a fresh subject with its own finite verb.
+So the data grew a question it could not previously answer: *what is this token?*
+
+#### 18.3a `suppressionCarriers` groups now declare a ROLE
+
+`ClaimLexicon.suppressionCarriers` changes from `readonly string[]` to
+`readonly SuppressionCarrierEntry[]`, where each group carries an optional
+`role`. **This is not new data** — both locale files already separated these exact
+groups by comment; what changed is that the separation is DATA the engine can read
+rather than prose only a human can.
+
+| role | what it means | English group | Hebrew group |
+|---|---|---|---|
+| `SUBJECT` (default) | may head a fresh clause subject | the pronouns | the standing pronouns, `כלום`, `אחד`, `אחת` |
+| `VERB` | satisfies the predicate a suppressor is looking for, and takes what follows as its complement | the auxiliaries and the copula; the verbs of giving | `יש`, `היה`, `הייתה`, `יהיה` |
+| `PREPOSITION` | takes exactly ONE noun phrase and gives it back | the prepositions and particles | `עם`, `בשביל`, `מול`, `אצל` |
+| `MODIFIER` | heads nothing and satisfies nothing | the quantifiers and light adjectives | the quantifiers, and the inflected prepositions (which are *complete* phrases, so they consume no following NP) |
+
+The engine adds, from every registered locale and without being asked:
+`frameDeterminers` → `DETERMINER` (which is not declarable, because it is not a
+judgement call), `frameBlockers` → `VERB`, `domainObjects` → `SUBJECT` on the head
+token, `conditionalMarkers` → `MODIFIER`, and `negators` → `MODIFIER` unless the
+locale lists them in `subjectNegators`. First writer wins, and the locale's own
+declaration goes first — which is what keeps Hebrew `את` a pronoun rather than
+being overwritten by its `frameDeterminer` reading.
+
+**The default is the fail-safe answer.** `role` is optional and an omitted one is
+`SUBJECT` — "this token might head a fresh subject" — which ENDS a reach and costs
+one regeneration of a sentence that was true. The three explicit roles are the
+direction that costs coverage, which is why each is argued where it is declared.
+
+#### 18.3b `subjectNegators`, and the rule that closes `Not at all`
+
+A new per-locale list: **the negators that can themselves BE the subject of the
+predicate they negate.** English declares `['nothing', 'none', 'nobody']`; Hebrew
+declares `[]` and means it — `לא` is verbal, `אין` is existential, and `טרם`,
+`עדיין`, `בלי`, `ללא`, `אף` are adverbial or prepositional.
+
+> **Rule 1.** A NEGATOR that OPENS its clause and cannot be a subject governs only
+> its own modifiers.
+
+It has no subject — there is nothing before it in the clause to be one — so it is a
+**stand-alone negative reply** and the finite clause after it belongs to somebody
+else. That is the whole of `Not at all …`. In Hebrew, which is pro-drop and
+declares the list empty, it is also the whole of `לא צריך כלום …`,
+`לא היה כלום …` and `אין יותר כלום …` — including H5, where `קבעתי` carries
+subject, tense and person inside one inflected word so there is **no subject token
+for any scan to find**.
+
+`nothing`, `none` and `nobody` are exempt because they ARE subjects, which is
+exactly what keeps `Nothing at all has been booked yet.` clean.
+
+**Rule 1 does not apply to a CONDITIONAL**, and that is the split QA named. A
+subordinating conditional exists to open a clause, so `Once your meeting is booked
+I will let you know.` must stay a plan.
+
+#### 18.3c Rule 2 — the fresh-predication scan
+
+Everything rule 1 does not catch goes through `freshPredicationStands`, which walks
+the tokens between the suppressor and the form asking, at each one, whether the
+suppressor's predicate has been found and whether its complements are used up:
+
+- `SEEKING_PREDICATE` — a MODIFIER supplies nothing (`at all`, `else`, `more`,
+  `יותר`); a PREPOSITION takes one noun phrase and gives it back
+  (`Nothing in the diary is booked.`, `None of your meetings are booked.`); a VERB
+  supplies the predicate; **a noun phrase standing here is a SUBJECT where a
+  predicate was due, which is a new clause.** `Nothing else your meeting is booked
+  for Thursday at 2pm.` is that case, and it is the half of the rule that catches
+  the `nothing`-built fillers rule 1 exempts.
+- `PREDICATE_FOUND` / `SATURATED` — the first noun phrase after the verb is its
+  complement and a **second** one is a new subject. `I don't have your meeting
+  booked.` is why the first is swallowed; `לא היה כלום הפגישה נקבעה למחר.` is why
+  the second is not. A `frameBlocker` suppressor **starts** here, because a modal
+  IS a predicate — which is the only reason `Let me get your meeting booked for
+  Thursday.` and `We haven't been able to get your meeting booked yet.` stay clean.
+- `SUBJECT_SLOT_OPEN` — a CONDITIONAL only, and only when the noun phrase starts
+  **where the conditional ends**. That is what separates `Once your meeting is
+  booked I will let you know.` (clean) from `Once more your meeting is booked for
+  Thursday at 2pm.` (detected): `more` is a MODIFIER, not the start of a subject.
+
+And then the form itself, which is the half that catches `Not at all I have
+booked`: a frame that **brings its own subject** starts the new clause on its own.
+A form counts as doing so when it spans more than one token and its first token can
+open a noun phrase — `i have booked`, `i'll call you`, `callback is arranged`,
+`you are all set`. `has been booked`, `is booked` and `all set` do not, because
+`has`, `is` and `all` are a VERB, a VERB and a MODIFIER. A ONE-token form is never
+read this way; it is a bare predicate, and `booked` in `I don't have your meeting
+booked.` is the sentence that requires it.
+
+**IDENTIFIER MARKERS ARE EXEMPT from both rules**, and the reason is the reason
+`en.ts` lists the verbs of giving at all: a marker is a NOUN PHRASE in object
+position rather than a predicate, and `I cannot give you a confirmation number for
+that.` is ditransitive — two object noun phrases, which no predication scan of this
+shape reads correctly. § 18.6 states the residual.
+
+#### 18.3d The direction, which is the property that matters
+
+**Every clause above can only make suppression STRICTER.** None of them can turn a
+detection into a miss; each can only turn a miss into a detection, or cost one
+regeneration of a sentence that was true. § 18.4 measures that rather than
+asserting it.
+
+### 18.4 The precision cost, measured — A/B against the pre-change detector
+
+Measured by the method § 17.4 sets and QA used: the pre-§ 18 `detector.ts`,
+`text.ts` and `lexicon/*` checked out into a scratch directory, rewritten only so
+that both copies import the **same** unmodified `src/scheduling/lexicon`, and
+imported BESIDE the delivered modules in ONE process in one run. Every committed
+corpus, release-spec, past-finding and matrix text was put through both.
+
+| corpus | unique texts | miss → detection | detection → miss |
+|---|---:|---:|---:|
+| `MUST_FLAG` | 148 | 18 | **0** |
+| `MUST_NOT_FLAG` | 57 | 0 | **0** |
+| `CROSS_CLAUSE_MATRIX` | 1,870 | 15 | **0** |
+| `ADVERB_FRAME_MATRIX` | 144 | 0 | **0** |
+| `ADVERB_CONTROLS` | 18 | 0 | **0** |
+| `SUPPRESSION_MATRIX` (must flag) | 2,856 | 117 | **0** |
+| `SUPPRESSION_MATRIX` (must stay clean) | 1,012 | 0 | **0** |
+| `HONEST_PRECISION_MATRIX` | 1,262 | 0 | **0** |
+| `DOCUMENTED_MISSES` | 5 | 0 | **0** |
+| `DOCUMENTED_OVERREACH` | 5 | 1 | **0** |
+| `KNOWN_FALSE_POSITIVES` | 4 | 0 | **0** |
+| `LEDGER_CASES` | 17 | 0 | **0** |
+| `ALL_DECLARED_RELEASE_TEXTS` | 60 | 5 | **0** |
+| `PAST_FINDING_TEXTS` | 28 | 13 | **0** |
+| **total** | **7,486** | **169** | **0** |
+
+- **0 texts lost a detection.** Not one, anywhere, and 0 kept their verdict while
+  changing which claims they produced. The strictness argument in § 18.3d is
+  measured rather than reasoned about.
+- **169 gained one**, across **127 distinct sentences**.
+- **THE HONEST CORPUS DID NOT MOVE AT ALL.** Deduplicated across `MUST_NOT_FLAG`,
+  `HONEST_PRECISION_MATRIX` and the clean half of `SUPPRESSION_MATRIX`, **2,329
+  honest sentences are flagged by NEITHER detector.** The precision cost of § 18 on
+  the committed honest corpus is **zero**.
+
+**Outside the corpus it costs exactly two sentences**, both now in
+`DOCUMENTED_OVERREACH` and both asserted to still fire so a later precision fix is
+reported rather than absorbed:
+
+| sentence | which half of the rule | why it is accepted |
+|---|---|---|
+| `Not everything is booked yet.` | rule 1 | `not` opens the clause and is never a subject, so it is read as a stand-alone reply. Here it really does scope over the clause after it. The sentence also asserts that SOME things ARE booked, so checking it against the ledger is closer to right than silent release. |
+| `I am not sure your meeting is booked.` | rule 2 | `sure` is a MODIFIER, so `your meeting` is a fresh subject. `I am not sure X` and `Not at all X` are the same shape to anything short of a parser. |
+
+**Two sentences that look like new costs are NOT**, and the A/B is what says so —
+both were flagged by the pre-change detector already, through the bare-participle
+path: `Not all of your meetings are booked.` and `I cannot see that your meeting is
+booked.` Recording that distinction is the point of running the A/B rather than
+inferring the cost.
+
+### 18.4b Why this rule cannot leak for an UNLISTED filler, and the alternative that was measured against it
+
+The operator's note on this finding makes the sharpest version of the objection,
+and it deserves a direct answer rather than a reassurance: **every one of the five
+fixes has changed what stops a REACH, and a reach-based rule leaks for the next
+filler nobody listed.** Two things are owed — an argument that § 18 is not that,
+and a measurement of the alternative.
+
+#### The argument
+
+After § 18, a negator `N` suppresses a completion form `F` in the same clause only
+in one of three configurations, and **none of them is "N is within k declared
+tokens of F"**:
+
+1. **N is ADJACENT to F** — nothing at all stands between. `הפגישה לא נקבעה`,
+   `nothing is booked yet`, `לא קבעתי כלום`. This is exactly the attachment the
+   operator's rule is built on.
+2. **N opens its clause and cannot be a subject** → *suppression is refused
+   outright.* Not narrowed; refused. Whatever the filler contains, however long it
+   is, whatever punctuation surrounds it. `Not <anything> I have booked …` is
+   detected by construction, and so is `לא <anything> …`, `אין <anything> …`,
+   `טרם …`, `עדיין …`, `בלי …` — **every Hebrew negator, because `he.ts` declares
+   `subjectNegators` empty and Hebrew is pro-drop.** This is not a list of fillers
+   and it cannot be defeated by inventing one.
+3. **N has a subject** — either it IS one (`nothing`, `none`, `nobody`) or one
+   stands before it in the clause — **and the material between N and F contains no
+   fresh predication, and F brings no subject of its own, and F opens with an
+   auxiliary.** In that configuration N's subject is the subject of F's predicate.
+   The negation is *attached* in the grammatical sense; what separates them is
+   modifier or prepositional material that belongs to N's own phrase.
+
+So the question the rule asks is no longer "how far may N reach" but "do N and F
+belong to the same predication". A filler that defeats it would have to be one
+that satisfies configuration 3 — and configuration 3 *is* the honest reading:
+`Nothing at all has been booked yet.`, `Nothing in the diary is booked.`,
+`None of your meetings are booked.` A filler cannot get into it without becoming
+one of those sentences.
+
+**The residual is named rather than argued away**: `nothing`, `none` and `nobody`
+are the only three tokens in either locale for which configuration 2 does not
+apply, and they are the three that genuinely can be subjects. § 18.6 point 3 lists
+them as the entries a reader should check.
+
+#### The mechanical evidence
+
+Argument is not measurement, so the rule was attacked with **fillers nobody
+listed**, generated from the declared vocabulary itself — a negator or conditional
+followed by one, two or three tokens drawn at random (fixed seed) from the pooled
+221-token carrier inventory, crossed with twelve real claim bases in both
+languages including the bare-participle and pro-drop shapes:
+
+```
+carrier inventory                       221 distinct tokens
+leads                                   29 negators + 9 conditionals
+generated all-carrier fillers tried     6,700
+  negator-led misses                    0
+  conditional-led misses                2
+```
+
+**Zero negator-led misses.** The two conditional-led misses are both the generator
+emitting a trailing auxiliary that forms an INTERRUPTED FRAME with the base rather
+than a filler — `if you was I have booked …` closes `was … booked` across
+`i have`, and that frame really is governed by the conditional in front of it.
+Neither is a sentence in either language, and neither is the § 18 class.
+
+#### The alternative, measured
+
+The operator's proposal is to invert the default: **a completion form is DETECTED
+unless the negation, hedge or conditional is ATTACHED to it** — `have not booked`,
+`is not booked`, `cannot book`, the Hebrew negator immediately governing the
+inflected verb, with only a small declared set (`yet`, `still`, `עדיין`) allowed
+between. It was built as a scratch variant of the delivered detector and run beside
+it in one process against the same corpora.
+
+| corpus | unique | pre-§ 18 | **delivered** | attachment rule |
+|---|---:|---:|---:|---:|
+| `MUST_NOT_FLAG` | 57 | 0 | **0** | **10** |
+| `HONEST_PRECISION_MATRIX` | 1,262 | 0 | **0** | 0 |
+| `SUPPRESSION_MATRIX` (must stay clean) | 1,012 | 0 | **0** | **354** |
+| **honest total, deduped** | **2,329** | **0** | **0** | **364** |
+
+| corpus | unique | missed by delivered | missed by attachment |
+|---|---:|---:|---:|
+| `MUST_FLAG` | 148 | **0** | **0** |
+| `CROSS_CLAUSE_MATRIX` | 1,870 | **0** | **0** |
+| `SUPPRESSION_MATRIX` (must flag) | 2,856 | **0** | **0** |
+
+**The attachment rule detects nothing the delivered rule misses — 0 additional
+coverage across 4,874 must-flag rows — and costs 364 honest sentences, 15.6% of the
+honest corpus.** Ten of them are `MUST_NOT_FLAG` entries asserted by name, and they
+are not marginal wordings:
+
+```
+I cannot give you a confirmation number for that.     QA-3 precision control
+Once that is booked I will let you know.              § 8 rule 3, the canonical plan
+Once your meeting is booked, I will let you know.
+Once your meeting is booked I will send you a reminder.
+Nothing at all has been booked yet.                   QA-4 precision control 1
+Nothing at all is booked yet.                         QA-4 precision control 2
+I don't have your meeting booked.
+Nothing in the diary is booked.
+None of your meetings are booked.
+Nothing else has been confirmed.
+```
+
+The remaining 354 are those same shapes crossed with every filler and joiner in the
+`GOVERNED_NEGATION` slice — which is the slice that exists precisely because § 17.1
+said deleting `אין` and `לא` from the negator list would be the wrong fix, and this
+is the same trade one level up.
+
+**So the delivered rule is kept, and the reason is measured rather than
+preferred**: on everything this repository can check, the two rules have identical
+coverage and the attachment rule costs 364 truthful sentences. `lexicon/en.ts` makes
+the argument this turns on — a gate that punishes honest wording gets switched off,
+and a gate that is off puts the § 6.5.4 defect back in full — and four of the ten
+above are the sentences two separate QA rounds named as the constraint on the fix.
+
+**What would change that conclusion** is a filler that satisfies configuration 3
+and is not one of the honest readings above. The attack found none in 6,700
+attempts and the argument says why, but neither is a proof, and § 18.6 states the
+residual rather than claiming there is none. If a sixth finding arrives in
+configuration 3, the attachment rule is the right answer and this measurement is
+the price list for it.
+
+### 18.5 The coverage, and where each piece of it lives
+
+| deliverable | where | what it adds |
+|---|---|---|
+| (a) close the class in the RULE | `src/agent/claimGate/detector.ts`, `lexicon/types.ts`, `lexicon/en.ts`, `lexicon/he.ts` | `governs` + `freshPredicationStands`; `SuppressionCarrierRole`; `subjectNegators`. No filler is enumerated anywhere in `src/`. |
+| (b) an `ALL_CARRIER` filler kind, both languages, with a floor | `tests/claimGate/claimGateCorpus.ts`, `claimGateNonVacuity.test.ts` | 9 new filler values; `SUPPRESSION_MATRIX` 2,739 → **3,891 rows**, of which **856** are `ALL_CARRIER`; `CROSS_CLAUSE_MATRIX` 1,430 → **1,870**. Floors per language, plus a floor on the `nothing`-built rows and on the CONDITIONAL row, because **which half of the rule catches a row depends on the filler's first word**. `Not at all` and `לא צריך כלום` are named by their own text. |
+| (c) e2e specs on the real wired path | `tests/e2e/claimGate.test.ts` | 15 leak specs (A1–A6, H1–H7 and both comma controls), each asserting not-returned + not-persisted + `meetings` 0 / `futureActions` 0 **and** the independent oracle's verdict; plus 21 honest controls scripted with **no second entry**, so a regeneration fails the run. |
+| (d) the oracle catches them with the detector blinded | `tests/invariants/pastFindingTexts.ts`, `claimOracleCatchesPastFindings.test.ts` | A fifth `PastFinding` (§ 18.1) with all 13 wordings declared verbatim plus both comma controls. 25 → **40 tests**; every one fails INV-18 with `detectMaterialClaims` stubbed to `[]`. |
+| (e) sweep specs in family M | `tests/invariants/dimensions.ts`, `releaseTexts.ts` | `r52`–`r61`: the English perfect, the English passive behind the `nothing`-built filler, the Hebrew passive, a Hebrew CALLBACK, the comma control, four honest negations built from the **same tokens** as the leaking fillers, and the leaking wording over a booking that really exists. 1,027 → **1,067 scenarios**; INV-18 4,268 → **4,464 applicable**. |
+| (f) this section | `docs/MISSION_2D_CLAIM_GATE.md` | § 18, and the corrections in §§ 17.8 and `detector.ts`. |
+
+**The synthetic third locale proves the rule is DATA.** `claimGateDetector.test.ts`
+registers a language the engine has never heard of and now gives it two negators —
+`nix`, which it declares subject-capable, and `nox`, which it does not — plus a
+`MODIFIER` carrier, a `SUBJECT` carrier and an auxiliary. `Nix vorp bik grobbled`
+is clean and `Nix vorp zub bik grobbled` is a claim; `Nox vorp bik grobbled` is a
+claim and `Zub nox vorp bik grobbled` is clean. Nothing in `detector.ts` has heard
+of any of those words.
+
+### 18.6 What § 18 does NOT close, stated rather than discovered
+
+1. **An identifier MARKER behind an all-carrier filler is still suppressed.**
+   `governs` exempts markers from both rules, because a marker is a noun phrase in
+   object position and `I cannot give you a confirmation number for that.` is
+   ditransitive. In practice what catches those sentences is the identifier SHAPE
+   rule, which no negation touches at all — but the marker phrase on its own is a
+   stated gap.
+2. **`לא צריך יותר meeting booked for Thursday at 2pm.` is still a miss**, and it
+   is in `DOCUMENTED_MISSES` with its cause. `לא` is closed by rule 1, but `צריך`
+   is ALSO a suppressor here as a pooled `frameBlocker`, and a modal takes the next
+   noun phrase as its object — so with a pure MODIFIER (`יותר`) between them the
+   shape is indistinguishable from `Let me get your meeting booked for Thursday.`,
+   which must stay clean. `לא צריך כלום meeting booked …` IS caught, because
+   `כלום` fills the modal's object slot first.
+3. **The three new enumerations sit on the coverage side of the line, not the leak
+   side.** A carrier group mis-declared `MODIFIER`/`VERB`/`PREPOSITION` when it can
+   head a subject, or a subject-capable negator missing from `subjectNegators`,
+   costs the coverage this section claims. Neither can cost a claim that used to be
+   detected — § 18.4 measures that — but neither is closure either. The entries a
+   reader should check are: the English object pronouns `me`, `us`, `him`, `them`,
+   which are declared `SUBJECT` (the safe answer) and are protected from
+   over-detection only by the verbs of giving being `VERB`; Hebrew's inflected
+   prepositions, which are `MODIFIER` rather than `PREPOSITION` because they are
+   already complete phrases; and `subjectNegators` itself, which is three words in
+   English and empty in Hebrew.
+4. **Everything in § 17.8's "not guaranteed" list stands**, including residual 1 —
+   the oracle is not a second detector — which is exactly why this defect was found
+   by a reviewer and not by the sweep.
+5. **The generated matrices are NOT oracle-covered, and that is the same residual
+   wearing a different hat.** `SUPPRESSION_MATRIX`'s 3,891 rows and
+   `CROSS_CLAUSE_MATRIX`'s 1,870 carry their own expectation (`FLAG` with a
+   declared family and locale, or `CLEAN`) and are judged by the DETECTOR. The
+   independent oracle judges the sweep's released sentences, which are declared
+   one by one in `releaseTexts.ts` — so the `ALL_CARRIER` class is oracle-covered
+   through the ten family-M specs `r52`–`r61` and the fifteen e2e specs, and not
+   through the 856 generated rows. Covering generated rows would mean generating
+   declarations, and a declaration a generator wrote is the circle § 17.5 exists
+   to break. The two mechanisms are deliberately different and neither substitutes
+   for the other: the matrices prove the detector sees a CLASS, the oracle proves
+   a specific released sentence was safe to say.
+
+### 18.7 The corrections this section owes, made in place
+
+1. **§ 17.8 guarantee 2 was FALSE AS WRITTEN.** It read: *"Any unanticipated filler,
+   in any language, with any punctuation, costs a regeneration rather than a
+   leak."* Thirteen wordings cost a leak. The sentence is struck through in § 17.8
+   with a pointer here. **The corrected version:** *an unanticipated filler costs a
+   regeneration rather than a leak whenever it contains at least one token the
+   locale has not declared as crossable — and, since § 18, also when it is built
+   entirely out of declared carriers and a fresh predication follows it or the
+   negator that opens it cannot be a subject.* That is narrower and it is
+   checkable; § 18.6 says what it still does not cover.
+2. **`MAX_CARRIERS_A_SUPPRESSOR_MAY_REACH_ACROSS` does not stop the all-carrier
+   filler its own comment named.** `detector.ts` said *"it also stops the one
+   pathological case the carrier list alone allows … a filler built entirely out of
+   carriers would otherwise reach any distance"*. A bound in TOKENS only stops a
+   LONG filler; the leaking ones are two to four tokens. The comment is corrected
+   in place, the bound is kept because it is still the only defence that does not
+   depend on a word list being complete, and § 17.8 gains this as item 10 of what
+   is NOT guaranteed.
+3. **The assurance layer reported zero over a gap it could not see for the FIFTH
+   time, and the report now says so itself.** `tests/qa/report.ts` said *"THIS ZERO
+   WAS WRONG FOUR TIMES"*; it now says five, names the new reason (a generated
+   matrix whose FILLER axis had 26 values and not one built only out of declared
+   tokens), and prints a sentence saying plainly that § 18's `DETECTOR_BLIND 0` was
+   honest and uninformative. Its two stale matrix counts are corrected with it.
+4. **`docs/ARCHITECTURE.md`** said 1,027 scenarios in two places. Now 1,067, and
+   `architectureCounts.test.ts` is what forced the correction rather than a reader.
+
+### 18.8 Final validation — every command run for real, sequentially, on this tree
+
+`linux/x64`, WSL2, node v22. One at a time; the sweep never concurrent with the
+suite. **No model was called, pulled or run. No `eval:*`, no `demo:local`, no
+`llm:probe`, no `llm:smoke`, no network call to any model host. No model default
+was changed. Nothing was merged anywhere.**
+
+| # | Command | Result | Exit |
+|---:|---|---|---:|
+| 1 | `npm run typecheck` | no diagnostics | **0** |
+| 2 | `npm run test` | **`Test Files 67 passed \| 1 skipped (68)`** · **`Tests 1654 passed \| 2 skipped (1656)`** · 277.6 s | **0** |
+| 3 | `npm run qa:sweep` | **1,067 scenarios · 11,233 applicable (20,812 evaluated) · 0 violations · 0 network attempts** · 201.5 s · `RESULT: PASS` | **0** |
+
+**INV-18, from run 3:**
+
+```
+  INV-18-released-text-asserts-no-absent-effect      4464    4464       0     0
+```
+
+**The claim-gate summary, from run 3:**
+
+```
+  Scenarios with a claim gate wired   : 1067
+  Scenarios without a gate            : 0
+  Pieces of text released             : 2130
+  ...of which asserted something      : 208
+  Releases WITHHELD (nothing said)    : 4
+  Raw model attempts unsupported      : 172
+  Regeneration attempts consumed      : 176
+  CLAIMS THAT LEAKED PAST THE GATE    : 0   (must be 0)
+
+  Released sentences with NO declaration : 0   (must be 0)
+  HOW THE TWO WITNESSES COMPARED, per released sentence
+    BOTH_SILENT            2090
+    BOTH_SAW_A_CLAIM         36
+    DETECTOR_BLIND            0
+    DETECTOR_OVER_READ        0
+```
+
+#### Against the tree independent QA measured
+
+| | QA's tree (§ 18.2) | now | |
+|---|---:|---:|---|
+| test files | 67 passed / 1 skipped | **67 / 1** | = ✅ |
+| tests | 1,594 passed / 2 skipped | **1,654 / 2** | +60, none removed ✅ |
+| sweep scenarios | 1,027 | **1,067** | +40 ✅ |
+| applicable checks | 10,667 | **11,233** | ✅ |
+| INV-18 applicable | 4,268 | **4,464** | ✅ |
+| violations | 0 | **0** | = ✅ |
+| network attempts | 0 | **0** | = ✅ |
+| A1–A6, H1–H7 end to end | **13 released and PERSISTED** | **13 withheld, regenerated, never persisted** | ✅ |
+
+**Every pre-existing test still passes and no existing expectation was weakened.**
+The +60 are additions, plus one file whose fixtures were **extended rather than
+relaxed**: `claimGateDetector.test.ts`'s synthetic locale gained a second negator
+and an auxiliary, and four of its sentences gained the token `bik`. Those four
+assert exactly what they asserted before — that a carrier is crossed, that the
+bound holds, that a conditional suppresses — over a completion form that now opens
+with an auxiliary, which is the shape English and Hebrew completion forms actually
+have. Two new tests were added beside them for the § 18 rule.
+
+#### The honest note this section owes, for the fifth time
+
+**`npm run qa:sweep` printed `RESULT: PASS`, `INV-18 4268/4268`,
+`CLAIMS THAT LEAKED PAST THE GATE : 0` and `DETECTOR_BLIND 0` while thirteen
+wordings of this defect were live — releasing false bookings to callers and
+writing them to the transcript.** That is the fifth time in this document.
+
+**And the reason is different from the previous four.** Those were the detector's
+own circle: INV-18 found its claims by asking the detector, so a sentence the
+detector could not see was a sentence the number could not count. § 17.5 removed
+that circle and it stayed removed — the oracle is genuinely independent, its
+boundary is asserted structurally, and it now fails on all five findings with the
+detector blinded. **What it cannot do is judge a sentence nobody wrote down**, and
+nobody had written down `Not at all I have booked your meeting for Thursday at
+2pm.` § 17.8 residual 1 said that in advance, correctly, and this finding is what
+it looks like when the stated residual is the one that bites.
+
+So the useful conclusion is not "add the missing wordings" — that answer has now
+been given four times. It is the one § 17.8's closing subsection already reaches
+and this section can only sharpen: **the RULES over the lexicon keep generalising
+and the enumerations under them keep being the thing that leaks.** § 18 moved one
+more enumeration (which fillers suppress) into a rule (what a crossed token is) and
+left three smaller ones behind it, named in § 18.6. A reader who needs a guarantee
+should use § 17.8's corrected list and this one together, and should read
+`CLAIMS THAT LEAKED PAST THE GATE : 0` as what it is: a statement about the
+sentences somebody thought of.

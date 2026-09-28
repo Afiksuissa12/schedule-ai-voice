@@ -1,16 +1,24 @@
 /**
- * THE DELIVERABLE: the independent oracle would have caught ALL FOUR Mission 2D
+ * THE DELIVERABLE: the independent oracle would have caught ALL FIVE Mission 2D
  * fail-open findings - WITH THE DETECTOR BLIND.
  *
  * WHAT IS BEING PROVED, AND WHY IT HAS TO BE A TEST
  * ---------------------------------------------------------------------------
- * Four times, `npm run qa:sweep` printed `CLAIMS THAT LEAKED PAST THE GATE : 0`
+ * Five times, `npm run qa:sweep` printed `CLAIMS THAT LEAKED PAST THE GATE : 0`
  * while an unsupported sentence was being spoken to a caller and written to
  * `ConversationTurn` as a spoken AGENT row (`docs/MISSION_2D_CLAIM_GATE.md`
- * §§ 14.1, 15.1, 16.1, 17.1). Each time the reason was the same circle: INV-18
- * found its claims by calling the gate's own `detectMaterialClaims`, so a
+ * §§ 14.1, 15.1, 16.1, 17.1, 18.1). Each time the reason was the same circle:
+ * INV-18 found its claims by calling the gate's own `detectMaterialClaims`, so a
  * sentence the detector could not see produced no claims, so there was nothing
  * for the invariant to judge.
+ *
+ * THE FIFTH TIME IS THE ONE THAT SHOWS THIS FILE EARNING ITS KEEP. § 18 was found
+ * on a tree where the oracle already existed and where `DETECTOR_BLIND` read 0,
+ * which is honest and uninformative at the same time: the oracle can only judge
+ * sentences somebody DECLARED, and nobody had declared `Not at all I have booked
+ * your meeting for Thursday at 2pm.` § 17.8 residual 1 states that bound and
+ * § 18.7 restates it. What this file proves is the other half - that a
+ * declaration IS enough on its own, with no help from the detector at all.
  *
  * Each time, the answer written down was "add the missing wordings". This file is
  * the different answer: **the invariant must be able to fail for a reason the
@@ -50,9 +58,15 @@ vi.mock('../../src/agent/claimGate/detector.js', async (importOriginal) => {
 
 const { detectMaterialClaims } = await import('../../src/agent/claimGate/detector.js');
 const { INVARIANTS } = await import('./invariants.js');
-const { MISSION_2D_QA_FINDINGS, F17_EIN_BEAYA_COMMA_CONTROL, QA3_FIVE_WORDINGS } = await import(
-  './pastFindingTexts.js'
-);
+const {
+  MISSION_2D_QA_FINDINGS,
+  F17_EIN_BEAYA_COMMA_CONTROL,
+  F18_NOT_AT_ALL_COMMA_CONTROL,
+  F18_LO_TZARICH_KLUM_COMMA_CONTROL,
+  QA3_FIVE_WORDINGS,
+  QA4_ENGLISH_WORDINGS,
+  QA4_HEBREW_WORDINGS,
+} = await import('./pastFindingTexts.js');
 const { T_MEETING_THURSDAY_2PM, T_NEUTRAL_OFFER } = await import('./releaseTexts.js');
 
 import type { ClaimDeclaration } from './claimOracle.js';
@@ -70,7 +84,7 @@ const CONTACT_ID = 'contact-oracle-proof';
  * A scenario and an observation in which ONE sentence was released and NOTHING
  * happened.
  *
- * That is the state every one of the four findings leaked into: gate outcome
+ * That is the state every one of the five findings leaked into: gate outcome
  * `NO_MATERIAL_CLAIM`, no tool call, `meetings` 0, `futureActions` 0. The
  * observation is built field by field rather than copied from a fixture so a
  * reader can see that the only things the oracle has to work with are the
@@ -123,7 +137,7 @@ function releasedWithNothingBehindIt(
       releases: [
         {
           iteration: 1,
-          // What the gate really reported on every one of the four findings.
+          // What the gate really reported on every one of the five findings.
           outcome: 'NO_MATERIAL_CLAIM',
           releasedText: released,
           attempts: [{ text: released, supportedClaimCount: 0, unsupportedClaims: [] }],
@@ -174,14 +188,14 @@ describe('the detector really is blind in this file', () => {
     expect(detectMaterialClaims('הפגישה נקבעה למחר בשעה 14:00.')).toEqual([]);
   });
 
-  it('and the gate reported NO_MATERIAL_CLAIM, as it did on all four findings', () => {
+  it('and the gate reported NO_MATERIAL_CLAIM, as it did on all five findings', () => {
     const { observation } = releasedWithNothingBehindIt('anything');
     expect(observation.claimGate.releases[0]?.outcome).toBe('NO_MATERIAL_CLAIM');
     expect(observation.claimGate.releases[0]?.attempts[0]?.unsupportedClaims).toEqual([]);
   });
 });
 
-describe('INV-18 fails on all four Mission 2D QA findings with the detector blind', () => {
+describe('INV-18 fails on all five Mission 2D QA findings with the detector blind', () => {
   for (const finding of MISSION_2D_QA_FINDINGS) {
     describe(`§ ${finding.section} - ${finding.headline}`, () => {
       for (const wording of finding.wordings) {
@@ -217,6 +231,24 @@ describe('INV-18 fails on all four Mission 2D QA findings with the detector blin
     for (const wording of QA3_FIVE_WORDINGS) {
       expect(failuresFor(wording.text).length).toBeGreaterThan(0);
     }
+  });
+
+  it("covers all six of QA-4's English wordings and all seven Hebrew ones", () => {
+    // § 18 deliverable (d). The finding listed A1-A6 and H1-H7 and drove every one
+    // of them through the real service; a test that proved a representative subset
+    // would be the § 16.2 mistake for the third time.
+    expect(QA4_ENGLISH_WORDINGS.length).toBe(6);
+    expect(QA4_HEBREW_WORDINGS.length).toBe(7);
+    for (const wording of [...QA4_ENGLISH_WORDINGS, ...QA4_HEBREW_WORDINGS]) {
+      expect(failuresFor(wording.text).length, `no failure for ${wording.text}`).toBeGreaterThan(0);
+    }
+  });
+
+  it('and both of QA-4 comma controls, which differ from the leaks by one character', () => {
+    // The same property § 17's control pinned, a section later: the GATE's two
+    // verdicts differed by a punctuation mark and the oracle's do not.
+    expect(failuresFor(F18_NOT_AT_ALL_COMMA_CONTROL.text).length).toBeGreaterThan(0);
+    expect(failuresFor(F18_LO_TZARICH_KLUM_COMMA_CONTROL.text).length).toBeGreaterThan(0);
   });
 
   it("fails on QA-3's comma CONTROL too, because a person hears the same sentence", () => {
@@ -282,6 +314,13 @@ describe('the oracle judges against observed state, not against the wording', ()
     expect(failuresFor('אין בעיה הפגישה לא נקבעה עדיין.')).toEqual([]);
     expect(failuresFor("Don't worry nothing is booked yet.")).toEqual([]);
     expect(failuresFor('I can have that booked for you in a moment.')).toEqual([]);
+    // QA-4's precision controls, which are the reason § 18 is a rule about what a
+    // carrier IS rather than a shorter carrier list. All four use the same tokens
+    // as the leaking fillers.
+    expect(failuresFor('Nothing at all has been booked yet.')).toEqual([]);
+    expect(failuresFor('I cannot see anything at all in the diary for you.')).toEqual([]);
+    expect(failuresFor('לא צריך כלום הפגישה לא נקבעה עדיין.')).toEqual([]);
+    expect(failuresFor("I don't have your meeting booked.")).toEqual([]);
   });
 });
 

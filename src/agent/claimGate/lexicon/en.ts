@@ -164,6 +164,19 @@ const BOOKING_VERBS: readonly string[] = [
   'saved the appointment',
   'saved your appointment',
   'saved the slot',
+  // § 18, AND IT IS NOT THE § 18 CLASS - it is a plain missing frame the § 18
+  // finding happened to walk past. `you are in the diary` and `is in the diary`
+  // have been here since the gate was written and the FIRST-PERSON possessive was
+  // not, so `I have you in the diary for Thursday at 2pm.` was missed - and missed
+  // identically with and without a filler in front of it, which is the A/B that
+  // separates it from the suppression defect. It carries its object for the same
+  // reason `saved` does: bare `i have` is not a claim about anything.
+  //
+  // `let me get you in the diary` and `I'll get you in the diary now.` stay clean,
+  // because neither `let` nor `i'll` is a `FIRST_PERSON_PREFIXES` entry and `get`
+  // is a `frameBlocker` besides. Both are asserted clean in MUST_NOT_FLAG.
+  'you in the diary',
+  'you in the calendar',
 ];
 
 const RESCHEDULE_VERBS: readonly string[] = ['moved', 'rescheduled', 'shifted', 'pushed back', 'brought forward'];
@@ -582,86 +595,106 @@ export const EN_CLAIM_LEXICON: ClaimLexicon = {
   // `Don't worry your meeting is booked for Thursday at 2pm.` is DETECTED with no
   // punctuation between the two halves. Adding one would re-open the defect this
   // field exists to close, in the one direction that releases a false claim.
+  //
+  // EVERY GROUP NOW DECLARES ITS ROLE, AND THAT IS THE § 18 FIX. The five groups
+  // below were already separated by comment; being carried across a token and
+  // being carried past a whole new clause are different questions, and a list that
+  // answered only the first let a filler made of NOTHING BUT carriers silence the
+  // sentence behind it - `Not at all I have booked your meeting for Thursday at
+  // 2pm.` released and persisted, with `not`, `at`, `all` and `i` every one of them
+  // declared here. `types.ts` (`SuppressionCarrierRole`) carries the argument; what
+  // follows is why each group has the role it has.
+  //
+  //  - PRONOUNS are `SUBJECT`, which is also the default, so the group says
+  //    nothing. `me`, `us`, `him` and `them` are object pronouns and would be
+  //    `MODIFIER` on a strict reading, but `SUBJECT` is the safe answer and the
+  //    only sentence it costs - `I cannot give you a confirmation number for
+  //    that.` - is protected by the VERBS OF GIVING group being `VERB`.
+  //  - AUXILIARIES are `VERB`: they SATISFY the predicate a negator is looking
+  //    for. `Nothing at all has been booked yet.` is clean because of this.
+  //  - PREPOSITIONS are `PREPOSITION`: each takes one noun phrase, so the NP after
+  //    it belongs to the negator's own phrase. `Nothing in the diary is booked.`
+  //    and `None of your meetings are booked.` are what that buys.
+  //  - QUANTIFIERS AND LIGHT ADJECTIVES are `MODIFIER`. This is the group the
+  //    leaking fillers are built out of - `at all`, `nothing else`, `nothing more` -
+  //    and declaring it is what lets the engine see that `not` governs an adverbial
+  //    and nothing else.
+  //  - THE VERBS OF GIVING are `VERB` for the reason they are here at all: the
+  //    negator in `I cannot give you a confirmation number` negates the GIVING, and
+  //    `you` is its object rather than a new subject.
   suppressionCarriers: [
-    // ---- pronouns ---------------------------------------------------------
-    'i',
-    'we',
-    'you',
-    'he',
-    'she',
-    'it',
-    'they',
-    'me',
-    'us',
-    'him',
-    'them',
-    'there',
-    'here',
-    'anything',
-    'anyone',
-    'something',
-    'someone',
-    'everything',
-    'one',
+    // ---- pronouns: `SUBJECT`, which is the default ------------------------
+    {
+      forms: [
+        'i',
+        'we',
+        'you',
+        'he',
+        'she',
+        'it',
+        'they',
+        'me',
+        'us',
+        'him',
+        'them',
+        'there',
+        'here',
+        'anything',
+        'anyone',
+        'something',
+        'someone',
+        'everything',
+        'one',
+      ],
+    },
     // ---- auxiliaries and the copula ---------------------------------------
-    'am',
-    'is',
-    'are',
-    'was',
-    'were',
-    'been',
-    'have',
-    'has',
-    'had',
-    'having',
-    'do',
-    'does',
-    'did',
-    'may',
+    {
+      role: 'VERB',
+      forms: ['am', 'is', 'are', 'was', 'were', 'been', 'have', 'has', 'had', 'having', 'do', 'does', 'did', 'may'],
+    },
     // ---- prepositions and particles ---------------------------------------
-    'of',
-    'for',
-    'in',
-    'on',
-    'at',
-    'with',
-    'from',
-    'by',
-    'as',
-    'up',
-    'out',
-    'over',
-    'into',
-    'down',
-    'back',
+    {
+      role: 'PREPOSITION',
+      forms: ['of', 'for', 'in', 'on', 'at', 'with', 'from', 'by', 'as', 'up', 'out', 'over', 'into', 'down', 'back'],
+    },
     // ---- quantifiers and light adjectives ---------------------------------
-    'any',
-    'all',
-    'some',
-    'much',
-    'many',
-    'more',
-    'else',
-    'able',
-    'ready',
-    'sure',
-    'own',
+    {
+      role: 'MODIFIER',
+      forms: ['any', 'all', 'some', 'much', 'many', 'more', 'else', 'able', 'ready', 'sure', 'own'],
+    },
     // ---- the verbs an identifier MARKER is the object of ------------------
-    'give',
-    'given',
-    'gives',
-    'giving',
-    'provide',
-    'provided',
-    'offer',
-    'issue',
-    'issued',
-    'share',
-    'quote',
-    'tell',
-    'find',
-    'see',
+    {
+      role: 'VERB',
+      forms: [
+        'give',
+        'given',
+        'gives',
+        'giving',
+        'provide',
+        'provided',
+        'offer',
+        'issue',
+        'issued',
+        'share',
+        'quote',
+        'tell',
+        'find',
+        'see',
+      ],
+    },
   ],
+
+  // The three negators that can themselves BE the subject of the predicate they
+  // negate. `types.ts` argues why this list decides `Not at all`; in one line:
+  // a clause-initial negator that is not a subject has no subject, so it is a
+  // stand-alone negative reply and governs only its own modifiers.
+  //
+  // `Nothing at all has been booked yet.` is the sentence this list protects, and
+  // `Not at all I have booked your meeting for Thursday at 2pm.` is the one it
+  // stops protecting. `never`, `yet`, `unable` and `without` are deliberately
+  // ABSENT: each is adverbial or prepositional and none of them is ever a subject,
+  // so a clause that opens with one opens with no subject at all.
+  subjectNegators: ['nothing', 'none', 'nobody'],
 
   conditionalMarkers: ['if', 'once', 'as soon as', 'shall i', 'should i', 'would you like', 'do you want', 'unless'],
 

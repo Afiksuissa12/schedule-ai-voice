@@ -223,6 +223,7 @@ import {
   type ClaimEffectFamily,
   type ClaimLexicon,
   type CompletionMarkerEntry,
+  type SuppressionCarrierRole,
 } from './lexicon/index.js';
 import {
   matchLongestForm,
@@ -346,7 +347,7 @@ export function detectMaterialClaims(text: string, options: DetectClaimsOptions 
       const seen = new Set<string>();
       const clausesWithAFrame = new Set<number>();
       for (const match of matchCompletionMarkers(sentence, lexicon, gap)) {
-        if (suppression.suppresses(match.position)) continue;
+        if (suppression.suppresses(suppressedForm(match))) continue;
         const key = `${match.claim.family}:${match.claim.mode}`;
         clausesWithAFrame.add(clauses[match.position] ?? -1);
         if (seen.has(key)) continue;
@@ -361,7 +362,7 @@ export function detectMaterialClaims(text: string, options: DetectClaimsOptions 
       // neither double-count a claim nor change a verdict a frame produced.
       for (const match of matchParticiplesNearObjects(sentence, clauses, lexicon, claimLexicons, gap, reach)) {
         if (clausesWithAFrame.has(clauses[match.position] ?? -1)) continue;
-        if (suppression.suppresses(match.position)) continue;
+        if (suppression.suppresses(suppressedForm(match))) continue;
         const key = `${match.claim.family}:${match.claim.mode}`;
         if (seen.has(key)) continue;
         seen.add(key);
@@ -374,7 +375,8 @@ export function detectMaterialClaims(text: string, options: DetectClaimsOptions 
       // is 483921.` is a claim and `I cannot give you a confirmation number` is
       // not. The FIRST unsuppressed marker in the sentence is the one recorded.
       const marker = formMatches(sentence.tokens, lexicon.identifierMarkers).find(
-        (hit) => !suppression.suppresses(hit.position),
+        (hit) =>
+          !suppression.suppresses({ position: hit.position, formTokens: hit.length, kind: 'NOUN_PHRASE' }),
       );
       if (marker !== undefined) {
         out.push({
@@ -426,7 +428,23 @@ export const IDENTIFIER_SHAPE_FORM = '(identifier-shaped token)';
 /** One completion form that matched, and the token position it matched at. */
 interface CompletionMatch {
   readonly position: number;
+  /**
+   * Tokens the FORM's own text spans, not counting any the frame skipped.
+   *
+   * Carried so § 18's governance test can ask whether the form brings its own
+   * SUBJECT (`i have booked`) or is a bare predicate (`booked`, `נקבעה`). The
+   * skipped tokens are deliberately not counted: `I have now booked` brings the
+   * same subject as `I have booked`.
+   */
+  readonly formTokens: number;
+  /** A finite predicate, or the bare participle the fallback rule reads. */
+  readonly formKind: 'FINITE' | 'PARTICIPLE';
   readonly claim: Omit<DetectedClaim, 'assertedDay' | 'assertedTime' | 'identifiers'>;
+}
+
+/** The `SuppressedForm` a completion match asks the suppression rules about. */
+function suppressedForm(match: CompletionMatch): SuppressedForm {
+  return { position: match.position, formTokens: match.formTokens, kind: match.formKind };
 }
 
 /**
@@ -549,6 +567,8 @@ function matchCompletionMarkers(
 
     out.push({
       position,
+      formTokens: best.formTokens,
+      formKind: 'FINITE',
       claim: {
         kind: 'EFFECT_ASSERTED',
         family: best.entry.family,
@@ -686,11 +706,13 @@ function matchParticiplesNearObjects(
   for (let position = 0; position < sentence.tokens.length; position += 1) {
     const clause = clauses[position];
     if (clause === undefined) continue;
-    if (blockerStandsBefore(sentence.tokens, clauses, position, gap, reach)) continue;
 
     for (const entry of lexicon.completionParticiples) {
       const hit = matchLongestForm(sentence.tokens, position, entry.forms);
       if (hit === null) continue;
+      // Tested HERE rather than before the loop because § 18's governance rule
+      // needs the form's width, and that is only known once a participle matched.
+      if (blockerStandsBefore(sentence.tokens, clauses, position, hit.length, gap, reach)) break;
 
       // The TOKENS BETWEEN the two spans, in whichever order they appear, must be at
       // most the bound. Written as two comparisons rather than an absolute difference
@@ -705,6 +727,8 @@ function matchParticiplesNearObjects(
 
       out.push({
         position,
+        formTokens: hit.length,
+        formKind: 'PARTICIPLE',
         claim: {
           kind: 'EFFECT_ASSERTED',
           // A generic MEETING participle defers to the object; anything more specific
@@ -771,23 +795,49 @@ function domainObjectMatches(
  * pooled from every locale, so `אין בעיה meeting booked for Thursday at 2pm.` -
  * a Hebrew filler in front of an English bare participle, which is exactly the
  * code-switching the eval corpus contains - would be silenced by a negator that
- * governs the word `בעיה` and nothing else. `reachesForward` is the same test and
- * the same data, applied here, so there is one definition of "governs" in this
- * module rather than two that can drift apart.
+ * governs the word `בעיה` and nothing else. `governs` is the same test and the same
+ * data, applied here, so there is one definition of "governs" in this module rather
+ * than two that can drift apart.
+ *
+ * WHICH KIND OF MOOD TOKEN IT IS DECIDES WHICH RULE APPLIES, and that is the § 18
+ * half. `moodTokens` pools three different things - negators, conditionals and
+ * `frameBlockers` - and only the first two are scope-taking operators looking for
+ * a predicate. A modal or an intention verb turns its whole clause into a plan and
+ * takes the noun phrase after it as its own OBJECT, so it keeps the § 17 carrier
+ * test unchanged: `Let me get your meeting booked for Thursday.` and `We haven't
+ * been able to get your meeting booked yet.` are both clean only because `get`
+ * swallows `your meeting`. A negator does not get that, which is what catches
+ * `Not at all meeting booked for Thursday at 2pm.`
  */
 function blockerStandsBefore(
   tokens: readonly ClaimToken[],
   clauses: readonly number[],
   position: number,
+  span: number,
   gap: FrameGapAllowance,
   reach: SuppressionReach,
 ): boolean {
   const clause = clauses[position];
+  const form: SuppressedForm = { position, formTokens: span, kind: 'PARTICIPLE' };
   for (let index = 0; index < position; index += 1) {
     if (clauses[index] !== clause) continue;
-    if (!gap.moodTokens.has((tokens[index] as ClaimToken).text)) continue;
-    // A mood token is one token wide, so its span ends where it starts.
-    if (reachesForward(tokens, index + 1, position, reach)) return true;
+    const text = (tokens[index] as ClaimToken).text;
+    if (!gap.moodTokens.has(text)) continue;
+    // A mood token is one token wide, so its span ends where it starts. Negator
+    // and conditional are tested for FIRST, so a token that is both a blocker and
+    // a negator gets the stricter of the two rules.
+    const kind: SuppressorKind = reach.negatorTokens.has(text)
+      ? 'NEGATOR'
+      : reach.conditionalTokens.has(text)
+        ? 'CONDITIONAL'
+        : 'MOOD';
+    const suppressor: Suppressor = {
+      kind,
+      from: index + 1,
+      opensItsClause: index === 0 || clauses[index - 1] !== clause,
+      canBeASubject: reach.subjectNegatorTokens.has(text),
+    };
+    if (governs(tokens, suppressor, form, reach)) return true;
   }
   return false;
 }
@@ -816,8 +866,14 @@ function formMatches(tokens: readonly ClaimToken[], forms: readonly string[]): r
 
 /** Whether a completion form starting at a token position asserts anything. */
 interface Suppression {
-  /** True when rule 1, 2 or 3 silences a form that starts at `position`. */
-  suppresses(position: number): boolean;
+  /**
+   * True when rule 1, 2 or 3 silences `form`.
+   *
+   * Takes the whole form rather than just its position, because § 18's governance
+   * test needs to know how wide the form is and whether it is a finite predicate,
+   * a bare participle or a noun phrase.
+   */
+  suppresses(form: SuppressedForm): boolean;
 }
 
 /**
@@ -835,7 +891,29 @@ interface Suppression {
 interface SuppressionReach {
   readonly carriers: ReadonlySet<string>;
   readonly maxCarriers: number;
+  /**
+   * What each token DOES between a suppressor and the form, pooled from every
+   * registered locale. `SUBJECT` for anything unlisted, which is the fail-safe
+   * answer - see `lexicon/types.ts` (`SuppressionCarrierRole`).
+   */
+  readonly roles: ReadonlyMap<string, TokenRole>;
+  /** Single-token negators, pooled. Which suppressor fired decides the rule. */
+  readonly negatorTokens: ReadonlySet<string>;
+  /** Single-token conditionals, pooled. */
+  readonly conditionalTokens: ReadonlySet<string>;
+  /** The negators that can themselves be a SUBJECT. `ClaimLexicon.subjectNegators`. */
+  readonly subjectNegatorTokens: ReadonlySet<string>;
 }
+
+/**
+ * A carrier role, plus the one the engine assigns rather than a locale.
+ *
+ * `DETERMINER` is not declarable because it is not a judgement call: it is
+ * exactly `ClaimLexicon.frameDeterminers`, which every locale already declares
+ * for the frame rule. A determiner OPENS a noun phrase without being its head,
+ * which is the one behaviour none of the four declarable roles describes.
+ */
+type TokenRole = SuppressionCarrierRole | 'DETERMINER';
 
 /**
  * The most carrier tokens a negator or conditional may reach across.
@@ -858,10 +936,20 @@ interface SuppressionReach {
  * clause asks a model to use. The number is therefore set by the honest corpus and
  * not by the adversarial one, which is the right way round for a precision knob.
  *
- * It also stops the one pathological case the carrier list alone allows: a long run
- * of pooled domain objects and determiners (`אין בעיה` is safe because `בעיה` is not
- * a carrier, but a filler built entirely out of carriers would otherwise reach any
- * distance).
+ * IT DOES NOT STOP THE ALL-CARRIER FILLER, AND THIS COMMENT USED TO SAY IT DID.
+ * The sentence here read: "it also stops the one pathological case the carrier list
+ * alone allows - a filler built entirely out of carriers would otherwise reach any
+ * distance". That was false, and independent QA quoted it back while reporting the
+ * fifth fail-open defect in this gate. A bound in TOKENS only stops a LONG filler,
+ * and the leaking ones are two to four tokens long: `Not at all` crosses two
+ * carriers to reach `i have booked`, `לא צריך כלום` crosses three to reach
+ * `הפגישה נקבעה`. Both sit comfortably inside four and both released a false
+ * booking to a real caller. What actually stops them is `governs` below - a
+ * question about what the crossed tokens ARE rather than how many there are - and
+ * `docs/MISSION_2D_CLAIM_GATE.md` § 18.7 records the correction.
+ *
+ * The bound is kept because it is still the belt: it is the only defence that does
+ * not depend on a word list being complete, and it costs nothing to keep.
  */
 const MAX_CARRIERS_A_SUPPRESSOR_MAY_REACH_ACROSS = 4;
 
@@ -880,6 +968,11 @@ function suppressionReach(lexicons: readonly ClaimLexicon[]): SuppressionReach {
   if (cached !== undefined) return cached;
 
   const carriers = new Set<string>();
+  const roles = new Map<string, TokenRole>();
+  const negatorTokens = new Set<string>();
+  const conditionalTokens = new Set<string>();
+  const subjectNegatorTokens = new Set<string>();
+
   const add = (forms: readonly string[]): void => {
     for (const form of forms) {
       for (const token of form.split(' ')) {
@@ -887,19 +980,83 @@ function suppressionReach(lexicons: readonly ClaimLexicon[]): SuppressionReach {
       }
     }
   };
+  // FIRST WRITER WINS, and the order below is the precedence. A locale's OWN
+  // `suppressionCarriers` role is the considered answer and goes first; the roles
+  // the engine derives from the other fields only fill the gaps. `את` is the
+  // sentence that needs it: Hebrew declares it as a pronoun AND as a
+  // `frameDeterminer`, and the pronoun reading is the one its own file argued.
+  const claim = (forms: readonly string[], role: TokenRole, firstTokenOnly = false): void => {
+    for (const form of forms) {
+      const tokens = form.split(' ').filter((token) => token.length > 0);
+      if (tokens.length === 0) continue;
+      // A MULTI-TOKEN form gets a role only for the token the caller names. A
+      // conditional like `would you like` must never put `you` or `i` into
+      // `MODIFIER` - that is the § 17 `addSingleTokenFormsOnly` lesson one field
+      // over, and here it would silence a real subject.
+      for (const token of firstTokenOnly ? [tokens[0] as string] : tokens) {
+        if (!roles.has(token)) roles.set(token, role);
+      }
+    }
+  };
+  const singleTokenForms = (forms: readonly string[]): readonly string[] =>
+    forms.filter((form) => !form.includes(' '));
+
   for (const lexicon of lexicons) {
-    add(lexicon.suppressionCarriers);
-    // The four the engine supplies so a locale does not have to repeat itself.
+    for (const entry of lexicon.suppressionCarriers) {
+      add(entry.forms);
+      claim(entry.forms, entry.role ?? 'SUBJECT');
+    }
+  }
+  for (const lexicon of lexicons) {
+    // The four the engine supplies so a locale does not have to repeat itself,
+    // each with the role its own field already implies.
     add(lexicon.frameDeterminers);
     add(lexicon.frameBlockers);
     add(lexicon.negators);
     add(lexicon.conditionalMarkers);
-    for (const entry of lexicon.domainObjects) add(entry.forms);
+    // A modal or an intention verb IS a predicate, so it satisfies the one a
+    // negator is looking for - which is what keeps `I don't have your meeting
+    // booked.` and `Let me get your meeting booked for Thursday.` clean.
+    claim(singleTokenForms(lexicon.frameBlockers), 'VERB');
+    claim(singleTokenForms(lexicon.frameDeterminers), 'DETERMINER');
+    claim(singleTokenForms(lexicon.conditionalMarkers), 'MODIFIER');
+    for (const negator of singleTokenForms(lexicon.negators)) {
+      negatorTokens.add(negator);
+      if (lexicon.subjectNegators.includes(negator)) subjectNegatorTokens.add(negator);
+      claim([negator], lexicon.subjectNegators.includes(negator) ? 'SUBJECT' : 'MODIFIER');
+    }
+    for (const conditional of singleTokenForms(lexicon.conditionalMarkers)) conditionalTokens.add(conditional);
+    // The HEAD of a domain object is its first token - `call back`, `follow-up` -
+    // and the head is what can be a subject. `back` is already a preposition in
+    // `en.ts` and keeps that role, which is first-writer-wins doing its job.
+    for (const entry of lexicon.domainObjects) {
+      add(entry.forms);
+      claim(entry.forms, 'SUBJECT', true);
+    }
   }
 
-  const reach: SuppressionReach = { carriers, maxCarriers: MAX_CARRIERS_A_SUPPRESSOR_MAY_REACH_ACROSS };
+  const reach: SuppressionReach = {
+    carriers,
+    maxCarriers: MAX_CARRIERS_A_SUPPRESSOR_MAY_REACH_ACROSS,
+    roles,
+    negatorTokens,
+    conditionalTokens,
+    subjectNegatorTokens,
+  };
   SUPPRESSION_REACHES.set(lexicons, reach);
   return reach;
+}
+
+/** What a token does between a suppressor and the form. `SUBJECT` when unlisted. */
+function roleAt(tokens: readonly ClaimToken[], index: number, reach: SuppressionReach): TokenRole {
+  const token = tokens[index];
+  if (token === undefined) return 'SUBJECT';
+  return reach.roles.get(token.text) ?? 'SUBJECT';
+}
+
+/** True for the two roles that can begin a noun phrase. */
+function opensANounPhrase(role: TokenRole): boolean {
+  return role === 'SUBJECT' || role === 'DETERMINER';
 }
 
 /**
@@ -932,6 +1089,250 @@ function reachesForward(
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// § 18: the carrier test is not enough, because a filler can be ALL carriers
+// ---------------------------------------------------------------------------
+
+/**
+ * Which kind of suppressor is asking, because the answer differs by kind.
+ *
+ * `MOOD` is a `frameBlocker` - a modal or an intention verb - reaching a bare
+ * participle through `blockerStandsBefore`. It differs from the other two in one
+ * way and it is the way that matters: a modal IS a predicate, so it starts the
+ * scan with its predicate already found and the noun phrase after it is its own
+ * OBJECT. `Let me get your meeting booked for Thursday.` and `We haven't been able
+ * to get your meeting booked yet.` are the two sentences that make that
+ * load-bearing. A negator and a conditional start the scan still LOOKING for a
+ * predicate, which is why a noun phrase in front of them is a new clause.
+ */
+type SuppressorKind = 'NEGATOR' | 'CONDITIONAL' | 'MOOD';
+
+/** A suppressor, with everything the § 18 rule needs to know about it. */
+interface Suppressor {
+  readonly kind: SuppressorKind;
+  /** The token after the suppressor's own span - where its reach starts. */
+  readonly from: number;
+  /**
+   * True when the suppressor is the FIRST token of its own clause, so there is
+   * nothing before it that could be its subject.
+   */
+  readonly opensItsClause: boolean;
+  /** True when the suppressor can itself be the SUBJECT of the predicate it seeks. */
+  readonly canBeASubject: boolean;
+}
+
+/** The thing a suppressor may or may not govern. */
+interface SuppressedForm {
+  readonly position: number;
+  /** Tokens the form's OWN text spans, not counting any it skipped. */
+  readonly formTokens: number;
+  readonly kind: 'FINITE' | 'PARTICIPLE' | 'NOUN_PHRASE';
+}
+
+/**
+ * Does this suppressor GOVERN this form?
+ *
+ * WHY THE § 17 CARRIER TEST WAS NOT THE WHOLE ANSWER - THE FIFTH FAIL-OPEN DEFECT
+ * ---------------------------------------------------------------------------
+ * § 17 asked one question: is everything between the negator and the form material
+ * this locale declares as able to stand between a negator and the predicate it
+ * negates. A filler built ENTIRELY out of that material therefore passed, and the
+ * canonical one is the most ordinary English reply to "thank you":
+ *
+ *     Not at all I have booked your meeting for Thursday at 2pm.   RELEASED, persisted
+ *     Not at all, I have booked your meeting for Thursday at 2pm.  the CONTROL - blocked
+ *     לא צריך כלום הפגישה נקבעה למחר בשעה 14:00.                    RELEASED, persisted
+ *
+ * `not` is a declared negator; `at` and `all` are declared `suppressionCarriers`;
+ * `i` is a declared `suppressionCarrier`. `לא` is a declared negator, `צריך` a
+ * declared `frameBlocker`, `כלום` a declared carrier and `הפגישה` a declared
+ * `domainObject`. Independent QA drove six English and seven Hebrew wordings
+ * through the real `AgentTurnService`, the real `ToolDispatcher` and real SQLite:
+ * every one came back `NO_MATERIAL_CLAIM` with `meetings` 0, was returned to the
+ * caller AND persisted as a spoken AGENT turn. The comma version of each was
+ * blocked in the same run. `MAX_CARRIERS_A_SUPPRESSOR_MAY_REACH_ACROSS` was named
+ * below as the mitigation for precisely this case and does not mitigate it: these
+ * fillers are two to four tokens long.
+ *
+ * WHY THE FIX IS NOT A SHORTER CARRIER LIST
+ * ---------------------------------------------------------------------------
+ * Deleting `at`, `all`, `else`, `more`, `כלום`, `יותר` would close the leaks and
+ * break `Nothing at all has been booked yet.`, `Nothing at all is booked yet.` and
+ * `לא צריך כלום הפגישה לא נקבעה עדיין.` - all clean today, all needing exactly
+ * those tokens carried across. The difference between the honest and the leaking
+ * set is structural: in the honest ones the negator's complement IS the predicate
+ * that follows it, and in the leaking ones a NEW PREDICATION intervenes.
+ *
+ * THE TWO RULES, BOTH SPLIT BY SUPPRESSOR KIND
+ * ---------------------------------------------------------------------------
+ *  1. A NEGATOR THAT OPENS ITS CLAUSE AND CANNOT BE A SUBJECT governs only its
+ *     own modifiers. It has no subject - there is nothing before it in the clause
+ *     to be one - so it is a stand-alone negative reply and the finite clause
+ *     after it is somebody else's. That is the whole of `Not at all ...`, and in
+ *     Hebrew, which is pro-drop and declares `subjectNegators` empty, it is the
+ *     whole of `לא צריך כלום ...` and `אין יותר כלום ...` too. `nothing`, `none`
+ *     and `nobody` are exempt because they ARE subjects, which is what keeps
+ *     `Nothing at all has been booked yet.` clean.
+ *  2. OTHERWISE, the reach ends at a FRESH PREDICATION - `freshPredicationStands`
+ *     below holds that scan and its argument.
+ *
+ * A CONDITIONAL IS NOT A NEGATOR, and this is the split QA named. A subordinating
+ * conditional EXISTS to open a clause, so it may cross that clause's subject:
+ * `Once your meeting is booked I will let you know.` is a plan and must stay one.
+ * Rule 1 therefore does not apply to a conditional at all, and rule 2 lets it
+ * cross ONE subject - but only the one that starts where the conditional ends,
+ * which is what separates it from `Once more your meeting is booked for Thursday
+ * at 2pm.`, where an adverbial intervenes and the completion is an assertion.
+ *
+ * AN IDENTIFIER MARKER IS EXEMPT, and the reason is the reason `en.ts` lists the
+ * verbs of giving at all: a marker is a NOUN PHRASE in object position rather than
+ * a predicate, so "does the negator govern the predicate after it" is not the
+ * question being asked. `I cannot give you a confirmation number for that.` is the
+ * honest refusal that has to stay clean, and it is ditransitive - two object noun
+ * phrases - which no predication scan reads correctly. The residual is stated in
+ * `docs/MISSION_2D_CLAIM_GATE.md` § 18.6: a marker behind an all-carrier filler is
+ * still suppressed, and what catches those sentences in practice is the
+ * identifier SHAPE rule, which no negation touches at all.
+ *
+ * THE DIRECTION IS THE SAME ONE THE REST OF THIS MODULE TAKES. Every clause above
+ * can only make suppression STRICTER, so it can only turn a miss into a detection.
+ * A role declared wrong, a subject-capable negator left off `subjectNegators`, a
+ * fresh predication this scan cannot see - each of those costs the coverage the
+ * fix claims, or one regeneration of a true sentence, and none of them can cost a
+ * claim that used to be detected. `tests/claimGate/claimGateCorpus.ts` asserts
+ * that direction over every committed text.
+ */
+function governs(
+  tokens: readonly ClaimToken[],
+  suppressor: Suppressor,
+  form: SuppressedForm,
+  reach: SuppressionReach,
+): boolean {
+  if (!reachesForward(tokens, suppressor.from, form.position, reach)) return false;
+  if (form.kind === 'NOUN_PHRASE') return true;
+  // Adjacent. `לא קבעתי כלום עדיין.`, `nothing is booked yet`, `Not booked yet.` -
+  // nothing stands between, so there is no new predication to find.
+  if (suppressor.from >= form.position) return true;
+  if (suppressor.kind === 'NEGATOR' && suppressor.opensItsClause && !suppressor.canBeASubject) return false;
+  return !freshPredicationStands(tokens, suppressor, form, reach);
+}
+
+/**
+ * Does a NEW PREDICATION stand between this suppressor and this form?
+ *
+ * THE SCAN, AND WHAT EACH STATE IS FOR
+ * ---------------------------------------------------------------------------
+ * A negator or a conditional is looking for exactly ONE predicate. The scan walks
+ * the tokens between it and the form and asks, at each one, whether that predicate
+ * has been found yet and whether its complements are used up:
+ *
+ *  - `SEEKING_PREDICATE` - the suppressor still needs its predicate. A MODIFIER
+ *    does not supply one (`at all`, `else`, `more`, `יותר`), a PREPOSITION takes a
+ *    noun phrase of its own and gives it back (`Nothing in the diary is booked.`,
+ *    `None of your meetings are booked.`), a VERB supplies one, and a NOUN PHRASE
+ *    standing here is a SUBJECT where a predicate was due - which is a new clause,
+ *    and the answer is yes. `Nothing else your meeting is booked for Thursday at
+ *    2pm.` is that case.
+ *  - `PREDICATE_FOUND` / `SATURATED` - the suppressor has its predicate, so the
+ *    first noun phrase after it is that verb's complement and a SECOND one is a
+ *    new subject. `I don't have your meeting booked.` is why the first is
+ *    swallowed; `לא היה כלום הפגישה נקבעה למחר.` is why the second is not. A MOOD
+ *    suppressor STARTS here, because a modal or an intention verb IS a predicate:
+ *    `Let me get your meeting booked for Thursday.` and `We haven't been able to
+ *    get your meeting booked yet.` are the two sentences that require it.
+ *  - `SUBJECT_SLOT_OPEN` - a CONDITIONAL only, and only when the noun phrase
+ *    starts where the conditional ends. A subordinator opens a clause and that
+ *    clause has a subject: `Once your meeting is booked I will let you know.`
+ *    Requiring the noun phrase to be ADJACENT to the conditional is what stops
+ *    `Once more your meeting is booked for Thursday at 2pm.` getting the same
+ *    exemption, because `more` is a MODIFIER and not the start of a subject.
+ *
+ * AND THEN THE FORM ITSELF, WHICH IS THE HALF THAT CATCHES `Not at all I have
+ * booked`. The frame `i have booked` carries its OWN subject, so there is nothing
+ * between the negator and the new clause to find - the new clause starts at the
+ * form. A form is read as bringing its own subject when it spans more than one
+ * token and its first token can open a noun phrase: `i have booked`, `i'll call
+ * you`, `callback is arranged`, `you are all set`. `has been booked`, `is booked`
+ * and `all set` do not, because `has`, `is` and `all` are a VERB, a VERB and a
+ * MODIFIER - which is exactly what keeps `Nothing at all has been booked yet.`
+ * clean. A ONE-token form is never read this way: it is a bare predicate, and
+ * `booked` in `I don't have your meeting booked.` is the sentence that requires it.
+ *
+ * WHERE THE SUPPRESSOR ALREADY HAS ITS PREDICATE, the form is a SECOND one - so a
+ * FINITE form is a new clause and a bare PARTICIPLE is not. That single line is
+ * what separates `לא צריך כלום קבעתי לך פגישה למחר בשעה 14:00.` (finite, and
+ * pro-drop, so there is no subject token to find) from `I don't have your meeting
+ * booked.` (a participle, which is a secondary predicate of `have`'s object).
+ */
+function freshPredicationStands(
+  tokens: readonly ClaimToken[],
+  suppressor: Suppressor,
+  form: SuppressedForm,
+  reach: SuppressionReach,
+): boolean {
+  const limit = form.position;
+  /** The end of the noun phrase starting at `start`, or `start` if there is none. */
+  const nounPhraseEnd = (start: number): number => {
+    let index = start;
+    while (index < limit && roleAt(tokens, index, reach) === 'DETERMINER') index += 1;
+    if (index < limit && roleAt(tokens, index, reach) === 'SUBJECT') index += 1;
+    return index;
+  };
+
+  let state: 'SEEKING_PREDICATE' | 'PREDICATE_FOUND' | 'SATURATED' | 'SUBJECT_SLOT_OPEN' =
+    suppressor.kind === 'MOOD'
+      ? 'PREDICATE_FOUND'
+      : suppressor.kind === 'CONDITIONAL' && opensANounPhrase(roleAt(tokens, suppressor.from, reach))
+        ? 'SUBJECT_SLOT_OPEN'
+        : 'SEEKING_PREDICATE';
+
+  let index = suppressor.from;
+  while (index < limit) {
+    const role = roleAt(tokens, index, reach);
+    if (role === 'MODIFIER') {
+      index += 1;
+      continue;
+    }
+    if (role === 'VERB') {
+      // A verb ALWAYS opens a fresh complement slot, including after a previous
+      // one was filled. `Let me get your meeting booked for Thursday.` needs it:
+      // `me` fills `let`'s slot, and `get` then has its own for `your meeting`.
+      state = 'PREDICATE_FOUND';
+      index += 1;
+      continue;
+    }
+    if (role === 'PREPOSITION') {
+      // The preposition's own complement, given straight back. `at all` has none -
+      // `all` is a MODIFIER - so the scan simply moves on to it.
+      index = Math.max(nounPhraseEnd(index + 1), index + 1);
+      continue;
+    }
+    const end = nounPhraseEnd(index);
+    if (state === 'SUBJECT_SLOT_OPEN') state = 'SEEKING_PREDICATE';
+    else if (state === 'SEEKING_PREDICATE') return true;
+    else if (state === 'PREDICATE_FOUND') state = 'SATURATED';
+    else return true;
+    index = Math.max(end, index + 1);
+  }
+
+  if (state === 'SEEKING_PREDICATE' || state === 'SUBJECT_SLOT_OPEN') {
+    // The form brings its own SUBJECT, so the new clause starts at the form.
+    if (form.formTokens > 1 && opensANounPhrase(roleAt(tokens, form.position, reach))) return true;
+    // A bare PARTICIPLE is the negated predicate itself - `Nothing at all booked
+    // for your meeting.` - so it is governed whatever it is made of.
+    if (form.kind === 'PARTICIPLE') return false;
+    // A FINITE form is the suppressor's predicate only if it OPENS like one. In
+    // both registered languages a predicate a negator reaches across modifiers is
+    // introduced by an auxiliary or a copula (`has been booked`, `is booked`), and
+    // this is where Hebrew's pro-drop shows: `Not at all קבעתי לך פגישה למחר.`
+    // puts a complete finite clause, subject and all, into one inflected word, so
+    // there is no subject token for the scan above to find and the form's own
+    // shape is the only evidence there is.
+    return roleAt(tokens, form.position, reach) !== 'VERB';
+  }
+  return form.kind === 'FINITE';
+}
+
 /**
  * Read one sentence's suppression map for one locale.
  *
@@ -939,11 +1340,12 @@ function reachesForward(
  * because the negator positions are the same for every form in the sentence and
  * finding them costs a pass over the tokens.
  *
- * THREE CONDITIONS, AND THE THIRD IS THE § 17 FIX. A blocker suppresses a form only
- * when it stands in the SAME CLAUSE (§ 15), AT OR BEFORE it (§ 15), and REACHES it
- * (§ 17). The first two are about where the negator stands; only the third asks
- * whether it has anything to do with the form, and without it every filler built on
- * a negator word silenced the rest of its clause.
+ * FOUR CONDITIONS NOW, AND THE FOURTH IS THE § 18 FIX. A blocker suppresses a form
+ * only when it stands in the SAME CLAUSE (§ 15), AT OR BEFORE it (§ 15), REACHES it
+ * across carrier material only (§ 17), and GOVERNS it rather than a filler in front
+ * of it (§ 18). The first two are about where the negator stands, the third about
+ * what lies between, and only the fourth asks whether the thing it silences is its
+ * own predicate or somebody else's clause.
  */
 function readSuppression(
   sentence: ClaimSentence,
@@ -951,17 +1353,31 @@ function readSuppression(
   lexicon: ClaimLexicon,
   reach: SuppressionReach,
 ): Suppression {
-  const blockers = [
-    ...formMatches(sentence.tokens, lexicon.negators),
-    ...formMatches(sentence.tokens, lexicon.conditionalMarkers),
+  const opensItsClause = (position: number): boolean =>
+    position === 0 || clauses[position - 1] !== clauses[position];
+  const blockers: readonly (Suppressor & { readonly position: number })[] = [
+    ...formMatches(sentence.tokens, lexicon.negators).map((hit) => ({
+      kind: 'NEGATOR' as const,
+      position: hit.position,
+      from: hit.position + hit.length,
+      opensItsClause: opensItsClause(hit.position),
+      canBeASubject: lexicon.subjectNegators.includes(hit.form),
+    })),
+    ...formMatches(sentence.tokens, lexicon.conditionalMarkers).map((hit) => ({
+      kind: 'CONDITIONAL' as const,
+      position: hit.position,
+      from: hit.position + hit.length,
+      opensItsClause: opensItsClause(hit.position),
+      canBeASubject: false,
+    })),
   ];
   // The clause a trailing `?` terminates is the LAST one, because `?` is a
   // sentence terminator and can therefore only stand at the end.
   const interrogativeClause = sentence.interrogative ? (clauses.at(-1) ?? null) : null;
 
   return {
-    suppresses(position: number): boolean {
-      const clause = clauses[position];
+    suppresses(form: SuppressedForm): boolean {
+      const clause = clauses[form.position];
       if (clause === undefined) return false;
       // Rule 1 keeps its clause scope and needs no governance test: a question mark
       // is punctuation and it makes the WHOLE clause interrogative, so there is no
@@ -969,9 +1385,9 @@ function readSuppression(
       if (clause === interrogativeClause) return true;
       return blockers.some(
         (blocker) =>
-          blocker.position <= position &&
+          blocker.position <= form.position &&
           clauses[blocker.position] === clause &&
-          reachesForward(sentence.tokens, blocker.position + blocker.length, position, reach),
+          governs(sentence.tokens, blocker, form, reach),
       );
     },
   };
