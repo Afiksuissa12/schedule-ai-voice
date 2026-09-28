@@ -226,6 +226,8 @@ import {
   type SuppressionCarrierRole,
 } from './lexicon/index.js';
 import {
+  bridgeSegments,
+  flattenLayout,
   matchLongestForm,
   readSentences,
   type ClaimSentence,
@@ -310,8 +312,6 @@ export interface DetectClaimsOptions {
 export function detectMaterialClaims(text: string, options: DetectClaimsOptions = {}): readonly DetectedClaim[] {
   const claimLexicons = options.lexicons ?? REGISTERED_CLAIM_LEXICONS;
   const schedulingLexicons = options.schedulingLexicons ?? REGISTERED_LEXICONS;
-  const sentences = readSentences(text);
-  const out: DetectedClaim[] = [];
 
   // WHAT MAY STAND INSIDE A FRAME is read from EVERY registered locale at once,
   // for the reason `clauseIndices` reads the conjunctions that way: an English
@@ -325,80 +325,241 @@ export function detectMaterialClaims(text: string, options: DetectClaimsOptions 
   // reverse. Both are shapes the eval corpus actually contains.
   const reach = suppressionReach(claimLexicons);
 
-  for (const sentence of sentences) {
-    const identifiers = identifierShapedTokens(sentence);
-    const day = detectDay(sentence.tokens, schedulingLexicons, claimLexicons);
-    const time = detectTime(sentence.tokens, schedulingLexicons);
+  const context: DetectionContext = { claimLexicons, schedulingLexicons, gap, reach };
 
-    // WHERE THE CLAUSES ARE is a property of the TEXT, so it is read ONCE from
-    // every registered locale at the same time, outside the per-lexicon loop.
-    // WHAT SUPPRESSES is a property of a language, so that stays inside it. A
-    // corpus sample like `לא צריך לדאוג and קבעתי לך פגישה למחר` is why: the
-    // Hebrew negator and the Hebrew completion are divided by an ENGLISH
-    // conjunction, and a Hebrew-only view of the clauses cannot see it.
-    const clauses = clauseIndices(sentence, claimLexicons);
+  // VIEW 1: THE TEXT AS THE MODEL WROTE IT, segmented exactly as it always was.
+  const out = claimsInView(text, context);
 
-    for (const lexicon of claimLexicons) {
-      const suppression = readSuppression(sentence, clauses, lexicon, reach);
+  // VIEW 2: THE SAME TEXT WITH ITS LAYOUT COLLAPSED - see `flattenLayout`. Skipped
+  // outright when there is no layout to collapse, which is the common case.
+  const flattened = flattenLayout(text);
+  if (flattened === text) return out;
 
-      // The dedup by family:mode happens AFTER suppression, not before it, so
-      // that a suppressed first match cannot swallow an asserted second one:
-      // `הפגישה לא נקבעה, אבל הפגישה נקבעה למחר.` asserts the second.
-      const seen = new Set<string>();
-      const clausesWithAFrame = new Set<number>();
-      for (const match of matchCompletionMarkers(sentence, lexicon, gap)) {
-        if (suppression.suppresses(suppressedForm(match))) continue;
-        const key = `${match.claim.family}:${match.claim.mode}`;
-        clausesWithAFrame.add(clauses[match.position] ?? -1);
-        if (seen.has(key)) continue;
-        seen.add(key);
-        out.push({ ...match.claim, assertedDay: day, assertedTime: time, identifiers });
-      }
+  // THE UNION, AND THE DIRECTION IS THE WHOLE POINT. A second view may only ADD a
+  // claim; it can never take one away, because view 1's output is kept entire and
+  // view 2 only contributes what view 1 did not already say. So no sentence this
+  // detector flagged before can stop being flagged by adding a view, and the only
+  // cost a view can carry is one extra REGENERATION of a true sentence.
+  //
+  // DEDUPED ON WHAT THE CLAIM SAYS rather than on where it was found. The two views
+  // have different sentence indices and different excerpts by construction, so an
+  // identity that included either would dedupe nothing at all and every layout-bearing
+  // turn would report each claim twice.
+  const seen = new Set(out.map(claimIdentity));
+  for (const claim of claimsInView(flattened, context)) {
+    const identity = claimIdentity(claim);
+    if (seen.has(identity)) continue;
+    seen.add(identity);
+    out.push(claim);
+  }
+  return out;
+}
 
-      // THE FALLBACK: a bare participle beside a domain object, in a clause no frame
-      // could read. `lexicon/types.ts` (`CompletionParticipleEntry`) carries the
-      // argument and `matchParticiplesNearObjects` carries the rules. It runs AFTER
-      // the frames and is skipped in any clause a frame already spoke for, so it can
-      // neither double-count a claim nor change a verdict a frame produced.
-      for (const match of matchParticiplesNearObjects(sentence, clauses, lexicon, claimLexicons, gap, reach)) {
-        if (clausesWithAFrame.has(clauses[match.position] ?? -1)) continue;
-        if (suppression.suppresses(suppressedForm(match))) continue;
-        const key = `${match.claim.family}:${match.claim.mode}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        out.push({ ...match.claim, assertedDay: day, assertedTime: time, identifiers });
-      }
+/**
+ * What a claim SAYS, for the cross-view dedup.
+ *
+ * Deliberately excludes `sentenceIndex`, `excerpt` and `matchedForm`. The first two
+ * differ between views for every claim; the third differs whenever the two views
+ * reach the same assertion by different routes - a frame in one and a bare
+ * participle beside its object in the other - and reporting that twice would tell a
+ * reader there were two claims when the model made one.
+ */
+function claimIdentity(claim: DetectedClaim): string {
+  const day = claim.assertedDay;
+  const time = claim.assertedTime;
+  return [
+    claim.kind,
+    claim.family,
+    claim.mode,
+    claim.locale,
+    day === null ? '-' : `${day.isoWeekday}/${day.offsetDays}/${day.dayOfMonth}/${day.month}/${day.year}`,
+    time === null ? '-' : `${time.hour}/${time.minute}/${time.dayPart}/${time.hourIsAmbiguous}`,
+    claim.identifiers.join(','),
+  ].join('|');
+}
 
-      // An identifier MARKER is an assertion that the system has an identifier
-      // to give. Suppressed by negation, like a completion form, and by the same
-      // clause rule - so `I cannot take payments, but your confirmation number
-      // is 483921.` is a claim and `I cannot give you a confirmation number` is
-      // not. The FIRST unsuppressed marker in the sentence is the one recorded.
-      const marker = formMatches(sentence.tokens, lexicon.identifierMarkers).find(
-        (hit) =>
-          !suppression.suppresses({ position: hit.position, formTokens: hit.length, kind: 'NOUN_PHRASE' }),
-      );
-      if (marker !== undefined) {
-        out.push({
-          kind: 'IDENTIFIER_ASSERTED',
-          family: 'ANY',
-          mode: 'COMPLETED',
-          locale: lexicon.locale,
-          matchedForm: marker.form,
-          sentenceIndex: sentence.index,
-          excerpt: sentence.raw,
-          assertedDay: day,
-          assertedTime: time,
-          // The marker's OWN claim carries the looser shapes as well - see
-          // `markerAdjacentIdentifiers`. Only this claim does; the effect
-          // claims above and the bare-shape claim below keep the strict list.
-          identifiers: markerAdjacentIdentifiers(sentence, identifiers, day, time),
-        });
-      }
+/** Every claim one VIEW of the text produces: the first pass, then the bridged pass. */
+function claimsInView(text: string, context: DetectionContext): DetectedClaim[] {
+  const sentences = readSentences(text);
+  const out: DetectedClaim[] = [];
+
+  for (let index = 0; index < sentences.length; index += 1) {
+    collectClaims(sentences[index] as ClaimSentence, null, context, out);
+
+    // § 19: THE BRIDGED PASS. Each adjacent PAIR is read again as one sentence, and
+    // only what CROSSES the cut between them is reported - see `bridgeSegments` in
+    // `text.ts` for the defect, the evidence and why suppression is not widened by
+    // it. Emitted here rather than after the whole loop so claims stay in reading
+    // order and the order of everything the first pass produces is unchanged.
+    const current = sentences[index] as ClaimSentence;
+    const next = sentences[index + 1];
+    if (next === undefined) continue;
+
+    // BRIDGED ACROSS SENTENCE PUNCTUATION ONLY, NOT ACROSS LAYOUT - AND THE
+    // DIVISION OF LABOUR IS MEASURED RATHER THAN TIDY.
+    //
+    // A line break is handled by the FLATTENED view instead (`flattenLayout`), and
+    // it is handled BETTER there: flattening keeps the whole turn in one piece, so
+    // a suppressor two lines above the frame still governs it. The bridge sees only
+    // a PAIR, so it cannot. Measured on 162,189 honest rows, bridging line breaks as
+    // well cost 1,305 extra regenerations - `Nothing\nis\nbooked yet.` and `Let me
+    // get\nyour meeting\nbooked for Thursday.` are the shapes - and closed nothing
+    // the flattened view does not already close.
+    //
+    // What the flattened view CANNOT do is collapse `.`, `;`, `!`, `?` or `…`:
+    // those are sentence punctuation, and flattening them would merge two genuinely
+    // separate sentences, which is what `NEGATION_THEN_CLAIM_LINES` exists to
+    // forbid. So the bridge keeps exactly that job, bounded to ONE cut, where the
+    // pair IS the whole context there is.
+    if (/\s/u.test(current.terminator)) continue;
+    const bridged = bridgeSegments(current, next);
+    if (bridged !== null) collectClaims(bridged.sentence, bridged.boundary, context, out);
+  }
+
+  return out;
+}
+
+/** The pooled, per-call data every sentence is read against. */
+interface DetectionContext {
+  readonly claimLexicons: readonly ClaimLexicon[];
+  readonly schedulingLexicons: readonly LocaleLexicon[];
+  readonly gap: FrameGapAllowance;
+  readonly reach: SuppressionReach;
+}
+
+/**
+ * True when a match beginning at `from` and ending before `to` crosses `boundary`.
+ *
+ * `null` is the FIRST pass, where every match counts. A number is the bridged pass,
+ * where the match has to have tokens on both sides of the cut: anything standing
+ * wholly inside one segment was already judged, with its own segment's scope, by the
+ * first pass - and reporting it twice would double-count a claim the first pass may
+ * deliberately have suppressed.
+ */
+function crossesTheCut(from: number, to: number, boundary: number | null): boolean {
+  if (boundary === null) return true;
+  return from < boundary && to > boundary;
+}
+
+/**
+ * Every claim in ONE sentence, or - when `crossing` is a token index - every claim
+ * that spans the cut at that index.
+ *
+ * Split out of `detectMaterialClaims` so the first pass and the § 19 bridged pass
+ * run the IDENTICAL rules. Two passes with two copies of the rules would be two
+ * things to keep in step, and this gate has already been fixed five times by
+ * enumerating what somebody remembered.
+ */
+function collectClaims(
+  sentence: ClaimSentence,
+  crossing: number | null,
+  context: DetectionContext,
+  out: DetectedClaim[],
+): void {
+  const { claimLexicons, schedulingLexicons, gap, reach } = context;
+
+  // DAY, TIME and IDENTIFIER SHAPES cost a pass over the sentence's tokens against
+  // every form of every registered lexicon. On the first pass every sentence needs
+  // them; on the bridged pass almost no pair produces a match at all, so they are
+  // read on demand and the common case costs nothing. `readSentences` is unchanged,
+  // so the first pass reads exactly what it always did.
+  let read: { day: AssertedDay | null; time: AssertedTime | null; identifiers: readonly string[] } | null = null;
+  const sentenceWide = (): { day: AssertedDay | null; time: AssertedTime | null; identifiers: readonly string[] } => {
+    read ??= {
+      day: detectDay(sentence.tokens, schedulingLexicons, claimLexicons),
+      time: detectTime(sentence.tokens, schedulingLexicons),
+      identifiers: identifierShapedTokens(sentence),
+    };
+    return read;
+  };
+
+  // WHERE THE CLAUSES ARE is a property of the TEXT, so it is read ONCE from
+  // every registered locale at the same time, outside the per-lexicon loop.
+  // WHAT SUPPRESSES is a property of a language, so that stays inside it. A
+  // corpus sample like `לא צריך לדאוג and קבעתי לך פגישה למחר` is why: the
+  // Hebrew negator and the Hebrew completion are divided by an ENGLISH
+  // conjunction, and a Hebrew-only view of the clauses cannot see it.
+  const clauses = clauseIndices(sentence, claimLexicons);
+
+  for (const lexicon of claimLexicons) {
+    const suppression = readSuppression(sentence, clauses, lexicon, reach);
+
+    // The dedup by family:mode happens AFTER suppression, not before it, so
+    // that a suppressed first match cannot swallow an asserted second one:
+    // `הפגישה לא נקבעה, אבל הפגישה נקבעה למחר.` asserts the second.
+    const seen = new Set<string>();
+    const clausesWithAFrame = new Set<number>();
+    for (const match of matchCompletionMarkers(sentence, lexicon, gap)) {
+      if (suppression.suppresses(suppressedForm(match))) continue;
+      // Recorded for EVERY unsuppressed frame, crossing or not: a frame that spoke
+      // for a clause on this pass must still hold the participle rule off in it,
+      // or the bridged pass would re-report as a participle what the first pass
+      // already reported as a frame.
+      clausesWithAFrame.add(clauses[match.position] ?? -1);
+      if (!crossesTheCut(match.coversFrom, match.coversTo, crossing)) continue;
+      const key = `${match.claim.family}:${match.claim.mode}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const { day, time, identifiers } = sentenceWide();
+      out.push({ ...match.claim, assertedDay: day, assertedTime: time, identifiers });
     }
 
-    // An identifier-shaped token stands on its own, in any language, hedged or
-    // not. Recorded once per sentence rather than once per registered lexicon.
+    // THE FALLBACK: a bare participle beside a domain object, in a clause no frame
+    // could read. `lexicon/types.ts` (`CompletionParticipleEntry`) carries the
+    // argument and `matchParticiplesNearObjects` carries the rules. It runs AFTER
+    // the frames and is skipped in any clause a frame already spoke for, so it can
+    // neither double-count a claim nor change a verdict a frame produced.
+    for (const match of matchParticiplesNearObjects(sentence, clauses, lexicon, claimLexicons, gap, reach)) {
+      if (clausesWithAFrame.has(clauses[match.position] ?? -1)) continue;
+      if (suppression.suppresses(suppressedForm(match))) continue;
+      // The span here covers the participle AND the domain object that disambiguates
+      // it, so this is the rule § 19 closes for `Your meeting:\nbooked for Thursday
+      // at 2pm.` - the object on one side of the cut, the participle on the other.
+      if (!crossesTheCut(match.coversFrom, match.coversTo, crossing)) continue;
+      const key = `${match.claim.family}:${match.claim.mode}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const { day, time, identifiers } = sentenceWide();
+      out.push({ ...match.claim, assertedDay: day, assertedTime: time, identifiers });
+    }
+
+    // An identifier MARKER is an assertion that the system has an identifier
+    // to give. Suppressed by negation, like a completion form, and by the same
+    // clause rule - so `I cannot take payments, but your confirmation number
+    // is 483921.` is a claim and `I cannot give you a confirmation number` is
+    // not. The FIRST unsuppressed marker in the sentence is the one recorded.
+    const marker = formMatches(sentence.tokens, lexicon.identifierMarkers).find(
+      (hit) =>
+        !suppression.suppresses({ position: hit.position, formTokens: hit.length, kind: 'NOUN_PHRASE' }) &&
+        crossesTheCut(hit.position, hit.position + hit.length, crossing),
+    );
+    if (marker !== undefined) {
+      const { day, time, identifiers } = sentenceWide();
+      out.push({
+        kind: 'IDENTIFIER_ASSERTED',
+        family: 'ANY',
+        mode: 'COMPLETED',
+        locale: lexicon.locale,
+        matchedForm: marker.form,
+        sentenceIndex: sentence.index,
+        excerpt: sentence.raw,
+        assertedDay: day,
+        assertedTime: time,
+        // The marker's OWN claim carries the looser shapes as well - see
+        // `markerAdjacentIdentifiers`. Only this claim does; the effect
+        // claims above and the bare-shape claim below keep the strict list.
+        identifiers: markerAdjacentIdentifiers(sentence, identifiers, day, time),
+      });
+    }
+  }
+
+  // An identifier-shaped token stands on its own, in any language, hedged or
+  // not. Recorded once per sentence rather than once per registered lexicon - and
+  // NOT on the bridged pass, where every token already belongs to a segment the
+  // first pass read. A token cannot straddle a cut, so there is nothing here that
+  // crossing could add and a second report would only duplicate.
+  if (crossing === null) {
+    const { day, time, identifiers } = sentenceWide();
     if (identifiers.length > 0) {
       out.push({
         kind: 'IDENTIFIER_ASSERTED',
@@ -414,8 +575,6 @@ export function detectMaterialClaims(text: string, options: DetectClaimsOptions 
       });
     }
   }
-
-  return out;
 }
 
 /** The `matchedForm` recorded when a bare identifier shape fired. */
@@ -439,6 +598,17 @@ interface CompletionMatch {
   readonly formTokens: number;
   /** A finite predicate, or the bare participle the fallback rule reads. */
   readonly formKind: 'FINITE' | 'PARTICIPLE';
+  /**
+   * The token range the whole finding covers, `[coversFrom, coversTo)`.
+   *
+   * WIDER THAN THE FORM ON PURPOSE, and § 19 is what needs it. For a frame this is
+   * the matched span including anything the gap rule skipped. For a bare participle
+   * it also covers the DOMAIN OBJECT that disambiguated it, because neither half is
+   * the finding on its own - which is what lets the bridged pass ask whether the
+   * finding straddles a sentence cut rather than merely whether the verb does.
+   */
+  readonly coversFrom: number;
+  readonly coversTo: number;
   readonly claim: Omit<DetectedClaim, 'assertedDay' | 'assertedTime' | 'identifiers'>;
 }
 
@@ -569,6 +739,8 @@ function matchCompletionMarkers(
       position,
       formTokens: best.formTokens,
       formKind: 'FINITE',
+      coversFrom: position,
+      coversTo: position + best.span,
       claim: {
         kind: 'EFFECT_ASSERTED',
         family: best.entry.family,
@@ -729,6 +901,8 @@ function matchParticiplesNearObjects(
         position,
         formTokens: hit.length,
         formKind: 'PARTICIPLE',
+        coversFrom: Math.min(position, nearby.position),
+        coversTo: Math.max(position + hit.length, nearby.position + nearby.length),
         claim: {
           kind: 'EFFECT_ASSERTED',
           // A generic MEETING participle defers to the object; anything more specific
@@ -903,6 +1077,16 @@ interface SuppressionReach {
   readonly conditionalTokens: ReadonlySet<string>;
   /** The negators that can themselves be a SUBJECT. `ClaimLexicon.subjectNegators`. */
   readonly subjectNegatorTokens: ReadonlySet<string>;
+  /**
+   * The HEAD token of every `domainObjects` form, pooled from every locale.
+   *
+   * § 19b needs to ask not just "is this a noun phrase" but "is it a noun phrase
+   * naming a thing this system creates". `me`, `you` and `anything` fill a modal's
+   * object slot and name nothing; `meeting`, `callback` and `follow-up` are what a
+   * telegraphic clause is ABOUT. The head is the first token for the reason the
+   * `SUBJECT` role uses it - `call back`, `follow-up`.
+   */
+  readonly domainObjectHeads: ReadonlySet<string>;
 }
 
 /**
@@ -972,6 +1156,7 @@ function suppressionReach(lexicons: readonly ClaimLexicon[]): SuppressionReach {
   const negatorTokens = new Set<string>();
   const conditionalTokens = new Set<string>();
   const subjectNegatorTokens = new Set<string>();
+  const domainObjectHeads = new Set<string>();
 
   const add = (forms: readonly string[]): void => {
     for (const form of forms) {
@@ -1032,6 +1217,10 @@ function suppressionReach(lexicons: readonly ClaimLexicon[]): SuppressionReach {
     for (const entry of lexicon.domainObjects) {
       add(entry.forms);
       claim(entry.forms, 'SUBJECT', true);
+      for (const form of entry.forms) {
+        const head = form.split(' ').filter((token) => token.length > 0)[0];
+        if (head !== undefined) domainObjectHeads.add(head);
+      }
     }
   }
 
@@ -1042,6 +1231,7 @@ function suppressionReach(lexicons: readonly ClaimLexicon[]): SuppressionReach {
     negatorTokens,
     conditionalTokens,
     subjectNegatorTokens,
+    domainObjectHeads,
   };
   SUPPRESSION_REACHES.set(lexicons, reach);
   return reach;
@@ -1310,8 +1500,57 @@ function freshPredicationStands(
     const end = nounPhraseEnd(index);
     if (state === 'SUBJECT_SLOT_OPEN') state = 'SEEKING_PREDICATE';
     else if (state === 'SEEKING_PREDICATE') return true;
-    else if (state === 'PREDICATE_FOUND') state = 'SATURATED';
-    else return true;
+    else if (state === 'PREDICATE_FOUND') {
+      // § 19b: A MODAL'S OBJECT IS A DETERMINED NOUN PHRASE, AND THE TELEGRAPHIC
+      // REGISTER'S SUBJECT IS A BARE ONE.
+      //
+      // This is the second half of QA's round-5 finding and it is a real hole in a
+      // real class. Ten `nothing ... to do` clauses silenced the bare-participle
+      // register while leaving every FRAMED spelling of the same claim detected:
+      //
+      //     There is nothing you need to do meeting booked for Thursday at 2pm.   RELEASED
+      //     You have nothing to do meeting booked for Thursday at 2pm.            RELEASED
+      //     You have nothing to do your meeting is booked for Thursday at 2pm.    DETECTED
+      //
+      // The suppressor doing it is not the negator - `nothing` cannot reach that far -
+      // but the MODAL behind it (`need`, `do`, `have`). A modal is a predicate that
+      // takes the next noun phrase as its OBJECT, which is what keeps `I don't have
+      // your meeting booked.` and `Let me get your meeting booked for Thursday.`
+      // clean, and the scan had no way to tell that object from a new clause's
+      // subject.
+      //
+      // ENGLISH DOES TELL THEM APART, and it does it with the article. A singular
+      // count noun in a VERB's object position takes a determiner - `get YOUR
+      // meeting booked`, `have THE appointment confirmed` - and the telegraphic
+      // register is telegraphic precisely because it drops one: `Right, meeting
+      // booked for Thursday at 2pm.` So a DOMAIN OBJECT that no `frameDeterminers`
+      // token opened is read as a fresh subject rather than as the verb's object.
+      //
+      // TWO CONDITIONS, AND BOTH WERE FOUND BY MEASURING RATHER THAN BY READING:
+      //
+      //  - IT MUST BE A DOMAIN OBJECT. A bare PRONOUN fills a verb's object slot
+      //    with no article at all, and `Let me have your meeting booked.` puts one
+      //    there: `me` is bare, so a rule about bare noun phrases IN GENERAL flagged
+      //    that sentence and fifteen more like it in `HONEST_PRECISION_MATRIX`. A
+      //    pronoun names nothing this system creates; a telegraphic subject always
+      //    does, because the participle rule needs an object beside it to fire at all.
+      //  - IT MUST BE A BARE PARTICIPLE. A FINITE form behind a filler is § 18's
+      //    business and is decided by the states below, which are unchanged.
+      //
+      // EVERY SUPPRESSOR KIND IS SUBJECT TO IT, because the leaking sentences split
+      // across kinds: `There is nothing you need to do meeting booked ...` is
+      // governed by the modal `need` and `You have nothing to do meeting booked ...`
+      // by the negator `nothing`. Closing one register and not the other would be
+      // this gate's § 16.6 pattern arriving a seventh time.
+      if (
+        form.kind === 'PARTICIPLE' &&
+        role === 'SUBJECT' &&
+        reach.domainObjectHeads.has((tokens[index] as ClaimToken).text)
+      ) {
+        return true;
+      }
+      state = 'SATURATED';
+    } else return true;
     index = Math.max(end, index + 1);
   }
 

@@ -71,6 +71,16 @@ export interface ClaimSentence {
   readonly interrogative: boolean;
   /** How many punctuation clauses the sentence has. 0 for a sentence with no tokens. */
   readonly clauseCount: number;
+  /**
+   * The character that ENDED this sentence, or `''` at the end of the text.
+   *
+   * Carried so `bridgeSegments` can rebuild a readable audit excerpt and, more
+   * importantly, so it can ask which terminator stands at the END of a frame that
+   * crosses a cut. `Is your meeting\nbooked?` and `Your meeting is? booked for
+   * Thursday at 2pm.` differ in nothing else: in the first the question mark
+   * terminates the span, in the second it stands in the middle of it. § 19.
+   */
+  readonly terminator: string;
 }
 
 /**
@@ -159,6 +169,7 @@ export function readSentences(text: string): readonly ClaimSentence[] {
         tokens,
         interrogative: terminator === '?',
         clauseCount: (tokens.at(-1)?.clause ?? -1) + 1,
+        terminator,
       });
     }
     current = '';
@@ -190,6 +201,206 @@ export function readSentences(text: string): readonly ClaimSentence[] {
 
 function isDigit(character: string | undefined): boolean {
   return character !== undefined && /\p{N}/u.test(character);
+}
+
+/**
+ * Invisible formatting characters that `normalizeScript` does NOT remove.
+ *
+ * U+00AD SOFT HYPHEN, U+180E MONGOLIAN VOWEL SEPARATOR, U+2060 WORD JOINER.
+ * `normalizeScript` strips the bidi controls and the zero-width block, and these
+ * three are the remainder of the invisible set. One of them inside a verb -
+ * `boo­ked` - splits the token in two and the claim disappears, which is the
+ * same fail-open shape as the cut this module's `bridgeSegments` is about: a
+ * representational step erasing a claim.
+ *
+ * They are handled HERE, in the flattened view, rather than in `normalizeScript` -
+ * which is shared with the scheduling resolver - precisely because a view may only
+ * ADD suspicion. Fixing it in the shared normaliser would change what the RESOLVER
+ * sees too, and that is a different guarantee with a different test.
+ */
+const INVISIBLE_FORMAT_CHARACTERS = /[­᠎⁠]/gu;
+
+/** Markdown emphasis and code runs, which may sit INSIDE a word. */
+const EMPHASIS_MARKERS = /[*~]+/gu;
+
+/** What opens a markdown block at the start of a line: bullets, headings, quotes, numbering. */
+const LINE_LEADING_MARKERS = /^[ \t]*(?:[-*+•·>#]+[ \t]*|\d{1,3}[.)][ \t]+)/gmu;
+
+/**
+ * THE SECOND VIEW: the same text with its LAYOUT collapsed.
+ *
+ * WHY A SECOND VIEW AND NOT A BETTER FIRST ONE
+ * ---------------------------------------------------------------------------
+ * `bridgeSegments` above closes a terminator standing inside a frame ACROSS ONE
+ * CUT, which is the shape independent QA drove end to end. It cannot close a frame
+ * spread over three segments - `Your meeting\nis\nbooked for Thursday.` - and it
+ * cannot close a marker that sits inside a WORD rather than between two.
+ *
+ * Those are all the same class, and the class is not "line breaks". It is: **a
+ * representational choice made for precision silently removes a claim.** Where
+ * sentences are cut is one such choice; so is which characters may sit inside a
+ * token, and so is whether a `1.` at the start of a line is a list number or a full
+ * stop after a number. Closing them one at a time is the pattern
+ * `docs/MISSION_2D_CLAIM_GATE.md` § 16.6 names and that has now cost six findings.
+ *
+ * So the rule is stated at the level of the axis: **THE GATE MAY LOOK AT THE TEXT
+ * THROUGH SEVERAL VIEWS, AND A VIEW MAY ONLY EVER ADD SUSPICION, NEVER REMOVE IT.**
+ * `detector.ts` runs detection over the text as segmented today AND over this view,
+ * and unions the results. A union cannot make a currently-detected claim disappear,
+ * so no precision control can regress except by an extra REGENERATION - which is
+ * measured rather than assumed (§ 19.4).
+ *
+ * WHAT IS COLLAPSED, AND WHY EACH ONE
+ * ---------------------------------------------------------------------------
+ *  1. INVISIBLE FORMAT CHARACTERS the shared normaliser leaves behind. A soft
+ *     hyphen inside `booked` is not a word boundary to any reader.
+ *  2. LINE-LEADING MARKERS - bullets, headings, blockquotes, list numbering. The
+ *     numbering matters most and is the least obvious: `1. Meeting booked` puts a
+ *     FULL STOP after a digit, which `readSentences` correctly reads as the end of
+ *     a sentence (`booked for 3.`) and which is a list marker here.
+ *  3. EMPHASIS RUNS, which may sit inside a word: `**bo**oked` tokenises as two
+ *     words and matches nothing.
+ *  4. LINE BREAKS and runs of whitespace, to single spaces.
+ *
+ * WHAT IS DELIBERATELY NOT COLLAPSED
+ * ---------------------------------------------------------------------------
+ * `.`, `!`, `?`, `;` and `…` STAY. They are sentence punctuation rather than
+ * layout, and flattening them would merge two genuinely separate sentences into
+ * one - which is the direction `NEGATION_THEN_CLAIM_LINES` exists to forbid. They
+ * are reached by `bridgeSegments` instead, one cut at a time, which is the narrow
+ * tool for a narrow job. The two mechanisms are complementary on purpose.
+ *
+ * A BACKTICK BECOMES AN APOSTROPHE rather than disappearing, which is the one
+ * substitution here that is not a deletion: independent QA found `I\`ve booked`
+ * missed, and a backtick is the key next to the apostrophe on a US keyboard and the
+ * character a markdown-trained model reaches for. `` `booked` `` is unaffected
+ * either way, because a backtick at a token edge was never part of the token.
+ *
+ * Returns the input UNCHANGED when there is nothing to collapse, which is the
+ * common case - an ordinary one-line reply - and lets the caller skip the second
+ * view entirely.
+ */
+export function flattenLayout(text: string): string {
+  const flattened = text
+    .replace(INVISIBLE_FORMAT_CHARACTERS, '')
+    .replace(/`/gu, "'")
+    .replace(LINE_LEADING_MARKERS, ' ')
+    .replace(EMPHASIS_MARKERS, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim();
+  return flattened === text ? text : flattened;
+}
+
+/** Two adjacent segments read as one, with the cut between them located. */
+export interface BridgedSegments {
+  /** The pair as a single sentence. Tokens of the first, then of the second. */
+  readonly sentence: ClaimSentence;
+  /**
+   * Index of the first token that came from the SECOND segment.
+   *
+   * A match "crosses the cut" when it begins strictly before this and ends
+   * strictly after it. That is the only thing the bridged pass is allowed to
+   * report - see `detector.ts` § 19.
+   */
+  readonly boundary: number;
+}
+
+/**
+ * Two adjacent segments, joined so that a completion frame can SEE across the cut.
+ *
+ * WHY THIS EXISTS - THE SIXTH FAIL-OPEN DEFECT, NOT A REFINEMENT
+ * ---------------------------------------------------------------------------
+ * `readSentences` cuts on every `SENTENCE_TERMINATORS` character, and it does that
+ * BEFORE any completion form is looked for. Every English completion form is a
+ * multi-token FRAME, so a terminator standing INSIDE one silenced the whole
+ * detector - not by suppressing it, but by making the frame unmatchable at any
+ * `FrameGapAllowance` bound. The gap rule tolerates intervening TOKENS, and a cut
+ * is not a token; it is the segmentation the gap rule runs inside.
+ *
+ *     Your meeting is booked for Thursday at 2pm.        DETECTED
+ *     Your meeting is\nbooked for Thursday at 2pm.       RELEASED   <- same claim
+ *     The meeting has been\nbooked for Thursday at 2pm.  RELEASED
+ *     Your meeting is; booked for Thursday at 2pm.       RELEASED
+ *     I'll\ncall you tomorrow at 3pm.                    RELEASED
+ *
+ * Independent QA drove four of those through the real `AgentTurnService`, the real
+ * `ToolDispatcher` and real SQLite: every one reached the caller with
+ * `outcome=NO_MATERIAL_CLAIM`, was persisted as a spoken AGENT turn, and left
+ * `meetings=0` and `futureActions=0`. The control - the same bytes with a SPACE
+ * where the break is - was withheld and regenerated in the same run. Hebrew was
+ * immune again, and for the § 16 reason: its completion verbs are single inflected
+ * words with no inside for a cut to land in.
+ *
+ * The class is wider than a hard wrap, and that is the half that matters. A model
+ * answering in the register `docs/MISSION_2D_AYA_ROOT_CAUSE.md` is about - labels,
+ * bullets, headings, `Action:` lists - puts a line break between a domain object and
+ * its participle as a matter of LAYOUT: `Your meeting:\nbooked for Thursday at 2pm.`,
+ * `- Meeting\n- booked for Thursday at 2pm`, `## Confirmation\nThe meeting has
+ * been\nbooked ...`. None of those is an evasion; all of them leaked.
+ *
+ * WHY NOT "STOP SPLITTING ON NEWLINES"
+ * ---------------------------------------------------------------------------
+ * Because splitting is load-bearing in the other direction, and the argument above
+ * `SENTENCE_TERMINATORS` is correct: a model that answers in bullet points separates
+ * an honest negation from a false completion by a line break and nothing else, so
+ * merging the two lines would let the negator in one silence the claim in the next.
+ * `tests/claimGate/claimGateCorpus.ts` pins that as a CRLF pair.
+ *
+ * So the cut STAYS, and a second pass re-reads each ADJACENT PAIR as one sentence.
+ * Only matches that CROSS the cut are reported from it, which is what keeps the two
+ * rules from contradicting each other: a claim standing wholly inside one segment is
+ * the first pass's business and is judged exactly as it was before this existed.
+ *
+ * SUPPRESSION IS NOT WIDENED BY THIS, AND THAT WAS THE CONSTRAINT
+ * ---------------------------------------------------------------------------
+ * The second segment's clauses are renumbered to CONTINUE the first segment's last
+ * clause rather than to open a new one, so inside a bridged pair a negator does
+ * reach across the cut. That sounds like the thing §§ 15, 17 and 18 forbid and it is
+ * the opposite of it, for one structural reason: the bridged pass may only EMIT a
+ * match that crosses the cut, and such a match always BEGINS in the first segment.
+ * So the only suppressor that can act on it is one standing at or before its first
+ * token, in that token's own clause - which is ordinary same-clause suppression, and
+ * it is what keeps `Nothing is\nbooked yet.` clean. A negator can never silence a
+ * claim that lies wholly in the other segment, because no such claim is reported
+ * here at all. Nothing that was detected before can stop being detected.
+ *
+ * Returns `null` when there is nothing to bridge, so the caller does no work on the
+ * common case of a segment with no tokens.
+ */
+export function bridgeSegments(first: ClaimSentence, second: ClaimSentence): BridgedSegments | null {
+  if (first.tokens.length === 0 || second.tokens.length === 0) return null;
+
+  // A whitespace terminator is shown as a line break, a mark is shown followed by a
+  // space, and the end of the text has neither. Only the audit excerpt reads this.
+  const separator =
+    first.terminator === '' ? ' ' : /\s/u.test(first.terminator) ? '\n' : `${first.terminator} `;
+  const raw = `${first.raw}${separator}${second.raw}`;
+  const shift = first.raw.length + separator.length;
+  // CONTINUE the last clause rather than opening a new one - see the header.
+  const clauseShift = first.clauseCount - 1;
+
+  const tokens: ClaimToken[] = [...first.tokens];
+  for (const token of second.tokens) {
+    tokens.push({ text: token.text, offset: token.offset + shift, clause: token.clause + clauseShift });
+  }
+
+  return {
+    sentence: {
+      index: first.index,
+      raw,
+      tokens,
+      // THE TERMINATOR THAT GOVERNS A SPAN IS THE ONE AT ITS END. `Is your
+      // meeting\nbooked?` is a question and must stay clean; `Your meeting is?
+      // booked for Thursday at 2pm.` puts the mark in the MIDDLE of the frame and
+      // asserts a booking. Reading the second segment's terminator is what tells
+      // those two apart, and reading the first segment's would have kept the second
+      // one open.
+      interrogative: second.interrogative,
+      clauseCount: (tokens.at(-1)?.clause ?? -1) + 1,
+      terminator: second.terminator,
+    },
+    boundary: first.tokens.length,
+  };
 }
 
 /**

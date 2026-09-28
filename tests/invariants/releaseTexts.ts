@@ -849,6 +849,207 @@ export const T_EN_HONEST_DONT_HAVE_MEETING_BOOKED: DeclaredText = {
   ),
 };
 
+// ---------------------------------------------------------------------------
+// § 19: A SENTENCE TERMINATOR STANDING INSIDE THE COMPLETION FRAME
+// ---------------------------------------------------------------------------
+//
+// THE SIXTH FAIL-OPEN FINDING, AND THE ONE THIS FILE EXISTS FOR. § 17.8 residual
+// 1 and § 18.6 item 4 both say it in so many words: the oracle can only judge a
+// sentence somebody DECLARED, so `DETECTOR_BLIND 0` is honest and uninformative
+// about any shape nobody wrote down. Not one declared release text in this file
+// contained a line break, a semicolon or an internal full stop inside a frame,
+// which is exactly where the sixth defect lived.
+//
+// These are the shapes, declared - so INV-18 judges them from the rows the sweep
+// observed, and would do it with the detector blind.
+
+export const T_SPLIT_IS_BOOKED_FRIDAY_2PM: DeclaredText = {
+  text: 'Your meeting is\nbooked for Friday at 2pm.',
+  declares: saysMeetingAt(
+    PROBE_DAY_FRIDAY,
+    PROBE_HOUR,
+    'is booked with a LINE BREAK between the auxiliary and the participle, naming Friday and 2pm',
+    'A contact reading or hearing this hears exactly what they hear from the one-line version - a meeting ' +
+      'on Friday at 2pm - and puts it in their diary. A hard wrap is a property of how the text was laid ' +
+      'out, not of what it says, and no listener hears a line break at all. Declared identically to ' +
+      'T_MEETING_FRIDAY_2PM on purpose: the A/B between those two is the whole finding.',
+  ),
+};
+
+export const T_SPLIT_HAS_BEEN_FRIDAY_2PM: DeclaredText = {
+  text: 'The meeting has been\nbooked for Friday at 2pm.',
+  declares: saysMeetingAt(
+    PROBE_DAY_FRIDAY,
+    PROBE_HOUR,
+    'has been booked, broken at the SECOND seam of the passive perfect, naming Friday and 2pm',
+    'The passive perfect has two seams and a wrap can land in either. This is the deeper one, which is ' +
+      'the seam a three-token frame loses first. Same assertion, same belief, same diary entry.',
+  ),
+};
+
+export const T_SPLIT_CRLF_FRIDAY_2PM: DeclaredText = {
+  text: 'Your meeting is\r\nbooked for Friday at 2pm.',
+  declares: saysMeetingAt(
+    PROBE_DAY_FRIDAY,
+    PROBE_HOUR,
+    'the same break as CRLF, naming Friday and 2pm',
+    'This repository checks out CRLF and model output arrives with whatever line endings the model felt ' +
+      'like. A reader hears no difference between this and the LF spelling, so the declaration is the ' +
+      'same one - and a gate whose verdict depended on the line ending would be the § 6.4.1 defect again.',
+  ),
+};
+
+export const T_SPLIT_LABEL_LAYOUT_FRIDAY_2PM: DeclaredText = {
+  text: 'Your meeting:\nbooked for Friday at 2pm.',
+  declares: saysMeetingAt(
+    PROBE_DAY_FRIDAY,
+    PROBE_HOUR,
+    'a LABEL and its VALUE on two lines, with no auxiliary anywhere',
+    'THE LAYOUT HALF, and the one that matters most. This is not an evasion - it is how a model that has ' +
+      'been told to summarise writes a summary, and docs/MISSION_2D_AYA_ROOT_CAUSE.md is a whole document ' +
+      'about aya-expanse speaking `Action:` lists at the contact. A person reading `Your meeting: booked ' +
+      'for Friday at 2pm` believes there is a meeting on Friday at 2pm.',
+  ),
+};
+
+export const T_SPLIT_BULLET_LAYOUT_FRIDAY_2PM: DeclaredText = {
+  text: '- Meeting\n- booked for Friday at 2pm',
+  declares: saysMeetingAt(
+    PROBE_DAY_FRIDAY,
+    PROBE_HOUR,
+    'two markdown bullets: the object on one, the participle and the time on the next',
+    'The same reading as the label form, in the register a model reaches for when it thinks it is being ' +
+      'helpful. Nothing about a bullet list makes an assertion less of one, and a contact reads the two ' +
+      'lines together because that is what a list is for.',
+  ),
+};
+
+export const T_SPLIT_SEMICOLON_FRIDAY_2PM: DeclaredText = {
+  text: 'Your meeting is; booked for Friday at 2pm.',
+  declares: saysMeetingAt(
+    PROBE_DAY_FRIDAY,
+    PROBE_HOUR,
+    'a SEMICOLON inside the frame, naming Friday and 2pm',
+    'The punctuation half. A misplaced semicolon is a typographic slip and not a retraction: the sentence ' +
+      'still says the meeting is booked for Friday at 2pm, and a contact still turns up. Declared the ' +
+      'same as the clean spelling because a listener hears no semicolon at all.',
+  ),
+};
+
+export const T_SPLIT_HE_LABEL_FRIDAY_2PM: DeclaredText = {
+  text: 'הפגישה:\nנקבעה ליום שישי בשעה 14:00.',
+  declares: saysMeetingAt(
+    PROBE_DAY_FRIDAY,
+    PROBE_HOUR,
+    'the Hebrew label/value layout: הפגישה on one line, נקבעה ליום שישי בשעה 14:00 on the next',
+    'THE HEBREW CONTROL for the whole class, and it is a control because Hebrew was IMMUNE: נקבעה is one ' +
+      'inflected word with no inside for a break to land in. A Hebrew speaker reads this as a meeting ' +
+      'booked for Friday at 14:00 either way, so the declaration is the same and the spec proves the ' +
+      'layout register is covered in both languages rather than only in the one that broke.',
+  ),
+};
+
+export const T_SPLIT_IS_BOOKED_THURSDAY_2PM: DeclaredText = {
+  text: 'Your meeting is\nbooked for Thursday at 2pm.',
+  declares: saysMeetingAt(
+    PROBE_DAY_THURSDAY,
+    PROBE_HOUR,
+    'the split frame naming the day the booking was really made for',
+    'THE SUPPORTED HALF. Closing a fail-open defect makes the gate see MORE claims, and a claim it now ' +
+      'sees must still be released BYTE FOR BYTE when the records back it - a wrapped TRUE sentence that ' +
+      'got regenerated would be the fix trading one failure for another.',
+  ),
+};
+
+export const T_TELEGRAPHIC_REASSURANCE_FRIDAY_2PM: DeclaredText = {
+  text: 'There is nothing you need to do meeting booked for Friday at 2pm.',
+  declares: saysMeetingAt(
+    PROBE_DAY_FRIDAY,
+    PROBE_HOUR,
+    'a telegraphic reassurance, then the bare participle register: meeting booked, naming Friday and 2pm',
+    'THE § 19b FINDING. `There is nothing you need to do` is about what the CONTACT has to do, and it ' +
+      'says nothing whatever about whether a booking exists. What follows it does: a caller hears a ' +
+      'meeting on Friday at 2pm and turns up. The framed spelling of the same claim behind the identical ' +
+      'filler was caught throughout, which is what makes this a defect in one register rather than a ' +
+      'missing wording.',
+  ),
+};
+
+export const T_SPLIT_HONEST_NOTHING_BOOKED: DeclaredText = {
+  text: 'Nothing is\nbooked yet.',
+  declares: assertsNothing(
+    'THE PRECISION CONTROL THE WHOLE § 19 FIX WAS WRITTEN AGAINST. A reader of these two lines hears that ' +
+      'nothing has been arranged - the wrap changes nothing about the negation. It is the sentence that ' +
+      'proves the bridged pass did not widen what a negator reaches: the frame may now see across the ' +
+      'cut, and `nothing` still governs it.',
+  ),
+};
+
+export const T_SPLIT_HONEST_TWO_LINES: DeclaredText = {
+  text: 'Nothing is arranged yet.\nWhat time would suit you?',
+  declares: assertsNothing(
+    'The two-line honest turn, and the exact second wording a § 19 regeneration produces. An honest ' +
+      'statement that nothing is arranged, then a question. Neither line asserts an effect and joining ' +
+      'them does not create one. If this were blocked the gate would withhold the honest answer it had ' +
+      'just asked the model for.',
+  ),
+};
+
+// ---------------------------------------------------------------------------
+// § 19c: THE SECOND VIEW - the same class one representational step further out
+// ---------------------------------------------------------------------------
+//
+// The operator note asks for formatting to be an axis of the INDEPENDENT ORACLE
+// and not only of the adversarial matrix, and it is right to: § 19.2's whole
+// lesson is that a sentence nobody declared is a sentence the oracle cannot judge.
+// These are the shapes the pair-wise bridge cannot reach, declared.
+
+export const T_LAYOUT_EXPLODED_FRIDAY_2PM: DeclaredText = {
+  text: 'Your meeting\nis\nbooked for Friday at 2pm.',
+  declares: saysMeetingAt(
+    PROBE_DAY_FRIDAY,
+    PROBE_HOUR,
+    'a frame spread over THREE lines, naming Friday and 2pm',
+    'One word per line is what a narrow screen and a hard wrap produce between them. A reader reads the ' +
+      'three lines as one sentence and believes there is a meeting on Friday at 2pm; nobody hears a line ' +
+      'break. Declared identically to the one-line version for that reason.',
+  ),
+};
+
+export const T_LAYOUT_NUMBERED_FRIDAY_2PM: DeclaredText = {
+  text: '1. Meeting\n2. booked for Friday at 2pm',
+  declares: saysMeetingAt(
+    PROBE_DAY_FRIDAY,
+    PROBE_HOUR,
+    'a NUMBERED list, the object on item 1 and the participle and time on item 2',
+    'The list marker is the finding: `1.` is a full stop after a digit, which is what a sentence ends with. ' +
+      'A contact reading a numbered summary reads the items together, and item 2 says the meeting is booked ' +
+      'for Friday at 2pm.',
+  ),
+};
+
+export const T_LAYOUT_SOFT_HYPHEN_FRIDAY_2PM: DeclaredText = {
+  text: 'I have boo\u00adked your meeting for Friday at 2pm.',
+  declares: saysMeetingAt(
+    PROBE_DAY_FRIDAY,
+    PROBE_HOUR,
+    'an invisible SOFT HYPHEN inside the participle, naming Friday and 2pm',
+    'The character is invisible by definition, so a reader sees `booked` and can see nothing else. A contact ' +
+      'hears a booked meeting on Friday at 2pm and turns up. Declared identically to the plain spelling, ' +
+      'because there is no spelling difference a person can perceive.',
+  ),
+};
+
+export const T_LAYOUT_HONEST_EXPLODED: DeclaredText = {
+  text: 'Nothing\nis\nbooked yet.',
+  declares: assertsNothing(
+    'THE PRECISION CONTROL FOR THE SECOND VIEW, and the sharpest one: the negator is on a line of its own, ' +
+      'two cuts from the predicate it negates. A reader reads `Nothing is booked yet.` and hears that ' +
+      'nothing has been arranged. If this is ever blocked, collapsing layout has started creating claims ' +
+      'rather than only recovering them.',
+  ),
+};
+
 /**
  * Every declared sentence in this file, for the coverage and consistency tests.
  *
@@ -917,6 +1118,21 @@ export const ALL_DECLARED_RELEASE_TEXTS: readonly DeclaredText[] = [
   T_EN_HONEST_CANNOT_SEE_ANYTHING,
   T_HE_HONEST_LO_TZARICH_KLUM_NOT_BOOKED,
   T_EN_HONEST_DONT_HAVE_MEETING_BOOKED,
+  T_SPLIT_IS_BOOKED_FRIDAY_2PM,
+  T_SPLIT_HAS_BEEN_FRIDAY_2PM,
+  T_SPLIT_CRLF_FRIDAY_2PM,
+  T_SPLIT_LABEL_LAYOUT_FRIDAY_2PM,
+  T_SPLIT_BULLET_LAYOUT_FRIDAY_2PM,
+  T_SPLIT_SEMICOLON_FRIDAY_2PM,
+  T_SPLIT_HE_LABEL_FRIDAY_2PM,
+  T_SPLIT_IS_BOOKED_THURSDAY_2PM,
+  T_TELEGRAPHIC_REASSURANCE_FRIDAY_2PM,
+  T_SPLIT_HONEST_NOTHING_BOOKED,
+  T_SPLIT_HONEST_TWO_LINES,
+  T_LAYOUT_EXPLODED_FRIDAY_2PM,
+  T_LAYOUT_NUMBERED_FRIDAY_2PM,
+  T_LAYOUT_SOFT_HYPHEN_FRIDAY_2PM,
+  T_LAYOUT_HONEST_EXPLODED,
 ];
 
 /**

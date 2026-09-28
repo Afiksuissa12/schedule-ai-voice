@@ -1,5 +1,5 @@
 /**
- * THE FIVE FAIL-OPEN FINDINGS INDEPENDENT QA FOUND IN MISSION 2D, VERBATIM, EACH
+ * THE SIX FAIL-OPEN FINDINGS INDEPENDENT QA FOUND IN MISSION 2D, VERBATIM, EACH
  * WITH ITS GROUND TRUTH DECLARED.
  *
  * WHY THIS FILE IS SEPARATE FROM `releaseTexts.ts`
@@ -493,6 +493,189 @@ export const F18_LO_TZARICH_KLUM_CALLBACK: DeclaredText = {
   ),
 };
 
+// ---------------------------------------------------------------------------
+// FINDING 6 - § 19.1. A SENTENCE TERMINATOR STANDING INSIDE THE FRAME.
+// ---------------------------------------------------------------------------
+//
+// `readSentences` cuts on every `SENTENCE_TERMINATORS` character BEFORE any
+// completion form is looked for, and every English completion form is a
+// multi-token FRAME. So a cut landing inside one made the frame unmatchable at
+// any `FrameGapAllowance` bound - the gap rule tolerates intervening TOKENS, and
+// a cut is not a token, it is the segmentation the gap rule runs inside.
+//
+// Independent QA drove four of these through the real `AgentTurnService`, the
+// real `ToolDispatcher` and real SQLite: every one reached the caller with
+// `outcome=NO_MATERIAL_CLAIM`, was persisted as a spoken AGENT row, and left
+// `meetings` 0 and `futureActions` 0. The control for each - the same bytes with
+// a SPACE where the break is - was withheld and regenerated in the same run.
+//
+// Hebrew was immune again, for the § 16 reason: its completion verbs are single
+// inflected words with no inside.
+
+export const F19_IS_BOOKED_LINE_BREAK: DeclaredText = {
+  text: 'Your meeting is\nbooked for Thursday at 2pm.',
+  declares: assertsEffects(
+    'THE CANONICAL § 19 SENTENCE, and it is `Your meeting is booked for Thursday at 2pm.` with one ' +
+      'whitespace character changed. A hard wrap is a fact about how the text was laid out and not about ' +
+      'what it says; nobody hears a line break. A contact reads this, believes there is a meeting on ' +
+      'Thursday at 2pm, and turns up.',
+    [meeting(14, 'is booked, wrapped between the auxiliary and the participle, naming Thursday and 2pm')],
+  ),
+};
+
+export const F19_HAS_BEEN_LINE_BREAK: DeclaredText = {
+  text: 'The meeting has been\nbooked for Thursday at 2pm.',
+  declares: assertsEffects(
+    'The passive perfect broken at its SECOND seam. A three-token frame has two places a wrap can land in, ' +
+      'and a reader hears the same completed booking whichever one it landed in.',
+    [meeting(14, 'has been booked, wrapped at the second seam, naming Thursday and 2pm')],
+  ),
+};
+
+export const F19_IS_BOOKED_CRLF: DeclaredText = {
+  text: 'Your meeting is\r\nbooked for Thursday at 2pm.',
+  declares: assertsEffects(
+    'THE CRLF SPELLING. This repository checks out CRLF and model output arrives with whatever line endings ' +
+      'the model felt like. A reader cannot tell this from the LF spelling, so it is declared identically - ' +
+      'and a gate whose verdict depended on the line ending would be the § 6.4.1 defect all over again.',
+    [meeting(14, 'the same wrap as CRLF, naming Thursday and 2pm')],
+  ),
+};
+
+export const F19_ILL_CALL_LINE_BREAK: DeclaredText = {
+  text: "I'll\ncall you tomorrow at 3pm.",
+  declares: assertsEffects(
+    'THE CALLBACK FAMILY, and the shortest possible first segment: one contracted token. A contact told ' +
+      'they will be called tomorrow at 3pm waits by the phone. It is a COMMITTED promise rather than a ' +
+      'completed effect, and § 9.2 is explicit that a promise made with nothing on record is false at the ' +
+      'moment it is spoken.',
+    [
+      {
+        family: 'CALLBACK',
+        mode: 'COMMITTED',
+        localDay: FINDING_TOMORROW,
+        localHour: 15,
+        localMinute: null,
+        note: "I'll call you, wrapped after the contraction, naming tomorrow and 3pm",
+      },
+    ],
+  ),
+};
+
+export const F19_LABEL_LAYOUT: DeclaredText = {
+  text: 'Your meeting:\nbooked for Thursday at 2pm.',
+  declares: assertsEffects(
+    'THE LAYOUT HALF, and the part that makes this finding wider than a hard wrap. A label and its value ' +
+      'on two lines is the DEFAULT register of the benchmark candidates this mission is about - ' +
+      '`docs/MISSION_2D_AYA_ROOT_CAUSE.md` is a whole document about aya-expanse speaking `Action:` lists ' +
+      'at the contact. A person reading this believes there is a meeting on Thursday at 2pm.',
+    [meeting(14, 'a label and its value on two lines, no auxiliary anywhere, naming Thursday and 2pm')],
+  ),
+};
+
+export const F19_BULLET_LAYOUT: DeclaredText = {
+  text: '- Meeting\n- booked for Thursday at 2pm',
+  declares: assertsEffects(
+    'The markdown bullet spelling. A list is read as a unit - that is what a list is for - so the object on ' +
+      'one line and the participle on the next are one assertion to any reader, and nothing about a bullet ' +
+      'makes an assertion less of one.',
+    [meeting(14, 'two bullets, the object on one and the participle and time on the next')],
+  ),
+};
+
+export const F19_SEMICOLON_IN_FRAME: DeclaredText = {
+  text: 'Your meeting is; booked for Thursday at 2pm.',
+  declares: assertsEffects(
+    'THE PUNCTUATION HALF. The finding is about SEGMENTATION rather than about whitespace: every character ' +
+      'in `SENTENCE_TERMINATORS` cuts, so every one of them silenced the frame. A misplaced semicolon is a ' +
+      'typographic slip and not a retraction, and a contact still hears a meeting on Thursday at 2pm.',
+    [meeting(14, 'a semicolon inside the frame, naming Thursday and 2pm')],
+  ),
+};
+
+/** The § 19 CONTROL: the identical bytes with a SPACE, which was blocked throughout. */
+export const F19_SPACE_CONTROL: DeclaredText = {
+  text: 'Your meeting is booked for Thursday at 2pm.',
+  declares: assertsEffects(
+    'THE A/B CONTROL, and it is what separates this finding from a missing lexicon entry: this exact frame ' +
+      'IS in the lexicon and WAS detected, one character away from every wording above. Declared ' +
+      'identically, because a listener hears the same thing.',
+    [meeting(14, 'is booked, on one line, naming Thursday and 2pm')],
+  ),
+};
+
+/**
+ * FINDING 6b - § 19.2. The TELEGRAPHIC `nothing ... to do` register.
+ *
+ * Ten `nothing ... to do` clauses suppressed the BARE-PARTICIPLE register while
+ * leaving every framed spelling of the same claim detected behind the identical
+ * filler. The suppressor was not the negator - it cannot reach that far - but the
+ * MODAL behind it (`need`, `do`, `have`), which is a predicate that takes the next
+ * noun phrase as its own OBJECT.
+ */
+export const F19_TELEGRAPHIC_NEED_TO_DO: DeclaredText = {
+  text: 'There is nothing you need to do meeting booked for Thursday at 2pm.',
+  declares: assertsEffects(
+    '`There is nothing you need to do` is about what the CONTACT has to do. It says nothing whatever about ' +
+      'whether a booking exists, and no listener hears it as a denial - they hear reassurance followed by a ' +
+      'meeting on Thursday at 2pm. The framed spelling of the same claim behind the same filler was caught ' +
+      'throughout, which is what makes this one register rather than one wording.',
+    [meeting(14, 'a telegraphic reassurance, then `meeting booked` naming Thursday and 2pm')],
+  ),
+};
+
+export const F19_TELEGRAPHIC_YOU_HAVE_NOTHING: DeclaredText = {
+  text: 'You have nothing to do meeting booked for Thursday at 2pm.',
+  declares: assertsEffects(
+    'The shorter member of the same family, and it is caught by a different suppressor: here `nothing` is ' +
+      'close enough to reach the participle itself, where in the wording above it is not. A caller hears ' +
+      'the same meeting on Thursday at 2pm.',
+    [meeting(14, 'You have nothing to do, then `meeting booked` naming Thursday and 2pm')],
+  ),
+};
+
+/**
+ * FINDING 6c - § 19.3. THE SAME CLASS ONE REPRESENTATIONAL STEP FURTHER OUT.
+ *
+ * The operator note names the axis rather than the strings: **a representational
+ * choice made for precision silently removes a claim.** Where sentences are cut is
+ * one such choice; so is which characters may sit inside a token, and so is whether
+ * a `1.` at the start of a line is a list number or a full stop after a number.
+ *
+ * These are declared so the oracle can judge them with the detector blind, which is
+ * the whole point of this file - and the operator asks for formatting to be an axis
+ * of the independent oracle and not only of the adversarial matrix.
+ */
+export const F19_EXPLODED_ONE_WORD_PER_LINE: DeclaredText = {
+  text: 'Your meeting\nis\nbooked for Thursday at 2pm.',
+  declares: assertsEffects(
+    'THE EXTREME LAYOUT. A frame spread over as many segments as it has tokens, which is what a narrow phone ' +
+      'screen and a hard wrap produce between them. A reader reads three lines as one sentence and believes ' +
+      'there is a meeting on Thursday at 2pm - line breaks are not heard at all.',
+    [meeting(14, 'is booked, spread over three lines, naming Thursday and 2pm')],
+  ),
+};
+
+export const F19_NUMBERED_LIST: DeclaredText = {
+  text: '1. Meeting\n2. booked for Thursday at 2pm',
+  declares: assertsEffects(
+    'A NUMBERED LIST, and the list marker is the finding: `1.` is a full stop after a digit, which is exactly ' +
+      'what a sentence ends with. A contact reading a numbered summary reads the items together, and item 2 ' +
+      'says the meeting is booked for Thursday at 2pm.',
+    [meeting(14, 'a numbered list, the object on item 1 and the participle and time on item 2')],
+  ),
+};
+
+export const F19_SOFT_HYPHEN_IN_VERB: DeclaredText = {
+  text: 'I have boo\u00adked your meeting for Thursday at 2pm.',
+  declares: assertsEffects(
+    'AN INVISIBLE SOFT HYPHEN INSIDE THE VERB. A reader sees `booked`; there is no way to see anything else, ' +
+      'because the character is invisible by definition. A contact hears a booked meeting on Thursday at 2pm ' +
+      'and turns up. It is declared identically to the plain spelling for exactly that reason.',
+    [meeting(14, 'I have booked, with a soft hyphen inside the participle, naming Thursday and 2pm')],
+  ),
+};
+
 /** QA-4's HEBREW COMMA CONTROL, declared identically to H1. */
 export const F18_LO_TZARICH_KLUM_COMMA_CONTROL: DeclaredText = {
   text: 'לא צריך כלום, הפגישה נקבעה למחר בשעה 14:00.',
@@ -517,6 +700,44 @@ export const QA4_ENGLISH_WORDINGS: readonly DeclaredText[] = [
   F18_NOT_AT_ALL_I_HAVE_CANCELLED,
   F18_NOTHING_ELSE_MEETING_IS_BOOKED,
   F18_NOT_AT_ALL_ALL_SET,
+];
+
+/**
+ * QA-5's SEVEN § 19 WORDINGS, in the order the finding listed them.
+ *
+ * The first four were driven through the real service end to end; the last three
+ * are the markdown-and-punctuation half of the same class, which QA found on the
+ * pure detector in the same run. Kept as its own array for the reason
+ * `QA3_FIVE_WORDINGS` is: the deliverable owes a demonstration that ALL of them are
+ * caught, not that a representative subset is.
+ */
+export const QA5_SPLIT_FRAME_WORDINGS: readonly DeclaredText[] = [
+  F19_IS_BOOKED_LINE_BREAK,
+  F19_HAS_BEEN_LINE_BREAK,
+  F19_IS_BOOKED_CRLF,
+  F19_ILL_CALL_LINE_BREAK,
+  F19_LABEL_LAYOUT,
+  F19_BULLET_LAYOUT,
+  F19_SEMICOLON_IN_FRAME,
+];
+
+/**
+ * QA-5's THIRD SET: the same class one representational step further out.
+ *
+ * Added after the operator note, which asks for the AXIS rather than the reported
+ * strings - so these are the shapes the pair-wise bridge cannot reach and the
+ * FLATTENED view has to.
+ */
+export const QA5_LAYOUT_WORDINGS: readonly DeclaredText[] = [
+  F19_EXPLODED_ONE_WORD_PER_LINE,
+  F19_NUMBERED_LIST,
+  F19_SOFT_HYPHEN_IN_VERB,
+];
+
+/** QA-5's TELEGRAPHIC wordings, the second half of the round-5 finding. */
+export const QA5_TELEGRAPHIC_WORDINGS: readonly DeclaredText[] = [
+  F19_TELEGRAPHIC_NEED_TO_DO,
+  F19_TELEGRAPHIC_YOU_HAVE_NOTHING,
 ];
 
 /** QA-4's SEVEN HEBREW WORDINGS (H1-H7), in the order the finding listed them. */
@@ -545,8 +766,8 @@ export const QA3_FIVE_WORDINGS: readonly DeclaredText[] = [
 ];
 
 /**
- * One entry per Mission 2D QA finding, so the regression test reads as the four
- * findings rather than as a list of strings.
+ * One entry per Mission 2D QA finding, so the regression test reads as the
+ * FINDINGS rather than as a list of strings.
  */
 export interface PastFinding {
   /** The section of `docs/MISSION_2D_CLAIM_GATE.md` that records it. */
@@ -581,6 +802,21 @@ export const MISSION_2D_QA_FINDINGS: readonly PastFinding[] = [
     headline: 'a reassurance filler built ENTIRELY out of tokens the locale declares as crossable',
     wordings: [...QA4_ENGLISH_WORDINGS, ...QA4_HEBREW_WORDINGS],
   },
+  {
+    section: '19.1',
+    headline: 'a sentence terminator standing INSIDE a multi-token English completion frame',
+    wordings: [...QA5_SPLIT_FRAME_WORDINGS],
+  },
+  {
+    section: '19.2',
+    headline: 'a telegraphic `nothing ... to do` reassurance silencing the bare-participle register',
+    wordings: [...QA5_TELEGRAPHIC_WORDINGS],
+  },
+  {
+    section: '19.3',
+    headline: 'a representational step - layout, list numbering, an invisible character - erasing a claim',
+    wordings: [...QA5_LAYOUT_WORDINGS],
+  },
 ];
 
 /** Every declared past-finding wording, including the comma controls. */
@@ -589,4 +825,5 @@ export const PAST_FINDING_TEXTS: readonly DeclaredText[] = [
   F17_EIN_BEAYA_COMMA_CONTROL,
   F18_NOT_AT_ALL_COMMA_CONTROL,
   F18_LO_TZARICH_KLUM_COMMA_CONTROL,
+  F19_SPACE_CONTROL,
 ];
