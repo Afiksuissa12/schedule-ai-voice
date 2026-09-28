@@ -38,6 +38,21 @@ import {
   T_EN_DONT_WORRY_NO_COMMA_FRIDAY,
   T_EN_HONEST_CANNOT_SEE_ANYTHING,
   T_EN_HONEST_DONT_HAVE_MEETING_BOOKED,
+  T_SPLIT_IS_BOOKED_FRIDAY_2PM,
+  T_SPLIT_HAS_BEEN_FRIDAY_2PM,
+  T_SPLIT_CRLF_FRIDAY_2PM,
+  T_SPLIT_LABEL_LAYOUT_FRIDAY_2PM,
+  T_SPLIT_BULLET_LAYOUT_FRIDAY_2PM,
+  T_SPLIT_SEMICOLON_FRIDAY_2PM,
+  T_SPLIT_HE_LABEL_FRIDAY_2PM,
+  T_SPLIT_IS_BOOKED_THURSDAY_2PM,
+  T_TELEGRAPHIC_REASSURANCE_FRIDAY_2PM,
+  T_SPLIT_HONEST_NOTHING_BOOKED,
+  T_SPLIT_HONEST_TWO_LINES,
+  T_LAYOUT_EXPLODED_FRIDAY_2PM,
+  T_LAYOUT_NUMBERED_FRIDAY_2PM,
+  T_LAYOUT_SOFT_HYPHEN_FRIDAY_2PM,
+  T_LAYOUT_HONEST_EXPLODED,
   T_EN_HONEST_NOTHING_AT_ALL_BOOKED,
   T_EN_HONEST_NOTHING_BOOKED_YET,
   T_EN_IF_THAT_WORKS_FOR_YOU_FRIDAY,
@@ -2159,6 +2174,231 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
       'suppression makes the gate see MORE claims, and a claim it now sees must still be RELEASED BYTE FOR ' +
       'BYTE when the ledger supports it - otherwise the fix has converted a leak into a regeneration loop on ' +
       'a true sentence. TRUE wherever the booking was accepted; declared EITHER for r02\'s reason.',
+  },
+
+  // ---- § 19: A SENTENCE TERMINATOR INSIDE THE COMPLETION FRAME ------------
+  //
+  // The sixth fail-open finding, driven through the real front door. Independent
+  // QA drove r62, r63, r64 and the contracted-callback wording through the real
+  // `AgentTurnService`, the real `ToolDispatcher` and real SQLite: every one
+  // reached the caller with `outcome=NO_MATERIAL_CLAIM`, was persisted as a spoken
+  // AGENT row, and left `meetings` 0 and `futureActions` 0. The control for each -
+  // the same bytes with a SPACE where the break is - was withheld and regenerated
+  // in the same run, and that control is `r03`, which has been in this table since
+  // § 8. Two specs one whitespace character apart, one passing and one failing, is
+  // as sharp as this evidence gets.
+  {
+    key: 'r62-split-frame-linebreak-en',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_SPLIT_IS_BOOKED_FRIDAY_2PM],
+    expect: 'NOT_RELEASED',
+    forbidden: [T_SPLIT_IS_BOOKED_FRIDAY_2PM],
+    tool: 'schedule_meeting',
+    language: 'en',
+    rationale:
+      'THE § 19 SENTENCE. A hard wrap between `is` and `booked` - one whitespace character from `r03`, which ' +
+      'has been blocked correctly since § 8. `readSentences` cuts on every terminator BEFORE any completion ' +
+      'form is looked for, so the frame became unmatchable at any gap bound: the gap rule tolerates ' +
+      'intervening TOKENS, and a cut is not a token. Released and persisted end to end while typecheck, test ' +
+      'and qa:sweep were all green.',
+  },
+  {
+    key: 'r63-split-frame-second-seam-en',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_SPLIT_HAS_BEEN_FRIDAY_2PM],
+    expect: 'NOT_RELEASED',
+    forbidden: [T_SPLIT_HAS_BEEN_FRIDAY_2PM],
+    tool: 'schedule_meeting',
+    language: 'en',
+    rationale:
+      'The SECOND SEAM of the passive perfect, so the class is shown not to be one seam wide. A three-token ' +
+      'frame has two places a wrap can land in and the two are reached by different rules; § 16 learnt the ' +
+      'same lesson about adverbs and had to generate every seam rather than assert one.',
+  },
+  {
+    key: 'r64-split-frame-crlf-en',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_SPLIT_CRLF_FRIDAY_2PM],
+    expect: 'NOT_RELEASED',
+    forbidden: [T_SPLIT_CRLF_FRIDAY_2PM],
+    tool: 'schedule_meeting',
+    language: 'en',
+    rationale:
+      'THE CRLF SPELLING, through the real front door rather than only in a pure-detector table. This ' +
+      'repository checks out CRLF, model output arrives with whatever line endings the model felt like, and a ' +
+      'parser that ignored that once broke check:anti-scripting outright so that its verdict depended on how ' +
+      'the reader had cloned (docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md § 6.4.1).',
+  },
+  {
+    key: 'r65-split-frame-label-layout-en',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_SPLIT_LABEL_LAYOUT_FRIDAY_2PM],
+    expect: 'NOT_RELEASED',
+    forbidden: [T_SPLIT_LABEL_LAYOUT_FRIDAY_2PM],
+    tool: 'schedule_meeting',
+    language: 'en',
+    rationale:
+      'THE LAYOUT REGISTER, AND IT IS THE HALF THAT MATTERS. A label and its value on two lines is not an ' +
+      'exotic evasion - it is the default output of the two benchmark candidates this mission is about, and ' +
+      'docs/MISSION_2D_AYA_ROOT_CAUSE.md is a whole document about aya-expanse speaking `Action:` lists at ' +
+      'the contact. A model that formats its turn as a list is the same model whose false bookings this gate ' +
+      'exists to stop. There is no auxiliary here at all: it is the bare participle keeping its object ' +
+      'across the cut.',
+  },
+  {
+    key: 'r66-split-frame-bullet-layout-en',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_SPLIT_BULLET_LAYOUT_FRIDAY_2PM],
+    expect: 'NOT_RELEASED',
+    forbidden: [T_SPLIT_BULLET_LAYOUT_FRIDAY_2PM],
+    tool: 'schedule_meeting',
+    language: 'en',
+    rationale:
+      'The markdown bullet spelling of r65, and a second layout so the register is not one punctuation mark ' +
+      'wide. It also ends without a full stop, which is how a list item ends.',
+  },
+  {
+    key: 'r67-split-frame-semicolon-en',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_SPLIT_SEMICOLON_FRIDAY_2PM],
+    expect: 'NOT_RELEASED',
+    forbidden: [T_SPLIT_SEMICOLON_FRIDAY_2PM],
+    tool: 'schedule_meeting',
+    language: 'en',
+    rationale:
+      'THE PUNCTUATION HALF, wired. `SENTENCE_TERMINATORS` has seven members and every one of them cuts, so ' +
+      'every one of them silenced the frame - the finding is not about whitespace, it is about segmentation. ' +
+      'The semicolon is here because it is the one a model actually mistypes.',
+  },
+  {
+    key: 'r68-split-frame-layout-he',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_SPLIT_HE_LABEL_FRIDAY_2PM],
+    expect: 'NOT_RELEASED',
+    forbidden: [T_SPLIT_HE_LABEL_FRIDAY_2PM],
+    tool: 'schedule_meeting',
+    language: 'he',
+    rationale:
+      'THE HEBREW CONTROL, and it is a control rather than a reproduction: Hebrew was IMMUNE to this defect ' +
+      'throughout, because `נקבעה` is one inflected word with no inside for a cut to land in. That asymmetry ' +
+      'is what localises the finding to ENGLISH FRAMES rather than to any scope rule - the same diagnostic ' +
+      '§ 16 used - and this spec is what keeps it checkable: if the Hebrew layout ever starts leaking, the ' +
+      'cause is not the frame rule.',
+  },
+  {
+    key: 'r69-telegraphic-bare-participle-en',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_TELEGRAPHIC_REASSURANCE_FRIDAY_2PM],
+    expect: 'NOT_RELEASED',
+    forbidden: [T_TELEGRAPHIC_REASSURANCE_FRIDAY_2PM],
+    tool: 'schedule_meeting',
+    language: 'en',
+    rationale:
+      'THE § 19b FINDING, wired. Ten `nothing ... to do` clauses silenced the BARE-PARTICIPLE register while ' +
+      'leaving every framed spelling of the same claim detected behind the identical filler - so ' +
+      '`blockerStandsBefore` was weaker than `readSuppression` on the one register § 16.3b added ' +
+      'deliberately. The suppressor was the MODAL behind the negator, taking the telegraphic clause subject ' +
+      'as its own object.',
+  },
+  {
+    key: 'r70-split-frame-supported-en',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_SPLIT_IS_BOOKED_THURSDAY_2PM],
+    expect: 'EITHER',
+    tool: 'schedule_meeting',
+    language: 'en',
+    rationale:
+      'THE SUPPORTED HALF. Closing a fail-open defect makes the gate see MORE claims, and one it now sees ' +
+      'must still be RELEASED BYTE FOR BYTE when the ledger supports it - line break and all. A fix that ' +
+      'converted a leak into a regeneration loop on a wrapped true sentence would have traded one failure ' +
+      'for another. Declared EITHER for r02\'s reason.',
+  },
+  {
+    key: 'r71-split-frame-honest-negation-en',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_SPLIT_HONEST_NOTHING_BOOKED],
+    expect: 'RELEASED',
+    tool: 'schedule_meeting',
+    language: 'en',
+    rationale:
+      'THE PRECISION CONSTRAINT THE FIX WAS WRITTEN AGAINST, and the one QA named before naming a direction: ' +
+      'whatever crosses a cut for DETECTION must not also cross it for SUPPRESSION. `Nothing is\\nbooked ' +
+      'yet.` is the truthful answer to "is my meeting booked?" with a wrap in the middle of it, and if this ' +
+      'spec ever fails the bridged pass has started reporting matches that do not cross the cut.',
+  },
+  {
+    key: 'r72-split-frame-honest-two-lines-en',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_SPLIT_HONEST_TWO_LINES],
+    expect: 'RELEASED',
+    tool: 'schedule_meeting',
+    language: 'en',
+    rationale:
+      'The second precision spec, and it is the sentence the § 19 e2e regenerations actually produce: an ' +
+      'honest statement on one line and a question on the next. Two clean lines must not become a claim by ' +
+      'being adjacent, which is the failure mode a pair-wise bridge could most plausibly have.',
+  },
+
+  // ---- § 19c: THE SECOND VIEW, through the real front door ----------------
+  //
+  // The operator note asks for the AXIS rather than the reported strings, and these
+  // are the shapes the pair-wise bridge cannot reach: a frame spread over three
+  // segments, a list marker that is a full stop after a digit, and an invisible
+  // character inside the verb. They are closed by reading the text through a SECOND
+  // VIEW with its layout collapsed, and unioning - a view may only ADD suspicion.
+  {
+    key: 'r73-layout-exploded-en',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_LAYOUT_EXPLODED_FRIDAY_2PM],
+    expect: 'NOT_RELEASED',
+    forbidden: [T_LAYOUT_EXPLODED_FRIDAY_2PM],
+    tool: 'schedule_meeting',
+    language: 'en',
+    rationale:
+      'A frame spread over THREE segments. The § 19 bridge is pair-wise and cannot reach it by construction, ' +
+      'so this spec is what fails if the flattened view is ever dropped - which makes it the one row in this ' +
+      'family that proves the second view is doing work rather than decorating.',
+  },
+  {
+    key: 'r74-layout-numbered-en',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_LAYOUT_NUMBERED_FRIDAY_2PM],
+    expect: 'NOT_RELEASED',
+    forbidden: [T_LAYOUT_NUMBERED_FRIDAY_2PM],
+    tool: 'schedule_meeting',
+    language: 'en',
+    rationale:
+      'A NUMBERED list, and the marker is the finding: `1.` is a full stop after a digit, which readSentences ' +
+      'correctly reads as the end of a sentence exactly as it reads `booked for 3.` Nothing in this ' +
+      'repository had ever tried one, and a numbered summary is the most ordinary thing an instruction-tuned ' +
+      'model writes.',
+  },
+  {
+    key: 'r75-invisible-character-en',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_LAYOUT_SOFT_HYPHEN_FRIDAY_2PM],
+    expect: 'NOT_RELEASED',
+    forbidden: [T_LAYOUT_SOFT_HYPHEN_FRIDAY_2PM],
+    tool: 'schedule_meeting',
+    language: 'en',
+    rationale:
+      'AN INVISIBLE CHARACTER INSIDE THE VERB. `normalizeScript` strips the bidi controls and the zero-width ' +
+      'block and leaves the SOFT HYPHEN, so it split the participle in two and the claim disappeared. It is ' +
+      'the same class as a cut - a representational step erasing a claim - one step further out, and it is ' +
+      'the class the operator note asks to be closed rather than the string.',
+  },
+  {
+    key: 'r76-layout-honest-exploded-en',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_LAYOUT_HONEST_EXPLODED],
+    expect: 'RELEASED',
+    tool: 'schedule_meeting',
+    language: 'en',
+    rationale:
+      'THE PRECISION HALF OF THE SECOND VIEW, and the sharpest available: the negator is on a line of its ' +
+      'own, two cuts from the predicate it negates, and the truthful sentence must still go out in one ' +
+      'provider call. This is also why view 1 does NOT bridge a line break - a pair-wise bridge would lose ' +
+      'the negator here, and the measurement said so (§ 19.4).',
   },
 ];
 

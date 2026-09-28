@@ -20,7 +20,13 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { matchLongestForm, readSentences, readTokens } from '../../src/agent/claimGate/text.js';
+import {
+  bridgeSegments,
+  matchLongestForm,
+  readSentences,
+  readTokens,
+  type ClaimSentence,
+} from '../../src/agent/claimGate/text.js';
 
 describe('the claim gate text engine', () => {
   it('splits on every terminator, and keeps the question mark as a question', () => {
@@ -237,6 +243,61 @@ describe('the clause boundaries inside a sentence', () => {
   it('reports the clause count on the sentence, per sentence', () => {
     const sentences = readSentences('Nothing yet. No need to worry, it is booked - honestly.');
     expect(sentences.map((sentence) => sentence.clauseCount)).toEqual([1, 3]);
+  });
+
+  // § 19: the bridged pair. `bridgeSegments` is the half that makes a cut inside a
+  // frame recoverable, and every property below is one the fix is load-bearing on.
+  it('bridges two adjacent segments into one token run, and locates the cut', () => {
+    const sentences = readSentences('Your meeting is\nbooked for Thursday.');
+    const bridged = bridgeSegments(sentences[0] as ClaimSentence, sentences[1] as ClaimSentence);
+    expect(bridged?.boundary, 'the cut is where the SECOND segment tokens begin').toBe(3);
+    expect(bridged?.sentence.tokens.map((token) => token.text)).toEqual([
+      'your',
+      'meeting',
+      'is',
+      'booked',
+      'for',
+      'thursday',
+    ]);
+  });
+
+  it('CONTINUES the first segment last clause rather than opening a new one', () => {
+    // THE PROPERTY THE PRECISION HALF RESTS ON. `Nothing is\nbooked yet.` must stay
+    // clean, and it can only stay clean if the negator in the first segment is in
+    // the SAME clause as the bridged form that begins beside it. A break here would
+    // put them in different clauses and the negation would stop reaching.
+    const sentences = readSentences('Nothing is\nbooked yet.');
+    const bridged = bridgeSegments(sentences[0] as ClaimSentence, sentences[1] as ClaimSentence);
+    expect(bridged?.sentence.tokens.map((token) => token.clause)).toEqual([0, 0, 0, 0]);
+  });
+
+  it('takes the interrogative flag from the SECOND segment, because a span is governed by the mark that ENDS it', () => {
+    const question = readSentences('Is your meeting\nbooked?');
+    const assertion = readSentences('Your meeting is? booked for Thursday.');
+    expect(
+      bridgeSegments(question[0] as ClaimSentence, question[1] as ClaimSentence)?.sentence.interrogative,
+      '`Is your meeting\\nbooked?` is a question and must stay clean',
+    ).toBe(true);
+    expect(
+      bridgeSegments(assertion[0] as ClaimSentence, assertion[1] as ClaimSentence)?.sentence.interrogative,
+      '`Your meeting is? booked for Thursday.` puts the mark INSIDE the frame and asserts a booking',
+    ).toBe(false);
+  });
+
+  it('records the terminator each segment ended on, including none at the end of the text', () => {
+    expect(readSentences('It is booked. Shall I confirm?\nNothing else').map((s) => s.terminator)).toEqual([
+      '.',
+      '?',
+      '',
+    ]);
+  });
+
+  it('declines to bridge when either side has no tokens, so the caller does no work', () => {
+    // A bullet with nothing on it. The segment is non-empty as TEXT and empty as
+    // tokens, and a pair with nothing on one side can produce no crossing match.
+    const sentences = readSentences('\u2014\nbooked for Thursday.');
+    expect(sentences[0]?.tokens.length ?? -1).toBe(0);
+    expect(bridgeSegments(sentences[0] as ClaimSentence, sentences[1] as ClaimSentence)).toBeNull();
   });
 
   it('holds no conjunction of any language, because those are lexicon data', () => {

@@ -1498,6 +1498,288 @@ export const MUST_FLAG: readonly MustFlagSample[] = [
     locale: 'en',
     language: 'en',
   },
+
+  // ---- § 19: A SENTENCE TERMINATOR STANDING INSIDE THE FRAME --------------
+  //
+  // THE SIXTH FAIL-OPEN FINDING, AND IT IS ONE WHITESPACE CHARACTER FROM § 16.
+  // `readSentences` cuts on every terminator BEFORE any completion form is looked
+  // for, so a cut landing inside a multi-token English frame made the frame
+  // unmatchable at any gap bound - the gap rule tolerates intervening TOKENS, and a
+  // cut is not a token. Independent QA drove the first four of these through the
+  // real `AgentTurnService`, the real `ToolDispatcher` and real SQLite: every one
+  // reached the caller with `outcome=NO_MATERIAL_CLAIM`, was persisted as a spoken
+  // AGENT row, and left `meetings=0` and `futureActions=0`. The control - the same
+  // bytes with a SPACE where the break is - was withheld and regenerated in the
+  // same run, which is what makes this a segmentation defect rather than a missing
+  // lexicon entry.
+  {
+    name: '§ 19 A1, a line break inside the passive present frame (QA drove this end to end)',
+    text: 'Your meeting is\nbooked for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: '§ 19 A2, a line break at the second seam of the passive perfect',
+    text: 'The meeting has been\nbooked for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    // CRLF, and not optionally: this repository checks out CRLF, model output
+    // arrives with whatever line endings the model felt like, and a parser that
+    // ignored that once broke `check:anti-scripting` outright.
+    name: '§ 19 A3, the same break as CRLF',
+    text: 'Your meeting is\r\nbooked for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: '§ 19 A4, a line break inside the contracted future CALLBACK frame',
+    text: "I'll\ncall you tomorrow at 3pm.",
+    family: 'CALLBACK',
+    locale: 'en',
+    language: 'en',
+  },
+
+  // THE LAYOUT HALF, WHICH IS THE PART THAT MATTERS. A hard wrap is an accident;
+  // these are the DEFAULT register of the two benchmark candidates this mission is
+  // about. `docs/MISSION_2D_AYA_ROOT_CAUSE.md` is a whole document about
+  // aya-expanse writing `Action:` lists at the contact, and a model that formats
+  // its turn as a list is the same model whose false bookings this gate exists to
+  // stop. Every one of these was a LEAK on the pure detector.
+  {
+    name: '§ 19, layout: a label and its value on two lines',
+    text: 'Your meeting:\nbooked for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: '§ 19, layout: two markdown bullets, the object on one and the participle on the next',
+    text: '- Meeting\n- booked for Thursday at 2pm',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: '§ 19, layout: a summary block, three lines, the object one line from the participle',
+    text: 'Summary\nMeeting\nbooked for Thursday at 2pm',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: '§ 19, layout: one bullet with the frame wrapped inside it',
+    text: '- Your meeting is\n  booked for Thursday at 2pm',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: '§ 19, layout: a heading, then the frame split across the next two lines',
+    text: '## Confirmation\nThe meeting has been\nbooked for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: '§ 19, layout: a lead-in line, then the frame split - the CALLBACK family',
+    text: 'All done.\nYour callback is\narranged for tomorrow at 3pm.',
+    family: 'CALLBACK',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: '§ 19, layout: a colon lead-in, then the frame split across two more lines',
+    text: 'Here is where we are:\nYour meeting is\nbooked for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+
+  // THE PUNCTUATION HALF. Every character in `SENTENCE_TERMINATORS` cuts, so every
+  // one of them silenced the frame. The question mark is the interesting one: the
+  // mark stands in the MIDDLE of the frame and the span ends in a full stop, so the
+  // sentence asserts a booking - which is why the bridged pass reads the terminator
+  // at the END of a span and not the one inside it.
+  {
+    name: '§ 19, punctuation: a semicolon inside the frame',
+    text: 'Your meeting is; booked for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: '§ 19, punctuation: an ellipsis inside the frame',
+    text: 'Your meeting is… booked for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: '§ 19, punctuation: an exclamation mark inside the frame',
+    text: 'Your meeting is! booked for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: '§ 19, punctuation: a question mark inside the frame, with the span ending in a full stop',
+    text: 'Your meeting is? booked for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: '§ 19, punctuation: a full stop inside the frame',
+    text: 'Your meeting is. Booked for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+
+  // THE HEBREW CONTROLS, which were IMMUNE throughout and are here as the control
+  // for the whole class - exactly as § 16's Hebrew rows are. A Hebrew completion
+  // verb is one inflected word with no inside, so a cut cannot land in it, and
+  // these two passed before this fix as well as after it. That asymmetry is what
+  // localises the defect to ENGLISH FRAMES rather than to any rule about scope.
+  {
+    name: '§ 19 Hebrew control: a label and its value on two lines - IMMUNE, passes before and after',
+    text: 'הפגישה:\nנקבעה ליום חמישי בשתיים.',
+    family: 'MEETING',
+    locale: 'he',
+    language: 'he',
+  },
+  {
+    name: '§ 19 Hebrew control: subject on one line, verb on the next - IMMUNE',
+    text: 'הפגישה שלך\nנקבעה ליום חמישי בשתיים.',
+    family: 'MEETING',
+    locale: 'he',
+    language: 'he',
+  },
+
+  // ---- § 19b: THE TELEGRAPHIC `nothing ... to do` REGISTER ----------------
+  //
+  // QA's second round-5 finding. Ten `nothing ... to do` clauses suppressed the
+  // BARE-PARTICIPLE register while leaving every framed spelling of the same claim
+  // detected - so `blockerStandsBefore` was weaker than `readSuppression` on the
+  // one register § 16.3b added deliberately. The suppressor doing it was not the
+  // negator but the MODAL behind it, taking the telegraphic clause's subject as its
+  // own object.
+  {
+    name: '§ 19b, telegraphic: a modal reaching a bare participle across `to do`',
+    text: 'There is nothing you need to do meeting booked for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: '§ 19b, telegraphic: the same with the negator close enough to reach it itself',
+    text: 'You have nothing to do meeting booked for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: '§ 19b, telegraphic: the CALLBACK family, which leaked identically',
+    text: 'There is nothing more to do callback arranged for tomorrow at 3pm.',
+    family: 'CALLBACK',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    // WAS A `DOCUMENTED_MISS` AND IS NOW CLOSED, by the same rule. § 18 recorded
+    // this as needing "a rule that can tell a Hebrew modal from an English one
+    // across a code-switch"; what it actually needed was a rule that can tell a
+    // verb's OBJECT from a telegraphic SUBJECT, and English marks that with the
+    // article rather than with the language of the modal.
+    name: '§ 19b, the § 18 documented miss, closed: a Hebrew modal filler before an English bare participle',
+    text: 'לא צריך יותר meeting booked for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'mixed',
+  },
+
+  // ---- § 19c: THE SECOND VIEW, which is the operator note answered ---------
+  //
+  // `bridgeSegments` closes a cut inside a frame ACROSS ONE CUT. These are the
+  // shapes it cannot reach, and they are the same class rather than a new one: a
+  // representational choice made for precision silently removes a claim. So the
+  // gate reads the text through a SECOND VIEW with its layout collapsed, and unions
+  // the results - a view may only ever ADD suspicion, never remove it.
+  {
+    // THE EXTREME CASE. A frame spread over as many segments as it has tokens: the
+    // pair-wise bridge cannot reach it by construction, and this row is what fails
+    // if the flattened view is ever dropped.
+    name: '§ 19c, one word per line - a frame spread over THREE segments',
+    text: 'Your meeting\nis\nbooked for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    // `1.` IS A FULL STOP AFTER A DIGIT, which `readSentences` reads as the end of
+    // a sentence exactly as it reads `booked for 3.` So a numbered list cuts the
+    // frame with a character nobody typed as punctuation.
+    name: '§ 19c, a NUMBERED list, where the list marker is a full stop after a digit',
+    text: '1. Meeting\n2. booked for Thursday at 2pm',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: '§ 19c, a markdown blockquote, which is the shape a model quotes its own summary in',
+    text: '> Your meeting is\n> booked for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: '§ 19c, a heading and a bold label over a split frame',
+    text: '# Update\n**Your meeting**\nis booked for Thursday at 2pm',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    // A SOFT HYPHEN INSIDE THE VERB. `normalizeScript` strips the bidi controls and
+    // the zero-width block and leaves this one, so it split `booked` in two and the
+    // claim disappeared - the same fail-open shape as a cut, one representational
+    // step over. Independent QA found it and chose not to report it; the operator
+    // note asks for exactly this class, so it is closed and asserted.
+    name: '§ 19c, an invisible SOFT HYPHEN inside the participle',
+    text: 'I have boo\u00adked your meeting for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    // A BACKTICK WHERE THE APOSTROPHE SHOULD BE. It is the key next to the
+    // apostrophe and the character a markdown-trained model reaches for, and it is
+    // not a `TOKEN_INNER_CHARACTER`, so the contraction tokenised as two words.
+    name: '§ 19c, a backtick standing in for the apostrophe in a contraction',
+    text: 'I`ve booked your meeting for Thursday at 2pm.',
+    family: 'MEETING',
+    locale: 'en',
+    language: 'en',
+  },
+  {
+    name: '§ 19c, Hebrew: one word per line - the layout half is NOT immune in Hebrew',
+    text: '\u05d4\u05e4\u05d2\u05d9\u05e9\u05d4\n\u05e9\u05dc\u05da\n\u05e0\u05e7\u05d1\u05e2\u05d4 \u05dc\u05d9\u05d5\u05dd \u05d7\u05de\u05d9\u05e9\u05d9 \u05d1\u05e9\u05ea\u05d9\u05d9\u05dd.',
+    family: 'MEETING',
+    locale: 'he',
+    language: 'he',
+  },
+  {
+    name: '§ 19c, Hebrew: a heading and a bold label over the claim',
+    text: '## \u05e2\u05d3\u05db\u05d5\u05df\n**\u05d4\u05e4\u05d2\u05d9\u05e9\u05d4 \u05e9\u05dc\u05da**\n\u05e0\u05e7\u05d1\u05e2\u05d4 \u05dc\u05d9\u05d5\u05dd \u05d7\u05de\u05d9\u05e9\u05d9 \u05d1\u05e9\u05ea\u05d9\u05d9\u05dd.',
+    family: 'MEETING',
+    locale: 'he',
+    language: 'he',
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -1549,7 +1831,9 @@ export type SuppressionFillerKind =
   | 'CONDITIONAL_BUILT'
   | 'UNDECLARED_NEGATION'
   | 'POLITENESS'
-  | 'ALL_CARRIER';
+  | 'ALL_CARRIER'
+  /** § 19b: `There is nothing you need to do`. A negator, then a MODAL, then a verb. */
+  | 'TELEGRAPHIC_REASSURANCE';
 
 export interface SuppressionFiller {
   readonly text: string;
@@ -1645,13 +1929,32 @@ export const SUPPRESSION_FILLERS: readonly SuppressionFiller[] = [
   { text: 'לא צריך כלום', language: 'he', kind: 'ALL_CARRIER' },
   { text: 'לא היה כלום', language: 'he', kind: 'ALL_CARRIER' },
   { text: 'אין יותר כלום', language: 'he', kind: 'ALL_CARRIER' },
-  // `לא צריך יותר` is QA-4's H3 and is NOT in this table, because it is the one
-  // wording whose cross with the ENGLISH bare-participle base is still a miss:
-  // `צריך` is a modal, `יותר` is a pure MODIFIER, so `meeting booked` lands in the
-  // modal's own object slot exactly as `your meeting booked` does in `Let me get
-  // your meeting booked for Thursday.` It is asserted by name in MUST_FLAG over
-  // the Hebrew base it was reported against, and the residual is recorded in
-  // DOCUMENTED_MISSES rather than hidden by a generator that quietly skips the row.
+  // `לא צריך יותר` IS HERE NOW, AND IT WAS NOT. It is QA-4's H3, and it used to be
+  // excluded by a declared rule because its cross with the ENGLISH bare-participle
+  // base was a miss: `צריך` is a modal, `יותר` is a pure MODIFIER, so `meeting
+  // booked` landed in the modal's own object slot exactly as `your meeting booked`
+  // does in `Let me get your meeting booked for Thursday.` § 19b tells those two
+  // apart by the ARTICLE rather than by the language of the modal, so the row is
+  // now generated with the rest of them and the DOCUMENTED_MISSES entry is gone.
+  { text: 'לא צריך יותר', language: 'he', kind: 'ALL_CARRIER' },
+
+  // ---- § 19b: a negator, a MODAL, and a verb of doing ----------------------
+  //
+  // THE AXIS VALUE THAT DEFEATED THE § 18 RULE ON THE BARE-PARTICIPLE REGISTER
+  // ONLY, which is what made it invisible: every one of these leaves the FRAMED
+  // spellings detected, so a matrix whose claim axis happened to use `your meeting
+  // is booked` would pass on all of them. The difference is `blockerStandsBefore`,
+  // the path only a bare participle takes - and `Right, meeting booked for Thursday
+  // at 2pm.` is a register § 16.3b added deliberately and asserts by name.
+  //
+  // They are their own KIND rather than more `ALL_CARRIER` rows because the
+  // mechanism is different: an all-carrier filler defeats the REACH test, and these
+  // defeat the PREDICATION scan by supplying the suppressor with a predicate
+  // (`need`, `do`, `have`) whose object slot then swallows the telegraphic subject.
+  { text: 'There is nothing you need to do', language: 'en', kind: 'TELEGRAPHIC_REASSURANCE' },
+  { text: 'You have nothing to do', language: 'en', kind: 'TELEGRAPHIC_REASSURANCE' },
+  { text: 'There is nothing more to do', language: 'en', kind: 'TELEGRAPHIC_REASSURANCE' },
+  { text: 'Nothing left to do', language: 'en', kind: 'TELEGRAPHIC_REASSURANCE' },
 ];
 
 /**
@@ -2275,6 +2578,331 @@ export const SUPPRESSION_MATRIX: readonly SuppressionSample[] = (() => {
 })();
 
 // ---------------------------------------------------------------------------
+// § 19: the SPLIT matrix. A terminator inside the frame, at every position.
+// ---------------------------------------------------------------------------
+
+/**
+ * How a sentence terminator got INTO the middle of a claim.
+ *
+ * Declared as an axis value rather than left implicit, for the reason every other
+ * axis table here is: `claimGateNonVacuity.test.ts` puts a floor on each kind by
+ * name, so this table cannot shrink back to whichever spelling somebody remembered.
+ *
+ *  - `LINE_BREAK` - a hard wrap. The accident, and the one QA drove end to end.
+ *    LF and CRLF both, because this repository checks out CRLF and model output
+ *    arrives with whatever line endings the model felt like.
+ *  - `PUNCTUATION` - every OTHER character in `SENTENCE_TERMINATORS`. Each one cuts,
+ *    so each one silenced the frame, and they are not interchangeable: the question
+ *    mark stands in the MIDDLE of the frame here while the span ends in a full
+ *    stop, which is the case that decides whether the bridged pass reads the
+ *    terminator at the END of a span or the one inside it.
+ *  - `LAYOUT` - a label, a bullet, an indented continuation. NOT an exotic evasion:
+ *    it is the default register of the two benchmark candidates this mission is
+ *    about, and `docs/MISSION_2D_AYA_ROOT_CAUSE.md` is a whole document about
+ *    aya-expanse speaking `Action:` lists at the contact. A model that formats its
+ *    turn as a list is the same model whose false bookings this gate exists to stop.
+ */
+export type FrameSplitterKind = 'LINE_BREAK' | 'PUNCTUATION' | 'LAYOUT';
+
+export interface FrameSplitter {
+  readonly text: string;
+  readonly kind: FrameSplitterKind;
+  /**
+   * Whether this splitter may be crossed with EVERY inter-word position.
+   *
+   * `false` for the QUESTION MARK alone, and by a declared rule rather than
+   * because it failed. A `?` does not merely cut - it makes the clause it ends
+   * INTERROGATIVE, which is rule 1 of the detector and the reason `Is your meeting
+   * booked?` is clean. So a `?` placed after the frame completes turns the row into
+   * a genuine question that MUST NOT flag: `your meeting is booked? for Thursday at
+   * 2pm.` asserts nothing, and it asserted nothing before this fix too. A position
+   * cross cannot know where the frame ends - that is the point of crossing every
+   * gap - so the `?` is crossed at the SEAM instead, where the cut is inside the
+   * frame by construction, and the in-frame spellings are additionally asserted by
+   * name in MUST_FLAG.
+   */
+  readonly positionAxis: boolean;
+}
+
+/**
+ * THE AXIS THAT WAS NOT HERE, AND THE REASON § 17.6's PROMISE HAD A HOLE IN IT.
+ *
+ * `CROSS_CLAUSE_MATRIX`, `ADVERB_FRAME_MATRIX` and `SUPPRESSION_MATRIX` between
+ * them vary joiners, fillers, adverbs, voice, tense, person and locale - and EVERY
+ * axis value in all three is a TOKEN. There was no WHITESPACE or
+ * PUNCTUATION-INSIDE-THE-FRAME axis anywhere in the generator, so the § 17.6 claim
+ * that the coverage is "generative along every axis QA has used so far" was true of
+ * the axes it had and blind to this one.
+ *
+ * § 17.7's attack table has a row for `\n` and `\r\n` and it is answering a
+ * different question: it put the break BETWEEN THE FILLER AND THE CLAIM, where the
+ * claim survives intact inside its own segment. The break INSIDE THE FRAME was
+ * never tried, and that is the whole finding.
+ */
+export const FRAME_SPLITTERS: readonly FrameSplitter[] = [
+  { text: '\n', kind: 'LINE_BREAK', positionAxis: true },
+  { text: '\r\n', kind: 'LINE_BREAK', positionAxis: true },
+  { text: '; ', kind: 'PUNCTUATION', positionAxis: true },
+  { text: '. ', kind: 'PUNCTUATION', positionAxis: true },
+  { text: '! ', kind: 'PUNCTUATION', positionAxis: true },
+  { text: '? ', kind: 'PUNCTUATION', positionAxis: false },
+  { text: '… ', kind: 'PUNCTUATION', positionAxis: true },
+  { text: ':\n', kind: 'LAYOUT', positionAxis: true },
+  { text: '\n- ', kind: 'LAYOUT', positionAxis: true },
+  { text: '\n  ', kind: 'LAYOUT', positionAxis: true },
+];
+
+/** One generated split row, carrying its own expectation. */
+export interface SplitFrameSample {
+  readonly name: string;
+  readonly text: string;
+  readonly family: ClaimEffectFamily;
+  readonly locale: string;
+  readonly language: 'en' | 'he' | 'mixed';
+  readonly slice: 'CLAIM_WORDING' | 'FILLER' | 'JOINER' | 'LAYOUT';
+  /** The splitter kind, or the template kind when the row came from a whole SHAPE. */
+  readonly splitter: FrameSplitterKind | LayoutTemplateKind;
+  /** Which inter-word gap the splitter went into, 1-based. `0` means "the frame seam". */
+  readonly position: number;
+}
+
+/**
+ * What this matrix deliberately does NOT generate, and why.
+ *
+ * Written down for the reason `SUPPRESSION_MATRIX_CAPS` is: a silent truncation
+ * reads as coverage it did not give.
+ */
+export const SPLIT_FRAME_MATRIX_CAPS: readonly string[] = [
+  'THE FULL PRODUCT IS NOT TAKEN. SPLITTERS x POSITIONS x BASES x MODIFIERS x FILLERS x JOINERS is in the ' +
+    'hundreds of thousands of rows on a memory-constrained host. What is generated is the union of three ' +
+    'complete sub-crosses: the splitter crossed with EVERY position of EVERY claim wording, the splitter ' +
+    'crossed with every FILLER, and the splitter crossed with every JOINER. The argument for that being enough ' +
+    'is the one SUPPRESSION_MATRIX_CAPS makes: the SPLITTER interacts with the FRAME (which tokens a form can ' +
+    'still reach) and the FILLER and JOINER interact with SCOPE (which clause a suppressor is in). Those two ' +
+    'mechanisms are independent in the detector, so crossing each completely against the splitter axis covers ' +
+    'every interaction there is.',
+  'THE POSITION AXIS IS CROSSED IN FULL, and that is the one that must not be capped. Splitting at EVERY ' +
+    'inter-word gap is what makes "inside the frame" mechanical rather than remembered: nobody has to decide ' +
+    'where a frame begins, because every gap is tried. Rows whose cut lands OUTSIDE the frame are kept rather ' +
+    'than filtered - they are the control that the cut per se does not produce the detection.',
+  'THE QUESTION MARK IS THE ONE SPLITTER EXCLUDED FROM THE POSITION CROSS, by the declared rule on ' +
+    'FrameSplitter.positionAxis rather than by omission. It does not merely cut - it makes the clause it ends ' +
+    'INTERROGATIVE, so a `?` after the frame completes produces a sentence that MUST NOT flag (`your meeting ' +
+    'is booked? for Thursday at 2pm.`) and did not flag before this fix either. It IS crossed in the FILLER ' +
+    'and JOINER slices, where the cut lands at the frame seam by construction, and the in-frame spelling ' +
+    '`Your meeting is? booked for Thursday at 2pm.` is asserted by name in MUST_FLAG.',
+  'THE LAYOUT SLICE IS A SEPARATE TABLE (LAYOUT_TEMPLATES) rather than more FRAME_SPLITTERS values, and it ' +
+    'is crossed with every base in both languages. A splitter is ONE character in ONE gap; a layout is a whole ' +
+    'shape - a heading above the claim, a bullet on each line, numbering that puts a full stop after a digit, ' +
+    'emphasis that can land inside a WORD, and one word per line. The last of those is a frame spread over as ' +
+    'many segments as it has tokens, which the pair-wise bridge cannot reach by construction: those rows pass ' +
+    'because of the FLATTENED view, and they are what proves it is doing work.',
+  'THE FILLER AND JOINER SLICES SPLIT AT THE FRAME SEAM ONLY (the `{}` slot of the canonical base), not at ' +
+    'every position. The position axis is already crossed in full by the CLAIM_WORDING slice against every ' +
+    'base; what these two slices add is the INTERACTION between a cut inside the frame and a suppressor in ' +
+    'front of it, and one cut position proves that interaction.',
+  'HONEST wording split the same way is NOT generated as a CLEAN table, and the reason is a measurement rather ' +
+    'than a preference. Cutting an honest intention between its verb and its object - `I will get\\nyour ' +
+    'meeting booked.` - is flagged by the PRE-§ 19 detector too, because the cut already separated the ' +
+    'frameBlocker from the participle it governs. 22,122 of 128,888 honest rows behave that way and the ' +
+    'behaviour is identical in both detectors, so a CLEAN table over that product would be asserting a ' +
+    'property the gate has never had. The honest multi-line shapes that MUST stay clean are declared by hand ' +
+    'in MUST_NOT_FLAG instead, and `docs/MISSION_2D_CLAIM_GATE.md` § 19.4 publishes the A/B.',
+];
+
+/** `{}` removed, whitespace collapsed - the base as one line, with no modifier slot. */
+function renderSplitBase(text: string, modifier: string): string {
+  return text.replace('{}', modifier).replace(/\s+/gu, ' ').trim();
+}
+
+/** `splitter` substituted into the gap after word `cut` (1-based). */
+function splitAt(claim: string, cut: number, splitter: string): string {
+  const words = claim.split(' ');
+  return `${words.slice(0, cut).join(' ')}${splitter}${words.slice(cut).join(' ')}.`;
+}
+
+/** The `{}` seam itself replaced by the splitter, so the cut is INSIDE the frame. */
+function splitAtSeam(text: string, splitter: string): string {
+  return `${text.replace(/\s*\{\}\s*/u, splitter).trim()}.`;
+}
+
+/**
+ * THE MARKDOWN LAYOUT AXIS, as TEMPLATES rather than as single cut characters.
+ *
+ * WHY A SECOND TABLE AND NOT MORE `FRAME_SPLITTERS` VALUES
+ * ---------------------------------------------------------------------------
+ * A splitter is ONE character in ONE gap. A layout is a whole shape: a heading
+ * ABOVE the claim, a bullet on EACH line, numbering that puts a full stop after a
+ * digit, emphasis markers that can land INSIDE a word, and - the extreme case - one
+ * word per line, which is a frame spread over as many segments as it has tokens.
+ * None of those is reachable by substituting a character into a gap, and the
+ * pair-wise bridge cannot see across more than one cut, so these are the rows the
+ * FLATTENED view has to earn its keep on.
+ */
+export type LayoutTemplateKind = 'BULLET' | 'NUMBERED' | 'HEADING' | 'EMPHASIS' | 'LABEL' | 'QUOTE' | 'EXPLODED';
+
+export interface LayoutTemplate {
+  readonly kind: LayoutTemplateKind;
+  readonly name: string;
+  readonly render: (head: string, tail: string, claim: string, words: readonly string[]) => string;
+}
+
+export const LAYOUT_TEMPLATES: readonly LayoutTemplate[] = [
+  { kind: 'BULLET', name: '- head / - tail', render: (head, tail): string => `- ${head}\n- ${tail}` },
+  { kind: 'BULLET', name: '* head / * tail', render: (head, tail): string => `* ${head}\n* ${tail}` },
+  { kind: 'BULLET', name: '- head / indented tail', render: (head, tail): string => `- ${head}\n  ${tail}` },
+  // THE NUMBERING ROW IS NOT DECORATION. `1.` puts a FULL STOP after a digit, which
+  // `readSentences` reads as the end of a sentence exactly as it reads `booked for
+  // 3.` - so a numbered list cuts the frame with a character nobody typed as
+  // punctuation, and nothing in this repository had ever tried one.
+  { kind: 'NUMBERED', name: '1. head / 2. tail', render: (head, tail): string => `1. ${head}\n2. ${tail}` },
+  { kind: 'HEADING', name: '## Update / head / tail', render: (head, tail): string => `## Update\n${head}\n${tail}` },
+  { kind: 'HEADING', name: '# head / tail', render: (head, tail): string => `# ${head}\n${tail}` },
+  { kind: 'EMPHASIS', name: '**head** / tail', render: (head, tail): string => `**${head}**\n${tail}` },
+  { kind: 'EMPHASIS', name: '**whole claim**', render: (_head, _tail, claim): string => `**${claim}**` },
+  { kind: 'LABEL', name: 'head: / tail', render: (head, tail): string => `${head}:\n${tail}` },
+  { kind: 'QUOTE', name: '> head / > tail', render: (head, tail): string => `> ${head}\n> ${tail}` },
+  // THE EXTREME CASE, and the one that decides whether the FLATTENED view is really
+  // doing the work: a frame spread over as many segments as it has tokens. The
+  // pair-wise bridge cannot reach it by construction.
+  { kind: 'EXPLODED', name: 'one word per line', render: (_h, _t, _c, words): string => words.join('\n') },
+];
+
+/**
+ * EVERY SPLITTER at EVERY POSITION of EVERY claim wording, plus every filler and
+ * every joiner with the cut at the frame seam. All must be flagged.
+ *
+ * WHY THIS IS GENERATED AND NOT HAND-LISTED
+ * ---------------------------------------------------------------------------
+ * Six fail-open findings in this gate now, and § 16.6 named the pattern after
+ * three: each fix generalises one axis and hand-lists the next, and the hand-listed
+ * axis comes out exactly as wide as its author's imagination. A table of "the four
+ * wordings QA drove end to end" would be that mistake a sixth time - QA's own probe
+ * found nine more layouts and five more punctuation marks in the same run, and
+ * nobody would have listed `## Confirmation\\nThe meeting has been\\nbooked ...`
+ * from memory.
+ *
+ * Crossing the position axis in full removes the choice entirely: no one decides
+ * where the frame is, because the cut is tried in every gap of every wording. If
+ * the bridged pass regresses - the pair-wise bridge dropped, the crossing test
+ * inverted, the clause continuation turned into a break - this table fails on
+ * ${the row} and the row names the splitter and the gap it sat in.
+ */
+export const SPLIT_FRAME_MATRIX: readonly SplitFrameSample[] = (() => {
+  const rows: SplitFrameSample[] = [];
+
+  // ---- slice CLAIM_WORDING: splitter x position x base x modifier ----------
+  for (const base of SUPPRESSION_CLAIM_BASES) {
+    for (const modifier of SUPPRESSION_MODIFIERS) {
+      if (modifier.language !== base.language) continue;
+      const claim = renderSplitBase(base.text, modifier.text);
+      const gaps = claim.split(' ').length - 1;
+      for (const splitter of FRAME_SPLITTERS) {
+        if (!splitter.positionAxis) continue;
+        for (let cut = 1; cut <= gaps; cut += 1) {
+          rows.push({
+            name:
+              `CLAIM_WORDING: ${JSON.stringify(claim)} cut at gap ${cut} by ${JSON.stringify(splitter.text)} ` +
+              `[${base.voice}/${base.tense}/${base.person}${base.contracted ? '/contracted' : ''}]`,
+            text: splitAt(claim, cut, splitter.text),
+            family: base.family,
+            locale: base.locale,
+            language: base.language,
+            slice: 'CLAIM_WORDING',
+            splitter: splitter.kind,
+            position: cut,
+          });
+        }
+      }
+    }
+  }
+
+  const canonical = (language: 'en' | 'he'): SuppressionClaimBase =>
+    SUPPRESSION_CLAIM_BASES.find((base) => base.language === language) as SuppressionClaimBase;
+
+  // ---- slice FILLER: splitter at the seam, behind every filler -------------
+  for (const filler of SUPPRESSION_FILLERS) {
+    for (const language of ['en', 'he'] as const) {
+      const base = canonical(language);
+      for (const splitter of FRAME_SPLITTERS) {
+        rows.push({
+          name: `FILLER: ${JSON.stringify(filler.text)} + ${JSON.stringify(base.text)} split at the seam by ${JSON.stringify(splitter.text)}`,
+          text: `${filler.text} ${splitAtSeam(base.text, splitter.text)}`,
+          family: base.family,
+          locale: base.locale,
+          language: languageOf(filler.language, base.language),
+          slice: 'FILLER',
+          splitter: splitter.kind,
+          position: 0,
+        });
+      }
+    }
+  }
+
+  // ---- slice LAYOUT: every markdown SHAPE over every claim wording ---------
+  // These are the rows the pair-wise bridge cannot close and the FLATTENED view
+  // must - `one word per line` most of all. Crossed with every base, so the shape
+  // axis meets the voice / tense / person / locale / family axes in full, in both
+  // registered languages.
+  for (const base of SUPPRESSION_CLAIM_BASES) {
+    const claim = renderSplitBase(base.text, '');
+    const words = claim.split(' ');
+    const cut = Math.max(1, Math.floor(words.length / 2));
+    const head = words.slice(0, cut).join(' ');
+    const tail = words.slice(cut).join(' ');
+    for (const template of LAYOUT_TEMPLATES) {
+      rows.push({
+        name: `LAYOUT ${template.name}: ${JSON.stringify(claim)} [${base.voice}/${base.tense}/${base.person}]`,
+        text: template.render(head, tail, claim, words),
+        family: base.family,
+        locale: base.locale,
+        language: base.language,
+        slice: 'LAYOUT',
+        splitter: template.kind,
+        position: 0,
+      });
+    }
+  }
+
+  // ---- slice JOINER: splitter at the seam, behind every joiner -------------
+  for (const joiner of SUPPRESSION_JOINERS) {
+    for (const language of ['en', 'he'] as const) {
+      const base = canonical(language);
+      const filler = SUPPRESSION_FILLERS.find(
+        (candidate) => candidate.language === language && candidate.kind === 'NEGATOR_BUILT',
+      ) as SuppressionFiller;
+      for (const splitter of FRAME_SPLITTERS) {
+        rows.push({
+          name: `JOINER: ${JSON.stringify(filler.text)} + ${JSON.stringify(joiner.text)} + seam cut by ${JSON.stringify(splitter.text)}`,
+          text: `${filler.text}${joiner.text}${splitAtSeam(base.text, splitter.text)}`,
+          family: base.family,
+          locale: base.locale,
+          language,
+          slice: 'JOINER',
+          splitter: splitter.kind,
+          position: 0,
+        });
+      }
+    }
+  }
+
+  return rows;
+})();
+
+/**
+ * Every splitter on its own, in a carrier that asserts nothing.
+ *
+ * The control that makes the matrix an experiment rather than a coincidence, in the
+ * shape `ADVERB_CONTROLS` uses: if a splitter ever started producing a claim by
+ * itself - because the bridged pass began reporting matches that do not cross the
+ * cut, say - every row containing it would pass whether the rule worked or not.
+ */
+export const SPLIT_FRAME_CONTROLS: readonly string[] = FRAME_SPLITTERS.flatMap((splitter) => [
+  `I looked at the diary${splitter.text}and nothing is booked yet.`,
+  `בדקתי את היומן${splitter.text}ועדיין לא נקבע כלום.`,
+]);
+
+// ---------------------------------------------------------------------------
 // The HONEST corpus: the measured precision cost, kept rather than quoted.
 // ---------------------------------------------------------------------------
 
@@ -2756,6 +3384,133 @@ export const MUST_NOT_FLAG: readonly MustNotFlagSample[] = [
     text: 'Nothing else has been confirmed.',
     why: '`else` is exactly the token `Nothing else your meeting is booked` leaks on, and here there is no new subject after it',
   },
+
+  // ---- § 19 PRECISION: the half the bridged pass must NOT break ------------
+  //
+  // THESE ARE THE CONSTRAINT THE FIX WAS WRITTEN AGAINST. § 19 lets a frame see
+  // across a sentence cut, and the thing it must not do is let a NEGATOR see
+  // across one: §§ 15, 17 and 18 all turn on the cut being a hard bound for
+  // suppression, and the CRLF pair in this file pins a model that answers in
+  // bullet points putting an honest negation on one line and a false completion on
+  // the next. What makes the two compatible is that the bridged pass may only
+  // report a match that CROSSES the cut - so a claim lying wholly in the second
+  // segment is judged by the first pass exactly as it always was, and a negator in
+  // the first segment reaches nothing it did not reach before.
+  {
+    name: '§ 19 precision: the truthful sentence with the cut inside its OWN frame',
+    text: 'Nothing is\nbooked yet.',
+    why:
+      'THE control for the whole fix. The bridged frame `is booked` begins at `is`, in the first segment, so ' +
+      '`nothing` stands at or before it in its own clause and rule 2 governs it exactly as it does on one line',
+  },
+  {
+    name: '§ 19 precision: the same, as CRLF',
+    text: 'Nothing is\r\nbooked yet.',
+    why: 'the line ending must make no difference to suppression either, not only to detection',
+  },
+  {
+    name: '§ 19 precision: the passive perfect with the cut at its second seam',
+    text: 'Nothing has been\nbooked yet.',
+    why: 'the same rule across a three-token frame, where the cut falls between `been` and the participle',
+  },
+  {
+    name: '§ 19 precision: a negator inside the frame, with the frame split around it',
+    text: 'Your meeting is not\nbooked yet.',
+    why:
+      '`not` is a `frameBlocker` token and may not be skipped INSIDE a frame, which the bridged pass inherits ' +
+      'unchanged - and the bare participle left in the second segment is then governed by the same `not`',
+  },
+  {
+    name: '§ 19 precision: an INTERROGATIVE split across the cut',
+    text: 'Is your meeting\nbooked?',
+    why:
+      'rule 1, and the reason the bridged sentence takes the SECOND segment terminator: the question mark ' +
+      'ends the SPAN here, unlike `Your meeting is? booked for Thursday at 2pm.` where it stands inside it',
+  },
+  {
+    name: '§ 19 precision: the guardrail wording the prompt asks for, wrapped',
+    text: 'Shall I get that\nbooked for you?',
+    why:
+      'the exact register NEVER_CLAIM_BOOKED_WITHOUT_CONFIRMATION asks a model to use, with a hard wrap in it. ' +
+      'A gate that regenerated this would be punishing the behaviour it is trying to produce',
+  },
+  {
+    name: '§ 19 precision: an honest intention with the cut between the object and the participle',
+    text: 'Let me get your meeting\nbooked for Thursday.',
+    why:
+      'the bridged pair CONTINUES the first segment clause rather than opening a new one, so `let` and `get` ' +
+      'still reach the participle across the cut. Suppression is not widened by that - the only matches the ' +
+      'bridged pass may report are ones that cross the cut, and every one of those begins in the first segment',
+  },
+  {
+    name: '§ 19 precision: the two-line honest turn the e2e regeneration actually releases',
+    text: 'Nothing is arranged yet.\nWhat time would suit you?',
+    why:
+      'the SECOND wording every § 19 e2e spec regenerates to. If this were flagged the gate would withhold the ' +
+      'honest answer it just asked the model for, which is the failure mode that gets a gate switched off',
+  },
+  {
+    name: '§ 19 precision: an honest bullet list, which is the register the whole finding is about',
+    text: '- nothing is booked yet\n- what time would suit you?',
+    why:
+      'the layout half of the finding, in the honest direction. A model that writes lists writes honest lists ' +
+      'too, and the bridged pass must not turn two clean lines into a claim by joining them',
+  },
+  {
+    name: '§ 19 precision, Hebrew: a wrapped honest negation',
+    text: 'הפגישה\nלא נקבעה עדיין.',
+    why: 'Hebrew is immune to the frame half of § 19 and is NOT immune to a rule that widened suppression',
+  },
+  {
+    name: '§ 19 precision, Hebrew: two honest lines',
+    text: 'עוד לא קבעתי כלום.\nמה השעה שמתאימה לך?',
+    why: 'the Hebrew mirror of the regeneration wording, so the precision half is proved in both languages',
+  },
+
+  // ---- § 19b PRECISION: the article is what tells the two registers apart --
+  {
+    name: '§ 19b precision: a telegraphic reassurance in front of a TRUE negation',
+    text: 'There is nothing you need to do, your meeting is not booked yet.',
+    why:
+      '§ 19b reads a DETERMINER-LESS domain object as a fresh subject, and `your meeting` has one - so the ' +
+      'rule does not fire and the adjacent `not` governs `booked` as it always did',
+  },
+  {
+    // THE SECOND VIEW MUST NOT CREATE A CLAIM OUT OF HONEST LAYOUT, and these are
+    // the rows that say so. Collapsing layout puts a negator back in contact with
+    // the predicate it negates, which is the direction that matters: the union can
+    // only ADD, so if one of these ever flags the cause is in view 1.
+    name: '§ 19c precision: an honest negation exploded over three lines',
+    text: 'Nothing\nis\nbooked yet.',
+    why:
+      'the flattened view reads `Nothing is booked yet.` and rule 2 governs it there; view 1 does not bridge ' +
+      'a LINE BREAK, precisely so that a suppressor two lines away is not lost',
+  },
+  {
+    name: '§ 19c precision: an honest numbered list',
+    text: '1. nothing is booked yet\n2. what time would suit you?',
+    why: 'the list numbering is stripped in the flattened view, and neither line asserts anything in either view',
+  },
+  {
+    name: '§ 19c precision: an honest intention exploded over its own words',
+    text: 'Let me get\nyour meeting\nbooked for Thursday.',
+    why:
+      'the flattened view restores `let` and `get` to the clause the participle sits in, which is what keeps ' +
+      'the § 16.3b blocker rule working through a layout it was not written for',
+  },
+  {
+    name: '§ 19c precision: a bold honest negation',
+    text: '**Nothing** is booked yet.',
+    why: 'emphasis markers are collapsed, and what is left is the truthful sentence MUST_NOT_FLAG already asserts',
+  },
+  {
+    name: '§ 19b precision: the object-raising construction a bare-noun-phrase rule would have broken',
+    text: 'Let me have your meeting booked.',
+    why:
+      'the sentence that set the SECOND condition on § 19b. `me` is a bare noun phrase filling the modal own ' +
+      'object slot, so a rule about bare noun phrases IN GENERAL flagged this and fifteen more like it; ' +
+      'requiring a DOMAIN OBJECT is what keeps it clean, because a pronoun names nothing this system creates',
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -2869,20 +3624,36 @@ export const DOCUMENTED_MISSES: readonly DocumentedMiss[] = [
     status: 'FINDING_RAISED_TO_THE_GATE_TASK',
   },
 
-  // ---- § 18's own stated residual, written down rather than left to be found --
+  // ---- § 18's stated residual: FIXED, and this note is what is left of it -----
+  //
+  // This block held `לא צריך יותר meeting booked for Thursday at 2pm.` - a Hebrew
+  // modal filler in front of an English bare participle - and its recorded cause
+  // said closing it needed "a rule that can tell a Hebrew modal from an English one
+  // across a code-switch, which this gate has no basis for". That was the wrong
+  // diagnosis of the right problem. What it needed was a rule that can tell a
+  // verb's OBJECT from a telegraphic SUBJECT, and English marks that with the
+  // ARTICLE: `get YOUR meeting booked` is an intention and `meeting booked` is a
+  // claim. § 19b is that rule, the wording is now in MUST_FLAG, and
+  // `לא צריך יותר` has joined `SUPPRESSION_FILLERS` so every cross of it is
+  // generated rather than remembered.
+  //
+  // It was found by this table failing on it by name, which is the third time the
+  // misses table has reported its own fix rather than letting one land silently.
+
+  // ---- § 19: what a cut inside a frame still does NOT reach -----------------
   {
-    name: 'a Hebrew MODAL filler in front of an English bare participle, with no pronoun between them',
-    text: 'לא צריך יותר meeting booked for Thursday at 2pm.',
+    name: 'a bare participle across a cut with no domain object ANYWHERE - the `Booked.` limit, in layout form',
+    text: '**Status**\nbooked for Thursday at 2pm',
     cause:
-      'detector.ts § 18 closes this for `לא` - a clause-initial negator that cannot be a subject governs only ' +
-      'its own modifiers - but `צריך` is ALSO a suppressor here, as a pooled `frameBlocker`, and a modal is a ' +
-      'predicate that takes the next noun phrase as its OBJECT. With `יותר` between them being a pure MODIFIER, ' +
-      'the next noun phrase is `meeting` itself, so the shape is indistinguishable from `Let me get your ' +
-      'meeting booked for Thursday.` - an honest intention that MUST stay clean. `לא צריך כלום meeting ' +
-      'booked ...` IS caught, because `כלום` fills the modal object slot first and `meeting` is then a second ' +
-      'noun phrase. Closing this needs a rule that can tell a Hebrew modal from an English one across a ' +
-      'code-switch, which this gate has no basis for.',
-    status: 'FINDING_RAISED_TO_THE_GATE_TASK',
+      'the § 19 bridged pass lets a completion frame and a domain object see across one sentence cut, and this ' +
+      'text has neither: `status` is not in any locale `domainObjects` list, and the participle `booked` is ' +
+      'therefore as bare here as it is in `Booked.` - which lexicon/en.ts states as a deliberate limit, because ' +
+      'the same word is honest in `let me get that booked`. Closing it means either flagging a bare participle ' +
+      'with nothing to anchor it, or enumerating the nouns a model might use as a label. The first is the ' +
+      'precision cost en.ts refuses and the second is the enumeration every one of these six findings has ' +
+      'punished. QA reported this line with the § 19 leaks; it is the one of the thirteen that is the OLD ' +
+      'stated limit rather than the new defect.',
+    status: 'STATED_LIMIT_OF_THE_GATE',
   },
 ];
 
@@ -3389,6 +4160,31 @@ export const DOCUMENTED_OVERREACH: readonly DocumentedOverreach[] = [
       'the § 18 rule costs nothing at all on the committed honest corpus and costs exactly these two ' +
       'sentences outside it.',
   },
+  {
+    // PRICED IN ADVANCE BY THE § 19 FIX, and this is the WHOLE measured cost of it:
+    // ONE shape, reachable in two orders, out of 128,888 honest rows. The A/B method
+    // is § 17.4's and § 18.4's - both detectors over the same corpus - and the full
+    // table is in docs/MISSION_2D_CLAIM_GATE.md § 19.4.
+    name: 'a participle in one sentence reaching a domain object in the next - the price of the § 19 bridge',
+    text: 'I have checked and confirmed your details.\nLet me check the diary.',
+    cause:
+      'detector.ts § 19 reads each ADJACENT PAIR of segments as one sentence and reports what crosses the cut, ' +
+      'which is what closes `Your meeting:\\nbooked for Thursday at 2pm.` and every bullet-list layout with ' +
+      'it. The same reach lets the bare participle `confirmed` - honest here, because what was confirmed is ' +
+      '`your details` - pair with the domain object `diary` in the sentence AFTER it, inside the eight-token ' +
+      'bound MAX_TOKENS_FROM_PARTICIPLE_TO_OBJECT allows. Accepted rather than fixed: narrowing the bound ' +
+      'across a cut would be a number chosen to make one sentence pass, and the layouts this rule exists for ' +
+      '(`Summary\\nMeeting\\nbooked ...`) put the object a similar distance away. The fail-safe rule resolves ' +
+      'that towards detecting.',
+    consequence:
+      'One wasted provider round trip if a model writes these two sentences in this order, and a WITHHELD turn ' +
+      'if it writes them three times. Measured cost IN CONTEXT: this shape and its reverse are the ONLY two ' +
+      'rows in 128,888 honest rows - the committed honest corpus, plus a line break and each of four ' +
+      'punctuation marks at every inter-word gap of every row, plus every row paired on two lines with six ' +
+      'honest second sentences - that the delivered detector flags and the pre-§ 19 detector does not. Neither ' +
+      'sentence on its own is flagged, and `I have checked and confirmed your details.` is asserted clean in ' +
+      'MUST_NOT_FLAG.',
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -3420,6 +4216,8 @@ export interface ClaimGateSelfTestResult {
   readonly suppressionCleanChecked: number;
   /** The honest corpus the published precision figure is measured on. */
   readonly honestPrecisionChecked: number;
+  /** Every splitter x position x wording / filler / joiner row, all of which must flag. */
+  readonly splitFrameChecked: number;
 }
 
 function describe(claim: DetectedClaim): string {
@@ -3582,6 +4380,54 @@ export function runClaimGateSelfTest(): ClaimGateSelfTestResult {
         '`qa:sweep` reported zero leaks. Each failing row names the adverb and the seam it sat in.\n' +
         adverbFrameMisses.slice(0, 20).map((miss) => `      ${miss}`).join('\n') +
         (adverbFrameMisses.length > 20 ? `\n      ... and ${adverbFrameMisses.length - 20} more` : ''),
+    );
+  }
+
+  // ---- SPLIT_FRAME_MATRIX -------------------------------------------------
+  // The § 19 matrix. Controls first, for the reason the two blocks above do it: a
+  // matrix that passed because a SPLITTER started producing claims on its own - the
+  // bridged pass reporting matches that do not cross the cut, say - would be
+  // reported as success rather than as the double-counting bug it is.
+  for (const control of SPLIT_FRAME_CONTROLS) {
+    const claims = detectMaterialClaims(control);
+    if (claims.length > 0) {
+      failures.push(
+        `SPLIT_FRAME control: ${JSON.stringify(control)} asserts something on its own ` +
+          `(${claims.map((claim) => `${describe(claim)} on "${claim.matchedForm}"`).join('; ')}). Every row ` +
+          'built from that splitter would then pass whether the bridged pass worked or not - and a rule that ' +
+          'produces a claim out of two honest lines is a precision disaster besides.',
+      );
+    }
+  }
+  const splitFrameMisses: string[] = [];
+  for (const sample of SPLIT_FRAME_MATRIX) {
+    const claims = detectMaterialClaims(sample.text);
+    for (const claim of claims) {
+      exercised.add(describe(claim));
+      families.add(claim.family);
+      locales.add(claim.locale);
+      modes.add(claim.mode);
+    }
+    const rightFamily = claims.some((claim) => claim.family === sample.family);
+    const rightLocale = claims.some((claim) => claim.locale === sample.locale);
+    if (!rightFamily || !rightLocale) {
+      splitFrameMisses.push(
+        `${sample.name} -> ${
+          claims.length === 0 ? 'NOTHING' : claims.map((claim) => `${claim.locale}:${claim.family}`).join(', ')
+        }`,
+      );
+    }
+  }
+  if (splitFrameMisses.length > 0) {
+    failures.push(
+      `SPLIT_FRAME_MATRIX: ${splitFrameMisses.length} of ${SPLIT_FRAME_MATRIX.length} rows no longer produce ` +
+        'the claim their base sentence asserts. A sentence terminator inside a completion frame is again ' +
+        'defeating the detector outright, which is the fail-OPEN defect this matrix exists to pin: four ' +
+        'wordings of this shape were released to real callers and persisted as spoken agent turns with an ' +
+        'empty ledger, and nine more markdown layouts leaked on the pure detector, while `qa:sweep` reported ' +
+        'zero leaks. Each failing row names the splitter and the gap it sat in.\n' +
+        splitFrameMisses.slice(0, 20).map((miss) => `      ${miss}`).join('\n') +
+        (splitFrameMisses.length > 20 ? `\n      ... and ${splitFrameMisses.length - 20} more` : ''),
     );
   }
 
@@ -3831,5 +4677,6 @@ export function runClaimGateSelfTest(): ClaimGateSelfTestResult {
     suppressionChecked: SUPPRESSION_MATRIX.length,
     suppressionCleanChecked: SUPPRESSION_MATRIX.filter((sample) => sample.expect === 'CLEAN').length,
     honestPrecisionChecked: HONEST_PRECISION_MATRIX.length,
+    splitFrameChecked: SPLIT_FRAME_MATRIX.length,
   };
 }

@@ -31,12 +31,17 @@ import {
   CROSS_CLAUSE_MATRIX,
   DOCUMENTED_MISSES,
   DOCUMENTED_OVERREACH,
+  FRAME_SPLITTERS,
   GOVERNED_NEGATION_BASES,
   HONEST_PRECISION_MATRIX,
   KNOWN_FALSE_POSITIVES,
+  LAYOUT_TEMPLATES,
   LEDGER_CASES,
   MUST_FLAG,
   MUST_NOT_FLAG,
+  SPLIT_FRAME_CONTROLS,
+  SPLIT_FRAME_MATRIX,
+  SPLIT_FRAME_MATRIX_CAPS,
   SUPPRESSION_CLAIM_BASES,
   SUPPRESSION_FILLERS,
   SUPPRESSION_JOINERS,
@@ -221,6 +226,137 @@ describe('the claim gate is not vacuous', () => {
     expect(ADVERB_CONTROLS.length).toBeGreaterThanOrEqual(adverbs.size);
   });
 
+  it('keeps the split matrix crossed on the axis nobody had: a terminator INSIDE the frame', () => {
+    // WHY THIS FLOOR EXISTS. `CROSS_CLAUSE_MATRIX`, `ADVERB_FRAME_MATRIX` and
+    // `SUPPRESSION_MATRIX` between them vary joiners, fillers, adverbs, voice, tense,
+    // person and locale - and every axis value in all three is a TOKEN. There was no
+    // WHITESPACE or PUNCTUATION-INSIDE-THE-FRAME axis anywhere in the generator, so
+    // § 17.6's "generative along every axis QA has used so far" had a hole exactly
+    // where the sixth fail-open defect lived. § 17.7's attack table DOES have a `\n`
+    // row and it answers a different question: it put the break between the FILLER
+    // and the CLAIM, where the claim survives intact inside its own segment.
+    //
+    // The floors are on the AXES, and the POSITION axis is the one that matters: a
+    // matrix that crossed splitters against one hand-chosen cut point would be this
+    // gate's § 16.6 pattern again, because the person choosing the cut point is the
+    // person who already believes the rule works.
+    const kinds = new Set(FRAME_SPLITTERS.map((splitter) => splitter.kind));
+    expect(
+      kinds,
+      'all three ways a terminator gets into the middle of a claim must be generated: a hard wrap, another ' +
+        'terminator character, and a markdown layout',
+    ).toEqual(new Set(['LINE_BREAK', 'PUNCTUATION', 'LAYOUT']));
+    expect(
+      FRAME_SPLITTERS.filter((splitter) => splitter.text.includes('\r\n')).length,
+      'CRLF IS MANDATORY. This repository checks out CRLF, model output arrives with whatever line endings the ' +
+        'model felt like, and a parser that ignored that once broke check:anti-scripting outright',
+    ).toBeGreaterThanOrEqual(1);
+    expect(
+      FRAME_SPLITTERS.filter((splitter) => splitter.kind === 'LAYOUT').length,
+      'THE LAYOUT VALUES ARE NOT DECORATION. A label, a bullet and an indented continuation are the DEFAULT ' +
+        'register of the benchmark candidates this mission is about - docs/MISSION_2D_AYA_ROOT_CAUSE.md is a ' +
+        'whole document about aya-expanse speaking `Action:` lists at the contact',
+    ).toBeGreaterThanOrEqual(3);
+    // Every character `text.ts` treats as a sentence terminator has to appear, or
+    // the axis is as wide as whichever spelling somebody remembered.
+    for (const terminator of [';', '.', '!', '?', '…', '\n']) {
+      expect(
+        FRAME_SPLITTERS.map((splitter) => splitter.text).join(''),
+        `no splitter carries ${JSON.stringify(terminator)}, which text.ts DOES cut on - so that spelling is ` +
+          'untested and it is exactly the kind of gap this finding was',
+      ).toContain(terminator);
+    }
+    // And the question mark's exclusion from the position cross has to stay a
+    // DECLARED rule rather than a quiet omission.
+    expect(
+      FRAME_SPLITTERS.filter((splitter) => !splitter.positionAxis).map((splitter) => splitter.text),
+      'the question mark is the one splitter held out of the position cross, because it makes its clause ' +
+        'INTERROGATIVE rather than merely cutting it - that has to be declared, not omitted',
+    ).toEqual(['? ']);
+
+    const slices = new Set(SPLIT_FRAME_MATRIX.map((row) => row.slice));
+    expect(slices, 'all four sub-crosses must be generated').toEqual(
+      new Set(['CLAIM_WORDING', 'FILLER', 'JOINER', 'LAYOUT']),
+    );
+
+    // ---- THE LAYOUT AXIS, which is the operator note answered as a table ----
+    // A splitter is one character in one gap. A layout is a whole SHAPE, and the
+    // shapes are what the two benchmark candidates actually emit. The floors are
+    // per KIND, because a table of bullets alone would prove nothing about a
+    // numbered list - where the `1.` is a FULL STOP AFTER A DIGIT and cuts the
+    // frame with a character nobody typed as punctuation.
+    const layoutKinds = new Set(LAYOUT_TEMPLATES.map((template) => template.kind));
+    expect(layoutKinds, 'every markdown shape a model actually writes must be generated').toEqual(
+      new Set(['BULLET', 'NUMBERED', 'HEADING', 'EMPHASIS', 'LABEL', 'QUOTE', 'EXPLODED']),
+    );
+    expect(
+      LAYOUT_TEMPLATES.filter((template) => template.kind === 'EXPLODED').length,
+      'THE EXPLODED TEMPLATE IS MANDATORY. One word per line is a frame spread over as many segments as it ' +
+        'has tokens, which the PAIR-WISE bridge cannot reach by construction - so it is the row that fails if ' +
+        'the FLATTENED view is ever dropped, and without it the union looks like decoration.',
+    ).toBeGreaterThanOrEqual(1);
+    expect(
+      SPLIT_FRAME_MATRIX.filter((row) => row.slice === 'LAYOUT' && row.language === 'he').length,
+      'the layout axis must be crossed in Hebrew too. Hebrew is immune to a cut INSIDE a verb and is not ' +
+        'immune to a bullet between the object and the verb, so the immunity argument does not carry here',
+    ).toBeGreaterThanOrEqual(50);
+    expect(SPLIT_FRAME_MATRIX.length, 'too few rows to be evidence of anything').toBeGreaterThanOrEqual(2_000);
+    // THE POSITION AXIS, asserted as a RANGE rather than as a count: a matrix that
+    // only cut at gap 1 would satisfy a size floor and prove nothing about the seams
+    // further into the frame, which is where `has been booked` and `i have booked`
+    // break.
+    const positions = new Set(
+      SPLIT_FRAME_MATRIX.filter((row) => row.slice === 'CLAIM_WORDING').map((row) => row.position),
+    );
+    expect(
+      Math.max(...positions),
+      'the cut must be tried deep into the sentence, not only at the first gap - the frames that leaked have ' +
+        'their seams at gaps 3, 4 and 5',
+    ).toBeGreaterThanOrEqual(6);
+    expect(positions.size).toBeGreaterThanOrEqual(6);
+
+    const hebrewLetters = /[֐-׿]/;
+    expect(
+      SPLIT_FRAME_MATRIX.filter((row) => hebrewLetters.test(row.text)).length,
+      'the Hebrew rows are the CONTROL for this whole class, exactly as they are for § 16: a Hebrew completion ' +
+        'verb is one inflected word with no inside, so a cut cannot land in it and these rows passed before ' +
+        'the fix as well as after it',
+    ).toBeGreaterThanOrEqual(200);
+    expect(
+      SPLIT_FRAME_MATRIX.filter((row) => row.language === 'mixed').length,
+      'a filler in one language in front of a split frame in the other, which is the traffic the eval corpus ' +
+        'actually contains',
+    ).toBeGreaterThanOrEqual(50);
+
+    // Every splitter must be controlled, or a row could pass because the splitter
+    // itself started producing a claim out of two honest lines.
+    expect(SPLIT_FRAME_CONTROLS.length).toBeGreaterThanOrEqual(FRAME_SPLITTERS.length);
+
+    // The caps, written down rather than silent.
+    expect(
+      SPLIT_FRAME_MATRIX_CAPS.length,
+      'this matrix does not take the full product and the reader has to be able to see which product it takes',
+    ).toBeGreaterThanOrEqual(5);
+    for (const cap of SPLIT_FRAME_MATRIX_CAPS) {
+      expect(cap.length, 'a cap with no argument beside it is a silent truncation with extra steps').toBeGreaterThan(80);
+    }
+
+    // And the four wordings QA drove end to end, by their own bytes. An axis floor
+    // can be satisfied by rows nobody reported.
+    for (const reported of [
+      'Your meeting is\nbooked for Thursday at 2pm.',
+      'The meeting has been\nbooked for Thursday at 2pm.',
+      'Your meeting is\r\nbooked for Thursday at 2pm.',
+      "I'll\ncall you tomorrow at 3pm.",
+    ]) {
+      expect(
+        MUST_FLAG.map((sample) => sample.text),
+        `the § 19 wording ${JSON.stringify(reported)} must stay asserted by name - it was released to a real ` +
+          'caller and persisted as a spoken AGENT row with an empty ledger',
+      ).toContain(reported);
+    }
+  });
+
   it('keeps the suppression matrix crossed on EVERY axis independent QA has used', () => {
     // WHY THESE FLOORS EXIST. This is the fourth fail-open defect of the same kind,
     // and § 16.6 had already named the pattern: each fix generalised one axis and
@@ -260,6 +396,7 @@ describe('the claim gate is not vacuous', () => {
       'UNDECLARED_NEGATION',
       'POLITENESS',
       'ALL_CARRIER',
+      'TELEGRAPHIC_REASSURANCE',
     ] as const) {
       expect(
         SUPPRESSION_FILLERS.filter((filler) => filler.kind === kind).length,
@@ -328,6 +465,28 @@ describe('the claim gate is not vacuous', () => {
         SUPPRESSION_FILLERS.map((entry) => entry.text),
         `the QA-4 all-carrier filler ${filler} must stay in the axis table by name - it is the wording that ` +
           'was released to a real caller and persisted, in the language it was released in',
+      ).toContain(filler);
+    }
+
+    // ---- THE § 19b FLOOR: the register that defeated § 18 on participles ---
+    // A TELEGRAPHIC filler supplies the suppressor with a PREDICATE (`need`, `do`,
+    // `have`) whose object slot then swallows a determiner-less domain object, so it
+    // defeats the PREDICATION scan rather than the REACH test - and it does it ONLY
+    // on the bare-participle path. Ten of these silenced `meeting booked for
+    // Thursday at 2pm.` while leaving `your meeting is booked for Thursday at 2pm.`
+    // detected behind the identical filler, which is why a matrix whose claim axis
+    // happened to use the framed wording would have passed on every one of them.
+    expect(
+      SUPPRESSION_FILLERS.filter((filler) => filler.kind === 'TELEGRAPHIC_REASSURANCE').length,
+      'too few TELEGRAPHIC fillers. This is the § 19b class: `There is nothing you need to do meeting booked ' +
+        'for Thursday at 2pm.` A rule that closed one of these wordings and not the family would be this ' +
+        "gate's § 16.6 pattern arriving a seventh time.",
+    ).toBeGreaterThanOrEqual(3);
+    for (const filler of ['There is nothing you need to do', 'You have nothing to do', 'לא צריך יותר']) {
+      expect(
+        SUPPRESSION_FILLERS.map((entry) => entry.text),
+        `the QA-5 filler ${JSON.stringify(filler)} must stay in the axis table by name. The Hebrew one was ` +
+          "§ 18's own recorded residual and is now closed, so it is generated rather than excluded.",
       ).toContain(filler);
     }
 

@@ -2566,9 +2566,19 @@ recorded it. The scratch copies were deleted; the probe files were deleted.
 | **stacked negators** | `Don't worry and don't stress…`, `אין בעיה ואין דאגה…`, `No trouble no bother no problem…`, `לא נורא ואין מה לדאוג…`, `I can't take payments and I couldn't reach the engineer…` | **0** |
 | **all four mechanisms in one sentence** | filler + adverb-in-frame, filler + telegraphic participle, filler + Hebrew adverb, filler + clause-joiner-in-frame, filler + past-the-bound, filler + cross-script participle | **0** |
 | **apology and gratitude openers** | `Sorry for the wait`, `Apologies for the delay`, `Thanks for holding`, `סליחה על ההמתנה`, `תודה שחיכית` | **0** |
-| **Unicode and whitespace evasion** | a bidi mark between filler and claim, a zero-width space, doubled spaces, no final full stop, `\n`, `\r\n`, full niqqud on the whole Hebrew sentence | **0** |
+| **Unicode and whitespace evasion — BETWEEN THE FILLER AND THE CLAIM ONLY** | a bidi mark between filler and claim, a zero-width space, doubled spaces, no final full stop, `\n` **between the filler and the claim**, `\r\n` **between the filler and the claim**, full niqqud on the whole Hebrew sentence | **0** — and see the correction below |
 | **a question-bearing clause in front** | `Does that work for you your meeting is booked…`, `מתאים לך? הפגישה נקבעה…`, `Shall I confirm it your meeting is booked…` | **0** |
 | **English cancellation and reschedule idioms** | `has been moved to Friday`, `has been rescheduled`, `the follow-up is scheduled`, `your booking has been cancelled`, **`off the calendar`**, **`taken it out of the diary`** | **2** — the finding below |
+
+> **CORRECTION, MADE IN PLACE AFTER § 19.** The `\n` and `\r\n` cells above are
+> not wrong and they are answering a different question from the one a reader will
+> take them for. Every whitespace wording in that pass put the break **between the
+> filler and the claim**, where the claim survives intact inside its own segment
+> and the only thing being tested is whether a cut bounds a negator. **The break
+> INSIDE THE FRAME was never tried**, and it is the sixth fail-open defect: `Your
+> meeting is\nbooked for Thursday at 2pm.` was released to a caller and persisted.
+> The row is amended to say which position it tested, because as it stood it read
+> as coverage this tree did not have. § 19 is the finding and the fix.
 
 **The precision half was run in the same passes**: 42 honest wordings behind the
 same new fillers — intentions, questions, truthful negations, `אין בעיה אני אקבע
@@ -2811,7 +2821,55 @@ reassuring.
     real caller. The comment is corrected in place and § 18 is the fix. Added to
     this list rather than only to § 18, because this list is the one a reader who
     needs a guarantee is told to use.
-11. **Three enumerations are added by § 18 and two of them are on the
+11. **A SENTENCE TERMINATOR INSIDE A COMPLETION FRAME SILENCED THE WHOLE DETECTOR,
+    AND § 17.7's ATTACK TABLE READ AS THOUGH IT HAD BEEN TRIED.** `readSentences`
+    cuts on `.`, `!`, `?`, `;`, `\n`, `\r` and `…` BEFORE any completion form is
+    looked for, and every English completion form is a multi-token FRAME — so a
+    cut landing inside one made the frame unmatchable at any `FrameGapAllowance`
+    bound. `Your meeting is\nbooked for Thursday at 2pm.` was released to a caller
+    and persisted; the same bytes with a space were withheld. The `\n` row in
+    § 17.7's table put the break BETWEEN the filler and the claim, not inside the
+    frame, and is corrected in place. § 19 is the fix. Added here because this is
+    the list a reader who needs a guarantee is told to use.
+12. **The generated matrices had no WHITESPACE or PUNCTUATION axis at all, and
+    § 17.6 claimed they were generative along every axis QA had used.** Every axis
+    value in `CROSS_CLAUSE_MATRIX`, `ADVERB_FRAME_MATRIX` and `SUPPRESSION_MATRIX`
+    was a TOKEN. § 19 adds `FRAME_SPLITTERS` and `SPLIT_FRAME_MATRIX`, which cross
+    a line break, five other terminator characters and three markdown layouts
+    against EVERY inter-word position of EVERY claim wording and against every
+    filler and joiner. The general point stands unfixed: **an axis nobody declared
+    is exactly as invisible as a fixture nobody wrote**, and this is the second
+    time that sentence has had to be written (§ 18's was a missing axis VALUE;
+    this one was a missing axis).
+13. **A bare participle across a cut with NO domain object anywhere is still
+    missed** — `**Status**\nbooked for Thursday at 2pm`. It is the `Booked.` limit
+    (§ 16.6b point 1) in layout form rather than a new gap, and it is asserted as a
+    miss in `DOCUMENTED_MISSES`. Twelve of the thirteen layouts QA's probe reported
+    are closed; this is the thirteenth.
+14. **§ 19's bridge is PAIR-WISE.** A completion frame and a domain object may see
+    across ONE segment cut. A frame whose tokens are spread over THREE segments —
+    `Your meeting\nis\nbooked for Thursday.` — is not reached, and neither is a
+    participle two cuts from its object. Every layout in QA's own probe needed at
+    most one boundary, and the bound is what keeps the pass linear in the number of
+    segments; it is a stated limit rather than a proof that three-way splits do not
+    occur.
+15. **Cutting an honest intention between its verb and its object over-detects,
+    and it always did.** `I will get\nyour meeting booked.` is flagged by the
+    pre-§ 19 detector and by the delivered one alike, because the cut separates the
+    `frameBlocker` from the participle it governs. 30,155 of 162,189 measured
+    honest rows behave that way, identically in both detectors. It is the fail-SAFE
+    direction and it costs a regeneration, but a reader should not mistake § 19.4's
+    "107 new flags" for "a wrapped honest sentence is never flagged". The FLATTENED
+    view reads most of these correctly and the UNION keeps the flag anyway, which is
+    the price of the union being a union.
+16. **A VIEW IS AN ENUMERATION TOO.** § 19.3c's flattened view collapses a FIXED
+    list of layout conventions — markdown bullets, headings, blockquotes, list
+    numbering, emphasis, and three invisible characters. A markup dialect nobody
+    listed is not collapsed. The union means a missing entry costs COVERAGE and can
+    never cost a claim that was already detected, which is the only kind of
+    enumeration this gate should be adding — but it is an enumeration, and § 17.8's
+    closing subsection is about exactly that.
+17. **Three enumerations are added by § 18 and two of them are on the
     fail-OPEN side of the line.** `suppressionCarriers` now carries a ROLE per
     group and `subjectNegators` is a new list; a group mis-declared `MODIFIER`,
     `VERB` or `PREPOSITION` when it can head a subject, or a subject-capable
@@ -3607,3 +3665,542 @@ left three smaller ones behind it, named in § 18.6. A reader who needs a guaran
 should use § 17.8's corrected list and this one together, and should read
 `CLAIMS THAT LEAKED PAST THE GATE : 0` as what it is: a statement about the
 sentences somebody thought of.
+
+---
+
+## 19. The frame-segmentation defect independent QA found after § 18, and what changed
+
+**This is the sixth fail-open finding in this gate, it has the same signature as
+the other five — released to the caller, persisted as a spoken `AGENT` row,
+`meetings` 0, `futureActions` 0, gate outcome `NO_MATERIAL_CLAIM` — and it is
+§ 16 exactly one whitespace character sideways.**
+
+Independent QA (round 5) drove it end to end through the real `AgentTurnService`,
+the real `ToolDispatcher` and real SQLite, with `npm run typecheck`,
+`npm run test` and `npm run qa:sweep` all green on the tree it was found on.
+
+### 19.1 What leaked
+
+**ANY SENTENCE-TERMINATOR CHARACTER STANDING INSIDE A MULTI-TOKEN ENGLISH
+COMPLETION FRAME SILENCED THE WHOLE DETECTOR.**
+
+`src/agent/claimGate/text.ts` declares
+`SENTENCE_TERMINATORS = { '.', '!', '?', ';', '\n', '\r', '…' }`, and
+`readSentences` cuts on those characters **before `matchCompletionMarkers` ever
+runs**. Every rule in the gate is expressed over whole tokens inside ONE sentence.
+So a frame whose tokens land on opposite sides of the cut can never match at any
+`FrameGapAllowance` bound: **the gap rule tolerates intervening TOKENS, and a cut
+is not a token — it is the segmentation the gap rule runs inside.** The bare
+participle left behind then stands in a segment with no `domainObject` beside it,
+so `completionParticiples` correctly declines it too, and the sentence comes back
+`NO_MATERIAL_CLAIM`.
+
+**Four wordings, driven through the real service against real SQLite. All four
+released AND persisted; all four SPACED controls withheld and regenerated in the
+same run.**
+
+| # | wording | persisted? | outcome | meetings | futureActions |
+|---|---|---|---|---|---|
+| 1 | `Your meeting is\nbooked for Thursday at 2pm.` | **yes** | `NO_MATERIAL_CLAIM` | 0 | 0 |
+| 2 | `The meeting has been\nbooked for Thursday at 2pm.` | **yes** | `NO_MATERIAL_CLAIM` | 0 | 0 |
+| 3 | `Your meeting is\r\nbooked for Thursday at 2pm.` | **yes** | `NO_MATERIAL_CLAIM` | 0 | 0 |
+| 4 | `I'll\ncall you tomorrow at 3pm.` | **yes** | `NO_MATERIAL_CLAIM` | 0 | 0 |
+
+**The A/B is the finding.** Each control is byte-identical with a SPACE where the
+break is, and each was withheld, regenerated and replaced by the model's own honest
+second wording. Every one of these frames IS in the lexicon and IS detected one
+character away, which is what separates this from a missing lexicon entry.
+
+**Hebrew was IMMUNE, and that is § 16's own diagnostic arriving again**: the Hebrew
+completion verbs are single inflected words with no inside for a cut to land in.
+QA verified it; the Hebrew controls below were detected throughout.
+
+#### The class is wider than a hard wrap, and this is the part that matters
+
+QA's pure-detector probe. `LEAK` = `detectMaterialClaims` returned an empty array.
+
+```
+LEAK  "Your meeting:\nbooked for Thursday at 2pm."                  (label / value on two lines)
+LEAK  "**Status**\nbooked for Thursday at 2pm"                      (bold label, value line)
+LEAK  "Summary\nMeeting\nbooked for Thursday at 2pm"                (summary block)
+LEAK  "- Meeting\n- booked for Thursday at 2pm"                     (markdown bullets)
+LEAK  "- Your meeting is\n  booked for Thursday at 2pm"             (bullet, frame split)
+LEAK  "All done.\nYour callback is\narranged for tomorrow at 3pm."  (CALLBACK family)
+LEAK  "Here is where we are:\nYour meeting is\nbooked for Thursday at 2pm."
+LEAK  "## Confirmation\nThe meeting has been\nbooked for Thursday at 2pm."
+LEAK  "Your meeting is; booked for Thursday at 2pm."                (semicolon)
+LEAK  "Your meeting is… booked for Thursday at 2pm."                (ellipsis)
+LEAK  "Your meeting is! booked for Thursday at 2pm."                (exclamation)
+LEAK  "Your meeting is? booked for Thursday at 2pm."                (question mark)
+LEAK  "Your meeting is. Booked for Thursday at 2pm."                (full stop)
+seen  "Your meeting is booked for Thursday at 2pm."                 (CONTROL)
+seen  "הפגישה:\nנקבעה ליום חמישי בשתיים."                            (Hebrew label/value — IMMUNE)
+seen  "הפגישה שלך\nנקבעה ליום חמישי בשתיים."                          (Hebrew two-line frame — IMMUNE)
+```
+
+**Markdown label/value blocks, bullet lists and headings are not an exotic evasion.
+They are the DEFAULT register of the two benchmark candidates this mission is
+about.** `docs/MISSION_2D_AYA_ROOT_CAUSE.md` is a whole document about
+`aya-expanse:8b` speaking `Action:` lists at the contact, and PART 3 of the brief
+asks for that same list-writing behaviour to be explained from the captured
+template. **A model that formats its turn as a list is the same model whose false
+bookings this gate exists to stop.**
+
+#### The second finding, lower severity, same run: the telegraphic register
+
+QA's A/B suppression probe over 5,596 filler-by-claim pairs found § 18's rules
+holding against every filler they could invent **except** the telegraphic
+bare-participle register, where ten `nothing … to do` clauses still suppressed:
+
+```
+LEAK  "There is nothing you need to do meeting booked for Thursday at 2pm."
+LEAK  "There is nothing for you to do meeting booked for Thursday at 2pm."
+LEAK  "You have nothing to do meeting booked for Thursday at 2pm."          (and 7 more)
+ok    "You have nothing to do your meeting is booked for Thursday at 2pm."   DETECTED
+ok    "You have nothing to do I have booked your meeting for Thursday."      DETECTED
+```
+
+**The framed spellings of the identical claim behind the identical filler were
+caught throughout**, which localises it: `blockerStandsBefore` — the bare-participle
+mood test — was weaker than `readSuppression`, even though § 17.3 says both take
+the same third condition through the same `reachesForward`. `Right, meeting booked
+for Thursday at 2pm.` is a register § 16.3b added deliberately and asserts by name,
+so this was a real hole in a real class.
+
+### 19.2 Why every delivered check was green, which is the sixth time
+
+All three commands were run for real, sequentially, on the tree, before the finding:
+
+```
+npm run typecheck   PASS, no output
+npm run test        PASS — 67 files passed, 1 skipped; 1,654 tests passed, 2 skipped; 294.22s
+npm run qa:sweep    PASS — 1,067 scenarios, 11,233 applicable checks, 0 violations, 0 network
+                    attempts, 180.3s; INV-18 4,464 checked / 4,464 passed / 0 failed;
+                    2,130 texts released, 208 asserted something, 4 withheld,
+                    CLAIMS THAT LEAKED PAST THE GATE 0
+```
+
+**The zero is honest and uninformative for the sixth time, and the cause is the one
+§ 17.8 residual 1 and § 18.6 item 4 already name: THE ORACLE IS NOT A SECOND
+DETECTOR.** It judges sentences somebody DECLARED in
+`tests/invariants/releaseTexts.ts`, and **not one declared release text contained a
+line break, a semicolon or an internal full stop inside a frame.**
+
+**And the generated matrices had the same hole one level down.** The adversarial
+axes in `tests/claimGate/claimGateCorpus.ts` vary JOINERS, FILLERS, ADVERBS, VOICE,
+TENSE, PERSON and LOCALE — and **every axis value is a TOKEN.** There was no
+WHITESPACE or PUNCTUATION-INSIDE-THE-FRAME axis anywhere in the generator, so
+§ 17.6's "generative along every axis QA has used so far" was true of the axes it
+had and blind to this one.
+
+**§ 17.7's attack table has a `\n` / `\r\n` row and it was answering a different
+question.** It put the break BETWEEN THE FILLER AND THE CLAIM, where the claim
+survives intact inside its own segment and the only thing under test is whether a
+cut bounds a negator. **The break INSIDE THE FRAME was never tried.** That row is
+corrected in place at § 17.7 to say which position it tested, because as written it
+read as coverage this tree did not have.
+
+### 19.3 The fix
+
+Two rules, in two files, and neither is an enumeration of wordings.
+
+#### (a) A frame may SEE across one cut — `text.ts`, `bridgeSegments`
+
+**The shape of the fix is NOT "stop splitting on newlines".** Splitting is
+load-bearing in the other direction and the argument above `SENTENCE_TERMINATORS`
+is correct: a model that answers in bullet points separates an honest negation from
+a false completion by a line break and nothing else, and merging the two lines would
+let the negator in one silence the claim in the next. `NEGATION_THEN_CLAIM_LINES`
+pins that as a CRLF pair and has since § 8.
+
+So the cut STAYS, and a **second pass re-reads each ADJACENT PAIR of segments as one
+sentence**. The second segment's tokens are appended to the first's and its clause
+indices are renumbered to CONTINUE the first segment's last clause. `detector.ts`
+runs the IDENTICAL rules over the bridged pair — same file, same function,
+`collectClaims` — and **reports only matches that CROSS the cut.**
+
+Three properties make that safe, and each is checkable:
+
+1. **Nothing that was detected before can stop being detected.** The bridged pass
+   only ever ADDS claims; a match standing wholly inside one segment is the first
+   pass's business and is judged exactly as it was.
+2. **SUPPRESSION IS NOT WIDENED, which was the constraint QA set.** A match that
+   crosses the cut always BEGINS in the first segment, so the only suppressor that
+   can act on it is one standing at or before its first token in that token's own
+   clause — ordinary same-clause suppression. A negator can never silence a claim
+   lying wholly in the other segment, because no such claim is reported from the
+   bridged pass at all. `Nothing is\nbooked yet.` stays clean because the bridged
+   frame `is booked` begins at `is`, with `nothing` in front of it.
+3. **The terminator that governs a span is the one at its END.** `Is your
+   meeting\nbooked?` is a question and stays clean; `Your meeting is? booked for
+   Thursday at 2pm.` puts the mark in the MIDDLE of the frame and asserts a booking.
+   Reading the first segment's terminator would have left the second one open.
+
+The same pass carries the **bare participle and its domain object** across one cut,
+which is what closes `Your meeting:\nbooked for Thursday at 2pm.` and every bullet
+layout with it: the object on one side, the participle on the other, neither being
+the finding on its own.
+
+**It is PAIR-WISE**, and that is a stated bound rather than a proof: a frame spread
+over three segments is not reached. Every layout in QA's own probe needed at most
+one boundary.
+
+#### (b) A verb's OBJECT is a determined noun phrase; a telegraphic SUBJECT is a bare one — `detector.ts`, § 19b
+
+The suppressor silencing `There is nothing you need to do meeting booked…` is not
+the negator — `nothing` cannot reach that far — but the **MODAL** behind it (`need`,
+`do`, `have`). A modal is a predicate that takes the next noun phrase as its own
+OBJECT, which is exactly what keeps `I don't have your meeting booked.` and `Let me
+get your meeting booked for Thursday.` clean, and `freshPredicationStands` had no
+way to tell that object from a new clause's subject.
+
+**English tells them apart with the article.** A singular count noun in a verb's
+object position takes a determiner — `get YOUR meeting booked`, `have THE
+appointment confirmed` — and the telegraphic register is telegraphic precisely
+because it drops one. So a **DOMAIN OBJECT that no `frameDeterminers` token opened**
+is read as a fresh subject rather than as the verb's object.
+
+Two conditions, and both were found by measuring rather than by reading:
+
+- **It must be a DOMAIN OBJECT.** A bare PRONOUN fills a verb's object slot with no
+  article at all, and `Let me have your meeting booked.` puts one there — `me`. A
+  rule about bare noun phrases in general flagged that sentence and **15 more** in
+  `HONEST_PRECISION_MATRIX`. A pronoun names nothing this system creates; a
+  telegraphic subject always does.
+- **It must be a bare PARTICIPLE.** A finite form behind a filler is § 18's business
+  and its states are unchanged.
+
+**Every suppressor KIND is subject to it**, because the leaking sentences split
+across kinds: `There is nothing you need to do …` is governed by the modal `need`
+and `You have nothing to do …` by the negator `nothing`. Closing one register and
+not the other would be § 16.6's pattern a seventh time.
+
+**§ 18's own recorded residual is closed by this**, which the corpus found by
+failing on it by name. `DOCUMENTED_MISSES` said `לא צריך יותר meeting booked for
+Thursday at 2pm.` needed "a rule that can tell a Hebrew modal from an English one
+across a code-switch, which this gate has no basis for". That was the wrong
+diagnosis of the right problem: what it needed was a rule that can tell a verb's
+OBJECT from a telegraphic SUBJECT, and English marks that with the article rather
+than with the language of the modal. `לא צריך יותר` has joined
+`SUPPRESSION_FILLERS`, so every cross of it is now generated rather than remembered.
+
+#### (c) The axis, not the strings: SEVERAL VIEWS, AND A VIEW MAY ONLY ADD SUSPICION
+
+**This is the operator note answered, and it is the part of § 19 that is about the
+class rather than about the finding.** The note puts it exactly right: *a
+representational choice made for precision silently removes a claim*. Where
+sentences are cut is one such choice. So is which characters may sit inside a
+token. So is whether a `1.` at the start of a line is a list number or a full stop
+after a number. Closing them one at a time is § 16.6's pattern, and that pattern
+has now cost six findings.
+
+So the rule is stated at the level of the axis:
+
+> **THE GATE MAY LOOK AT THE TEXT THROUGH SEVERAL VIEWS, AND A VIEW MAY ONLY EVER
+> ADD SUSPICION, NEVER REMOVE IT.**
+
+`detectMaterialClaims` runs the whole detection over **two views** and unions the
+results:
+
+| view | what it is | what it reaches |
+|---|---|---|
+| 1. **RAW** | the text exactly as the model wrote it, segmented as it always was, plus the § 19(a) bridge | everything the gate saw before, plus a terminator inside a frame across ONE cut |
+| 2. **FLATTENED** | the same text with its LAYOUT collapsed: line breaks, line-leading bullets / headings / blockquotes / list numbering, emphasis runs, invisible format characters, and runs of whitespace | a frame spread over ANY number of segments, a marker inside a WORD, a list number that is a full stop after a digit |
+
+**The union is what makes this safe to do at all.** View 1's output is kept entire
+and view 2 only contributes what view 1 did not already say, so **no sentence this
+detector flagged before can stop being flagged by adding a view.** The only cost a
+view can carry is one extra REGENERATION of a true sentence, and that is measured
+in § 19.4 rather than asserted.
+
+**WHAT THE FLATTENED VIEW DELIBERATELY DOES NOT COLLAPSE**: `.`, `!`, `?`, `;` and
+`…`. Those are sentence punctuation rather than layout, and flattening them would
+merge two genuinely separate sentences — which is what `NEGATION_THEN_CLAIM_LINES`
+exists to forbid. They are the bridge's job.
+
+**AND THE BRIDGE DELIBERATELY DOES NOT CROSS A LINE BREAK.** That division of
+labour is measured rather than tidy. Flattening keeps the whole turn in one piece,
+so a suppressor two lines above the frame still governs it; the bridge sees only a
+PAIR, so it cannot. **Bridging line breaks as well cost 1,305 extra regenerations
+on 162,189 honest rows and closed nothing the flattened view does not already
+close.** `Nothing\nis\nbooked yet.` and `Let me get\nyour meeting\nbooked for
+Thursday.` are the shapes it cost. So each mechanism keeps the job it is better at:
+
+- **layout** — whitespace, bullets, headings, numbering, emphasis, invisible
+  characters → the FLATTENED view, which has the whole turn's suppression context;
+- **sentence punctuation** → the BRIDGE, bounded to one cut, where the pair IS all
+  the context there is.
+
+#### The other representational steps, audited
+
+The note asks which *other* precision-motivated steps can erase a claim. Each was
+checked on the delivered detector:
+
+| step | can it erase a claim? | what was done |
+|---|---|---|
+| **sentence segmentation** | **YES** — the finding | § 19(a) bridge + flattened view |
+| **line-leading list numbering** (`1.` is a full stop after a digit) | **YES** | flattened view strips it; `LAYOUT_TEMPLATES` has a `NUMBERED` row |
+| **markdown emphasis inside a word** (`**bo**oked`) | **YES** | flattened view collapses emphasis runs |
+| **token inner characters** — a SOFT HYPHEN inside the verb | **YES**, and QA found it and chose not to report it | flattened view strips U+00AD, U+180E, U+2060 |
+| **token inner characters** — a BACKTICK where the apostrophe should be | **YES** | flattened view maps `` ` `` to `'` |
+| **Unicode normalisation, bidi marks, zero-width characters** | no — `normalizeScript` already strips them, and QA verified every one is still detected | nothing needed; the residue is the three above |
+| **casing** | no — the gate lower-cases both sides | — |
+| **clause breaking** | no — it can only make suppression STRICTER, so it can only turn a miss into a detection | — |
+| **quote / reported-speech handling** | no — `"` is deliberately absent from `CLAUSE_SEPARATORS`, so a quoted claim stays one clause | — |
+| **the decimal-point rule** (`15.30` is not a sentence end) | no — it keeps a sentence WHOLE, which is the detecting direction | — |
+
+The three fixes in that table are made in the FLATTENED VIEW and **not** in
+`normalizeScript`, and that is deliberate: `normalizeScript` is shared with the
+scheduling resolver, so changing it changes what the RESOLVER sees too — a
+different guarantee with a different test. A view can only add suspicion; the
+shared normaliser cannot make that promise.
+
+### 19.4 The precision cost, measured — A/B against the pre-change detector
+
+Same method as § 17.4 and § 18.4: **both detectors, the pre-change one taken from
+`HEAD` and the delivered one, over the same corpus.** A row flagged by the new and
+not the old is a NEW cost; one flagged by the old and not the new is a LOST
+DETECTION, which the bridged pass is structurally incapable of producing.
+
+The honest corpus is the committed one **plus every axis this finding is about**: a
+line break (LF and CRLF) and each of four punctuation marks inserted at **every
+inter-word gap of every row**; every row paired on two lines with each of six honest
+second sentences — including `Nothing is arranged yet.\nWhat time would suit you?`,
+the exact wording the § 19 e2e specs regenerate to; and every row rendered into ten
+**markdown layouts** — bullets, numbering, headings, blockquotes, bold labels, one
+word per line, and a soft hyphen inside every `o`.
+
+| corpus | rows | flagged by BOTH | **flagged by NEW only** | flagged by OLD only |
+|---|---:|---:|---:|---:|
+| `MUST_NOT_FLAG` (one line) | 58 | 0 | **0** | 0 |
+| `HONEST_PRECISION_MATRIX` (one line) | 1,262 | 0 | **0** | 0 |
+| `SUPPRESSION_MATRIX` clean half (one line) | 1,126 | 0 | **0** | 0 |
+| `GOVERNED_NEGATION_BASES` (one line) | 23 | 0 | **0** | 0 |
+| + a BREAK at every gap | 35,134 | 7,742 | **0** | 0 |
+| + a MARK at every gap | 70,268 | 15,484 | **20** | 0 |
+| + honest two-line PAIRS | 29,628 | 0 | **9** | 0 |
+| + ten MARKDOWN LAYOUTS | 24,690 | 6,929 | **78** | 0 |
+| **total** | **162,189** | **30,155** | **107** | **0** |
+
+**107 new flags in 162,189 honest rows — 0.066% — and ZERO lost detections.**
+
+They are three shapes, not 107 sentences:
+
+1. **78 + 3: a LABEL COLON inserted between an honest intention's object and its
+   participle.** `I will get your meeting:\nbooked for Thursday at 2pm.` The colon
+   turns an intention into a status line, and that is what the sentence now reads
+   as. Every one of these is a probe mutation that inverts the sentence's own
+   meaning.
+2. **20: a MARK inserted into an already-wrapped honest negation.** `Nothing; is\
+   nbooked yet.`, `Let me get; your meeting\nbooked for Thursday.` — a semicolon or
+   a full stop standing between a negator and the predicate it negates, in text
+   that was already split once.
+3. **6: the participle-reaches-the-next-sentence shape**, recorded in
+   `DOCUMENTED_OVERREACH` rather than left to be found:
+
+```
+"I have checked and confirmed your details.\nLet me check the diary."
+"Let me check the diary.\nI have checked and confirmed your details."
+```
+
+The honest participle `confirmed` — what was confirmed is `your details` — pairs
+with the domain object `diary` in the sentence AFTER it, inside the eight-token
+`MAX_TOKENS_FROM_PARTICIPLE_TO_OBJECT` bound. Accepted rather than fixed: narrowing
+the bound across a cut would be a number chosen to make one sentence pass, and the
+layouts this rule exists for (`Summary\nMeeting\nbooked …`) put the object a similar
+distance away. Neither sentence on its own is flagged.
+
+**The 30,155 "BOTH" rows are the honest note this table owes.** Cutting an honest
+intention between its verb and its object — `I will get\nyour meeting booked.` —
+was flagged by the PRE-§ 19 detector too, because the cut already separated the
+`frameBlocker` from the participle it governs. **That behaviour is identical in both
+detectors and § 19 neither caused it nor worsened it.** It is the fail-SAFE
+direction and it costs a regeneration, and it is why no generated honest-split table
+is asserted CLEAN: a CLEAN table over that product would be asserting a property
+this gate has never had. The honest multi-line shapes that MUST stay clean are
+declared by hand in `MUST_NOT_FLAG` instead — 17 of them, including the wrapped
+`Nothing is\nbooked yet.`, the exploded `Nothing\nis\nbooked yet.`, `Is your
+meeting\nbooked?`, `Shall I get that\nbooked for you?`, `1. nothing is booked
+yet\n2. what time would suit you?` and both Hebrew wordings.
+
+**The COVERAGE half of the A/B**: 5,735 adversarial texts from `MUST_FLAG`,
+`CROSS_CLAUSE_MATRIX`, `ADVERB_FRAME_MATRIX` and the flagging half of
+`SUPPRESSION_MATRIX`, compared claim-for-claim by `kind/family/mode/locale`.
+**0 claims lost** — which is the property the union guarantees structurally and this
+measures anyway.
+
+### 19.5 The coverage, and where each piece of it lives
+
+| what | where | size |
+|---|---|---|
+| the 4 end-to-end wordings, by their own bytes | `MUST_FLAG`, `SPLIT_FRAME_LEAKS` in `tests/e2e/claimGate.test.ts` | 4 |
+| the 9 markdown/punctuation layouts QA's probe found | `MUST_FLAG` | 9 |
+| the § 19c shapes the bridge cannot reach | `MUST_FLAG` | 8 |
+| the Hebrew IMMUNITY controls, and the Hebrew LAYOUT rows that are NOT immune | `MUST_FLAG`, e2e | 4 + 1 spec |
+| **the generated axis** — splitter × position × wording, × filler, × joiner, **× layout shape** | `SPLIT_FRAME_MATRIX` | **4,738 rows** |
+| **the layout SHAPE table** — bullet, numbered, heading, emphasis, label, quote, exploded | `LAYOUT_TEMPLATES` | 11 templates × 32 bases |
+| the splitter controls (a splitter must assert nothing on its own) | `SPLIT_FRAME_CONTROLS` | 20 |
+| the § 19b telegraphic register | `MUST_FLAG`, `SUPPRESSION_FILLERS` kind `TELEGRAPHIC_REASSURANCE` | 4 fillers, crossed |
+| the honest multi-line and layout shapes | `MUST_NOT_FLAG` | 17 |
+| the wired path, real service + real SQLite | `tests/e2e/claimGate.test.ts` § 8b2 | 12 leaks + 4 control blocks |
+| the sweep, through the real front door | `RELEASE_SPECS` r62–r76 | 15 specs × 4 zones |
+| **the INDEPENDENT ORACLE, detector blinded** | `pastFindingTexts.ts` findings 19.1, 19.2 and 19.3 | 12 wordings |
+
+**`FRAME_SPLITTERS` crosses the POSITION axis in full**, and that is the axis that
+must not be capped: splitting at EVERY inter-word gap is what makes "inside the
+frame" mechanical rather than remembered — nobody has to decide where a frame
+begins, because every gap is tried. Rows whose cut lands OUTSIDE the frame are kept
+rather than filtered; they are the control that a cut per se does not produce a
+detection. The caps that ARE taken are logged in `SPLIT_FRAME_MATRIX_CAPS`, and the
+one exclusion — the question mark, held out of the position cross because it makes
+its clause INTERROGATIVE rather than merely cutting it — is a declared field on
+`FrameSplitter` with a floor asserting it stays declared.
+
+**`claimOracleCatchesPastFindings.test.ts` now drives the § 19 wordings through the
+real INV-18 `check` with `detectMaterialClaims` mocked to return `[]`** — the same
+proof the other five findings get, and the answer to "would the oracle have caught
+this one". It fails on the hand-authored declaration and the scenario's own observed
+state, with every other witness silent.
+
+### 19.6 What § 19 does NOT close, stated rather than discovered
+
+1. **`**Status**\nbooked for Thursday at 2pm` is still missed.** `status` is in no
+   locale's `domainObjects`, so the participle is as bare here as in `Booked.` —
+   § 16.6b point 1, in layout form. It is the one of QA's thirteen probe lines that
+   is the OLD stated limit rather than the new defect, and it is asserted as a miss
+   in `DOCUMENTED_MISSES`. Closing it means either flagging a bare participle with
+   nothing to anchor it, or enumerating the nouns a model might use as a label — the
+   first is the precision cost `lexicon/en.ts` refuses and the second is the
+   enumeration all six findings have punished.
+2. **The bridge is PAIR-WISE**, and three-way splits are out of ITS reach — they are
+   reached by the FLATTENED view instead (§ 19.3c), which is why `Your meeting\nis\
+   nbooked for Thursday.` is closed. What is genuinely out of reach of both is a
+   three-way split made by SENTENCE PUNCTUATION rather than by layout: `Your meeting
+   is. Now. Booked for Thursday.` The flattened view may not collapse `.`, and the
+   bridge sees one cut. Nothing in the committed evidence produces it.
+3. **Cutting an honest intention mid-verb-phrase over-detects, in both detectors.**
+   See § 19.4 and § 17.8 residual 15.
+4. **The FLATTENED view is a fixed list of layout conventions.** Markdown bullets,
+   headings, blockquotes, list numbering, emphasis and three invisible characters.
+   A markup dialect nobody listed — an HTML tag, a table pipe, a footnote marker —
+   is not collapsed. That is an enumeration on the fail-OPEN side, and it is named
+   here rather than discovered: it is bounded and auditable (one function, four
+   regexes), and the UNION means a missing entry costs coverage of this class and
+   can never cost a claim that was already detected.
+5. **§ 19b is an ENGLISH rule about the article**, and Hebrew has no indefinite
+   article. It works on Hebrew fillers in front of ENGLISH participles — which is
+   the case § 18 left open and this closes — because the participle and its object
+   are English. A hypothetical Hebrew participle register would need a different
+   discriminator, and Hebrew declares `completionParticiples: []`, so there is
+   nothing to reach today.
+6. **Everything in § 17.8's corrected list still stands**, and residuals 11–15 there
+   are this section's own additions to it.
+
+### 19.7 The pattern, for the sixth time
+
+§ 16.6 named it after three findings and §§ 17 and 18 confirmed it twice more:
+**each fix generalises one axis and hand-lists the next, and the hand-listed axis
+comes out exactly as wide as its author's imagination.** § 19 is that pattern
+arriving at a level nobody had looked at — not a missing VALUE on a declared axis,
+which is what § 18 was, but a missing AXIS. Every adversarial dimension in this
+repository varied TOKENS, and the defect lived in the whitespace between them.
+
+The generative answer is `SPLIT_FRAME_MATRIX` and it is the right one for this
+class. The general point is unchanged and unclosed: **an axis nobody declared is
+exactly as invisible as a fixture nobody wrote**, and `CLAIMS THAT LEAKED PAST THE
+GATE : 0` should still be read as what it is — a statement about the sentences, and
+now the layouts, somebody thought of.
+
+### 19.8 Final validation — every command run for real, sequentially, on this tree
+
+Same host as §§ 17.9 and 18.8 (`linux/x64`, node v22.14.0, WSL2, memory
+constrained). One at a time; the sweep never concurrent with the suite. **No model
+was called, pulled or run. No `eval:*`, no `demo:local`, no `llm:probe`, no
+`llm:smoke`, no network call to any model host. No model default was changed.
+Nothing was merged anywhere.**
+
+| # | Command | Result | Exit |
+|---|---|---|---|
+| 1 | `npm run typecheck` | PASS, no output | 0 |
+| 2 | `npm run test` | PASS — **67 files passed, 1 skipped (68); 1,736 tests passed, 2 skipped (1,738)**; 283.52s | 0 |
+| 3 | `npm run qa:sweep` | **PASS** — 1,127 scenarios, 12,084 applicable checks (22,068 evaluated), **0 violations**, **0 network attempts**, 209.2s | 0 |
+| 4 | `npm run qa:claim-gate-latency -- --runs 600` | see below | 0 |
+
+#### Against the tree independent QA measured
+
+| | QA's tree | this tree | |
+|---|---:|---:|---|
+| test files | 67 passed / 1 skipped | **67 / 1** | = ✅ |
+| tests | 1,654 passed / 2 skipped | **1,736 / 2** | +82, none removed ✅ |
+| sweep scenarios | 1,067 | **1,127** | +60 ✅ |
+| applicable checks | 11,233 | **12,084** | ✅ |
+| INV-18 applicable | 4,464 | **4,760** | ✅ |
+| violations | 0 | **0** | = ✅ |
+| network attempts | 0 | **0** | = ✅ |
+| texts released / asserting something | 2,130 / 208 | **2,250 / 256** | ✅ |
+| releases WITHHELD | 4 | **4** | = ✅ |
+| the 4 wordings QA drove end to end | **4 released and PERSISTED** | **4 withheld, regenerated, never persisted** | ✅ |
+| QA's 13 pure-detector probe lines | **13 LEAK** | **12 detected, 1 is the `Booked.` limit** | ✅ |
+| QA's 10 telegraphic wordings | **10 LEAK** | **0 leak (50 wording × claim crosses)** | ✅ |
+
+**Every pre-existing test still passes and no existing expectation was weakened.**
+The +82 are additions. One committed expectation MOVED and it is recorded rather
+than absorbed: `DOCUMENTED_MISSES`'s `לא צריך יותר meeting booked for Thursday at
+2pm.` is now DETECTED, the corpus failed on it by name, and it has moved to
+`MUST_FLAG` — which is the third time that table has reported its own fix.
+
+#### Latency — the one number that moved, stated rather than buried
+
+| sample | § 17.9 | this tree | |
+|---|---:|---:|---|
+| `en-realistic-claim` (162 chars) | 0.084 ms | **0.157 ms** | +0.073 ms |
+| `mixed-worst-case-7402` (7,402 chars) | 3.986 ms | **9.624 ms** | **2.4×** |
+| gate overhead on a whole turn, asserts nothing | — | **+16.7 ms p50** | unchanged in kind |
+
+**The worst case is 2.4× and the cause is exactly the fix: up to three passes over
+the text instead of one.** The first pass is what it always was; the § 19(a) bridge
+adds one analysis per ADJACENT PAIR that a non-whitespace terminator divides; the
+§ 19(c) flattened view repeats the whole thing when there is layout to collapse.
+The worst-case sample is 7,402 characters of nothing but claim-bearing sentences,
+which is the shape that maximises all three.
+
+**It is reported rather than optimised away, and the reason is a judgement call
+worth stating.** 9.6 ms is on the LONGEST turn in the committed benchmark, against
+a provider round trip of 700–2,000 ms in the same evidence — three orders of
+magnitude larger — and a realistic 162-character reply costs 0.157 ms. The obvious
+optimisation is to bridge only a WINDOW of tokens either side of each cut rather
+than the whole pair. That would bound the per-pair cost, and it would do it by
+truncating the context a suppressor is found in, which is the half of this gate
+that six findings have been about. **Trading a correctness property that is hard to
+argue for a latency that does not matter is the wrong trade**, so the bound is not
+added and the number is published instead.
+
+#### The honest note this section owes, for the sixth time
+
+**`npm run qa:sweep` printed `RESULT: PASS`, `INV-18 4464/4464`, `CLAIMS THAT
+LEAKED PAST THE GATE : 0` and `DETECTOR_BLIND 0` while four wordings of this defect
+were live** — releasing false bookings to callers and writing them to the
+transcript — **and nine more markdown layouts leaked on the pure detector in the
+same state.**
+
+**The reason is the same one § 18.8 gave and it has not been fixed, because it
+cannot be by this mechanism**: the oracle can only judge a sentence somebody
+DECLARED, and nobody had declared `Your meeting is\nbooked for Thursday at 2pm.`
+§ 17.8 residual 1 said that in advance and § 18.7 restated it.
+
+**What is new this time is one level further down, and it is the more useful
+lesson.** The previous five findings were missing VALUES on axes the generator
+already had. This one was a missing AXIS: every adversarial dimension in this
+repository varied TOKENS — joiners, fillers, adverbs, voice, tense, person, locale
+— and the defect lived in the whitespace between them. § 17.6's claim to be
+"generative along every axis QA has used so far" was true of the axes it had and
+blind to the one it did not.
+
+So the answer taken here is deliberately not "add the missing layouts". It is the
+operator's: **state the rule at the level of the axis — the gate may look at the
+text through several views, and a view may only ever ADD suspicion** — and then
+make formatting a generated axis of the matrix, of the sweep and of the independent
+oracle, so the next shape of it is mechanical rather than remembered. That closes
+this class. It does not close the general one, and `CLAIMS THAT LEAKED PAST THE
+GATE : 0` should still be read as what it is: a statement about the sentences, the
+layouts, and now the views somebody thought of.

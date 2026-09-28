@@ -58,6 +58,19 @@ import {
   F18_NOT_AT_ALL_I_WILL_CALL,
   F18_NOT_AT_ALL_WE_HAVE_BOOKED,
   F18_NOTHING_ELSE_MEETING_IS_BOOKED,
+  F19_BULLET_LAYOUT,
+  F19_HAS_BEEN_LINE_BREAK,
+  F19_ILL_CALL_LINE_BREAK,
+  F19_IS_BOOKED_CRLF,
+  F19_IS_BOOKED_LINE_BREAK,
+  F19_LABEL_LAYOUT,
+  F19_SEMICOLON_IN_FRAME,
+  F19_SPACE_CONTROL,
+  F19_TELEGRAPHIC_NEED_TO_DO,
+  F19_TELEGRAPHIC_YOU_HAVE_NOTHING,
+  F19_EXPLODED_ONE_WORD_PER_LINE,
+  F19_NUMBERED_LIST,
+  F19_SOFT_HYPHEN_IN_VERB,
 } from '../invariants/pastFindingTexts.js';
 import { createSliceHarness, type SliceHarness } from './support.js';
 
@@ -1697,6 +1710,272 @@ describe('an unsupported claim behind an all-carrier reassurance filler', () => 
       expect(ran.turn.claimGate.releases.at(-1)?.outcome, control).toBe('NO_MATERIAL_CLAIM');
       expect(await persistedAgentText(ran), control).toEqual([control]);
       expect(ran.harness.llm.callCount, control).toBe(1);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 8b2. § 19: a sentence terminator standing INSIDE the completion frame.
+// ---------------------------------------------------------------------------
+
+/**
+ * THE SIXTH FINDING, THROUGH THE REAL FRONT DOOR.
+ *
+ * `readSentences` cuts on every `SENTENCE_TERMINATORS` character BEFORE any
+ * completion form is looked for, and every English completion form is a
+ * multi-token FRAME - so a cut landing inside one made the frame unmatchable at
+ * any gap bound. The gap rule tolerates intervening TOKENS; a cut is not a token,
+ * it is the segmentation the gap rule runs inside.
+ *
+ * Independent QA drove the first four of these through this same harness against
+ * real SQLite: released to the caller, persisted as a spoken AGENT row, meetings 0,
+ * futureActions 0, `outcome=NO_MATERIAL_CLAIM`. The SPACED control of each - the
+ * same bytes with a space where the break is - was withheld and regenerated in the
+ * same run, which is what separates a segmentation defect from a missing lexicon
+ * entry: every one of these frames IS in the lexicon and IS detected one character
+ * away.
+ */
+const SPLIT_FRAME_LEAKS: readonly {
+  readonly label: string;
+  readonly declared: DeclaredText;
+  readonly reason: string;
+  readonly utterance: string;
+  readonly world?: { readonly contactTimezone: string };
+}[] = [
+  {
+    label: 'S1 MEETING: a hard wrap between `is` and `booked` - QA drove this end to end',
+    declared: F19_IS_BOOKED_LINE_BREAK,
+    reason: 'NO_MATCHING_EFFECT',
+    utterance: 'Thanks for sorting that.',
+  },
+  {
+    label: 'S2 MEETING: the SECOND seam of the passive perfect, so the class is not one seam wide',
+    declared: F19_HAS_BEEN_LINE_BREAK,
+    reason: 'NO_MATCHING_EFFECT',
+    utterance: 'Thanks for sorting that.',
+  },
+  {
+    label: 'S3 MEETING: the same wrap as CRLF, which is how this repository checks out',
+    declared: F19_IS_BOOKED_CRLF,
+    reason: 'NO_MATCHING_EFFECT',
+    utterance: 'Thanks for sorting that.',
+  },
+  {
+    // A COMMITTED promise and the shortest possible first segment - one contracted
+    // token - so the class is shown not to be one mode or one frame length wide.
+    label: 'S4 CALLBACK: a wrap straight after the contraction',
+    declared: F19_ILL_CALL_LINE_BREAK,
+    reason: 'NO_MATCHING_EFFECT',
+    utterance: 'Thanks, could someone ring me?',
+  },
+  {
+    // THE LAYOUT HALF, AND THE PART THAT MATTERS. No auxiliary anywhere: this is
+    // the bare participle keeping its domain object across the cut.
+    label: 'S5 MEETING: a label and its value on two lines',
+    declared: F19_LABEL_LAYOUT,
+    reason: 'NO_MATCHING_EFFECT',
+    utterance: 'Where are we?',
+  },
+  {
+    label: 'S6 MEETING: two markdown bullets, and no final full stop',
+    declared: F19_BULLET_LAYOUT,
+    reason: 'NO_MATCHING_EFFECT',
+    utterance: 'Where are we?',
+  },
+  {
+    // THE PUNCTUATION HALF. The finding is about segmentation and not about
+    // whitespace, and a semicolon proves that without a line break anywhere.
+    label: 'S7 MEETING: a semicolon inside the frame',
+    declared: F19_SEMICOLON_IN_FRAME,
+    reason: 'NO_MATCHING_EFFECT',
+    utterance: 'Thanks for sorting that.',
+  },
+  {
+    label: 'S8 MEETING: the § 19b telegraphic register, a modal reaching a bare participle',
+    declared: F19_TELEGRAPHIC_NEED_TO_DO,
+    reason: 'NO_MATCHING_EFFECT',
+    utterance: 'Is there anything I need to do?',
+  },
+  {
+    label: 'S9 MEETING: the same register with the negator close enough to reach it itself',
+    declared: F19_TELEGRAPHIC_YOU_HAVE_NOTHING,
+    reason: 'NO_MATCHING_EFFECT',
+    utterance: 'Is there anything I need to do?',
+  },
+  {
+    // THE SHAPE THE PAIR-WISE BRIDGE CANNOT REACH BY CONSTRUCTION. This is the spec
+    // that fails if the flattened view is ever dropped.
+    label: 'S10 MEETING: a frame spread over THREE segments, one word per line',
+    declared: F19_EXPLODED_ONE_WORD_PER_LINE,
+    reason: 'NO_MATCHING_EFFECT',
+    utterance: 'Where are we?',
+  },
+  {
+    label: 'S11 MEETING: a NUMBERED list, where the marker is a full stop after a digit',
+    declared: F19_NUMBERED_LIST,
+    reason: 'NO_MATCHING_EFFECT',
+    utterance: 'Where are we?',
+  },
+  {
+    label: 'S12 MEETING: an invisible SOFT HYPHEN inside the participle',
+    declared: F19_SOFT_HYPHEN_IN_VERB,
+    reason: 'NO_MATCHING_EFFECT',
+    utterance: 'Thanks for sorting that.',
+  },
+];
+
+describe('an unsupported claim with a sentence terminator inside the frame', () => {
+  const HONEST_EN = 'Nothing is arranged yet. What time would suit you?';
+
+  for (const leak of SPLIT_FRAME_LEAKS) {
+    it(`is withheld, regenerated and never persisted: ${leak.label}`, async () => {
+      const ran = await run(
+        `gate-split-frame-${SPLIT_FRAME_LEAKS.indexOf(leak)}`,
+        [{ assistantText: leak.declared.text }, { assistantText: HONEST_EN }],
+        leak.utterance,
+      );
+
+      const release = ran.turn.claimGate.releases[0];
+      expect(release?.outcome).toBe('CORRECTED_AFTER_REGENERATION');
+      expect(release?.attempts[0]?.unsupportedClaims.map((entry) => entry.reason)).toContain(leak.reason);
+
+      // 1. it did not reach the caller.
+      expect(ran.turn.assistantText).toBe(HONEST_EN);
+      expect(ran.turn.assistantMessages).toEqual([HONEST_EN]);
+      // 2. it was not written to the transcript as a spoken agent turn.
+      expect(await persistedAgentText(ran)).toEqual([HONEST_EN]);
+      // 3. and the thing it claimed still does not exist.
+      const counts = await ran.harness.countDomainRows();
+      expect({ meetings: counts.meetings, futureActions: counts.futureActions }).toEqual({
+        meetings: 0,
+        futureActions: 0,
+      });
+
+      // 4. AND THE INDEPENDENT ORACLE SAYS THE SAME, without the gate.
+      const unbacked = unbackedDeclaredClaims(leak.declared.declares, {
+        effects: [],
+        issuedIdentifiers: new Set([ran.harness.world.contact.id.toLowerCase()]),
+        contactId: ran.harness.world.contact.id,
+        refusals: [],
+      });
+      expect(
+        unbacked.map((entry) => entry.reason),
+        `the oracle must independently say this sentence was not safe to say: ${leak.declared.declares.why}`,
+      ).toContain(leak.reason);
+    });
+  }
+
+  it('and the SPACED control of the canonical wording is blocked in the same way', async () => {
+    // THE OTHER HALF OF THE A/B, and it is what makes this a segmentation defect
+    // rather than a lexicon gap: the identical bytes with a SPACE where the break
+    // is were withheld and regenerated throughout, while S1 was released and
+    // persisted. If S1 ever fails again and this still passes, the verdict depends
+    // on a whitespace character.
+    const ran = await run(
+      'gate-split-frame-space-control',
+      [{ assistantText: F19_SPACE_CONTROL.text }, { assistantText: HONEST_EN }],
+      'Thanks for sorting that.',
+    );
+    expect(ran.turn.claimGate.releases[0]?.outcome).toBe('CORRECTED_AFTER_REGENERATION');
+    expect(ran.turn.assistantText).toBe(HONEST_EN);
+    expect(await persistedAgentText(ran)).toEqual([HONEST_EN]);
+  });
+
+  it('and the Hebrew layout - IMMUNE to the frame defect - is blocked too', async () => {
+    // THE CONTROL THAT LOCALISES THE DEFECT. Hebrew was never affected by the frame
+    // half of § 19, because `נקבעה` is one inflected word with no inside for a cut
+    // to land in - the same asymmetry § 16 used. This spec is what keeps that
+    // checkable: if the Hebrew layout ever starts leaking, the cause is not the
+    // frame rule.
+    const HONEST_HE = 'עדיין לא קבעתי כלום. באיזו שעה נוח לך?';
+    const ran = await run(
+      'gate-split-frame-he-layout',
+      [{ assistantText: 'הפגישה:\nנקבעה ליום חמישי בשעה 14:00.' }, { assistantText: HONEST_HE }],
+      'תודה שסידרת את זה.',
+      { world: JERUSALEM },
+    );
+    expect(ran.turn.claimGate.releases[0]?.outcome).toBe('CORRECTED_AFTER_REGENERATION');
+    expect(ran.turn.assistantText).toBe(HONEST_HE);
+    expect(await persistedAgentText(ran)).toEqual([HONEST_HE]);
+  });
+
+  it('and a TRUE claim with the wrap still in it is released byte-identical', async () => {
+    // THE PRECISION DIRECTION over the LEAKING shape itself. Closing a fail-open
+    // defect makes the gate see MORE claims, so a claim it now sees has to still go
+    // out untouched - line break and all - when the ledger supports it. Otherwise
+    // the fix has converted a leak into a regeneration loop on a wrapped true
+    // sentence, which is the same failure one direction over.
+    const TRUE_CLAIM = 'Your meeting is\nbooked for tomorrow at 3pm.';
+    const harness = await createSliceHarness({ label: 'gate-split-frame-supported' });
+    harnesses.push(harness);
+    const conversation = await harness.startConversation();
+    harness.llm.setScript([
+      {
+        assistantText: 'One moment while I get that in the diary.',
+        toolCalls: [
+          {
+            toolName: 'schedule_meeting',
+            argumentsJson: scriptedArgs({
+              contact_id: harness.world.contact.id,
+              when: 'tomorrow at 3pm',
+              title: 'Intro call',
+            }),
+          },
+        ],
+      },
+      { assistantText: TRUE_CLAIM },
+    ]);
+
+    const turn = await harness.runtime.agent.handleTurn({
+      conversationId: conversation.id,
+      utterance: 'Please book me in for tomorrow at 3pm.',
+    });
+
+    expect(turn.toolOutcomes[0]?.ok).toBe(true);
+    expect(turn.assistantText).toBe(TRUE_CLAIM);
+    expect(turn.claimGate.releases.at(-1)?.outcome).toBe('SUPPORTED');
+    expect(harness.llm.callCount).toBe(2);
+  });
+
+  it('and the § 19 precision controls are released in ONE provider call', async () => {
+    // THE CONSTRAINT THE FINDING NAMED BEFORE IT NAMED A DIRECTION: whatever crosses
+    // a cut for DETECTION must not also cross it for SUPPRESSION. Every sentence
+    // below is a truthful one with a terminator inside it, and each is the wording a
+    // model is SUPPOSED to produce when nothing is booked.
+    //
+    // SCRIPTED WITH NO SECOND ENTRY, so a regeneration fails the run outright rather
+    // than quietly consuming an attempt.
+    const CONTROLS: readonly { readonly text: string; readonly utterance: string; readonly hebrew: boolean }[] = [
+      { text: 'Nothing is\nbooked yet.', utterance: 'Is my meeting booked?', hebrew: false },
+      { text: 'Nothing is\r\nbooked yet.', utterance: 'Is my meeting booked?', hebrew: false },
+      { text: 'Nothing has been\nbooked yet.', utterance: 'Is my meeting booked?', hebrew: false },
+      { text: 'Your meeting is not\nbooked yet.', utterance: 'Is my meeting booked?', hebrew: false },
+      { text: 'Is your meeting\nbooked?', utterance: 'Where are we?', hebrew: false },
+      { text: 'Shall I get that\nbooked for you?', utterance: 'Can you book it?', hebrew: false },
+      { text: 'Let me get your meeting\nbooked for Thursday.', utterance: 'Can you book it?', hebrew: false },
+      { text: 'Nothing is arranged yet.\nWhat time would suit you?', utterance: 'Is it arranged?', hebrew: false },
+      { text: '- nothing is booked yet\n- what time would suit you?', utterance: 'Where are we?', hebrew: false },
+      { text: 'There is nothing you need to do, your meeting is not booked yet.', utterance: 'Where are we?', hebrew: false },
+      { text: 'Let me have your meeting booked.', utterance: 'Can you book it?', hebrew: false },
+      { text: 'Nothing\nis\nbooked yet.', utterance: 'Is my meeting booked?', hebrew: false },
+      { text: '1. nothing is booked yet\n2. what time would suit you?', utterance: 'Where are we?', hebrew: false },
+      { text: 'Let me get\nyour meeting\nbooked for Thursday.', utterance: 'Can you book it?', hebrew: false },
+      { text: '**Nothing** is booked yet.', utterance: 'Is my meeting booked?', hebrew: false },
+      { text: 'הפגישה\nלא נקבעה עדיין.', utterance: 'הפגישה נקבעה?', hebrew: true },
+      { text: 'עוד לא קבעתי כלום.\nמה השעה שמתאימה לך?', utterance: 'הפגישה נקבעה?', hebrew: true },
+    ];
+
+    for (const control of CONTROLS) {
+      const ran = await run(
+        `gate-split-frame-control-${CONTROLS.indexOf(control)}`,
+        [{ assistantText: control.text }],
+        control.utterance,
+        control.hebrew ? { world: JERUSALEM } : {},
+      );
+      expect(ran.turn.assistantText, control.text).toBe(control.text);
+      expect(ran.turn.claimGate.releases.at(-1)?.outcome, control.text).toBe('NO_MATERIAL_CLAIM');
+      expect(await persistedAgentText(ran), control.text).toEqual([control.text]);
+      expect(ran.harness.llm.callCount, control.text).toBe(1);
     }
   });
 });
