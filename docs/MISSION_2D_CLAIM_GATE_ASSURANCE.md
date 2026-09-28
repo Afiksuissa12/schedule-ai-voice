@@ -52,6 +52,20 @@ the gate task, I asked twice and got no answer, and I told them I would not edit
 it unilaterally. The exact replacement text is in § 7 and was sent to them marked
 *required before merge*.
 
+> **RESOLVED 2026-09-28, and § 7 has the detail** — both lines corrected and the
+> guard test written, by the independent-oracle task, which owns that file.
+>
+> **AND THE HEADLINE OF THIS SECTION DID NOT SURVIVE CONTACT.** *"The gate works,
+> it is not vacuous, it is wired everywhere, and nothing leaked"* was written in
+> good faith on a real 887-scenario run, and **four fail-open defects were live in
+> the module underneath it** — the first of them, § 5.2's clause-scope finding,
+> already named in this very document as a HIGH-severity false negative. The
+> number that said "nothing leaked" could not see any of the four, and § 2.2
+> explained why in terms that were correct and insufficient. **§ 10 is what was
+> done about that**, and § 10.4 is what it still does not close. A reader reaching
+> this page for a guarantee should read § 10.4 and
+> `docs/MISSION_2D_CLAIM_GATE.md` § 17.8 before the sentence above.
+
 ---
 
 ## 1. What I built
