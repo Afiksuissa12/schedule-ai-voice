@@ -824,6 +824,23 @@ the guard is written to print **case ids only** even when it does fail, so a red
 handed over a sentence. Nothing was read out of `loadVerifierCorpus()` except by explicit id, and every
 id came from a dev-split run's own output.
 
+**Validation run for real, sequentially, on the final tree, none of it alongside a model run.** § 12
+is the regression task's and this is not a substitute for it; these are the numbers for the commands
+this task was told to run.
+
+| Command | Result |
+| --- | --- |
+| `npm run typecheck` | clean |
+| `npm run build` | clean |
+| `npm run test` | **2,484 passed, 2 skipped; 86 files passed, 1 skipped.** `tests/eval/verifierAntiOverfitting.test.ts` green throughout. **No pre-existing test was changed, skipped or weakened by this task** — the only test file it touched is the new `tests/agent/semanticSegmentation.test.ts` (32 assertions) |
+| `npm run qa:sweep` | **RESULT: PASS.** 1,171 of 1,171 scenarios, 17 invariants, **0 violations**, 0 network attempts, 2,322 gate releases, 20 withheld, **0 leaked claims** |
+| `npm run check:anti-scripting` | **PASS**, 3,056 string literals examined, one pre-existing allowance in `src/agent/prompt/clauses.ts` and no new one. The non-vacuity self-test fired all five rules |
+| `npm run llm:mapcheck` (not required, run anyway) | PASS, 93 checks, 0 failures — the verifier's JSON Schema, `temperature: 0` and the fixed seed still reach Ollama's request body under the rewritten instruction |
+
+`npm run qa:sweep` remains byte-identical because it wires a rule-less double, which is a statement
+about the sweep and not about production — `docs/MISSION_2F_SEMANTIC_VERIFIER.md` § 12 residual 1 and
+§ 12.2 already say so, and this change does not alter that.
+
 **The one thing a reader should discount this section for.** It is this task's own account of its own
 conduct. What makes it checkable is not its tone: it is `git diff` against the merge base, the
 `split` field and the file name on both committed artefacts, and the anti-overfitting guard being a
