@@ -22,11 +22,18 @@ import {
   buildMetrics,
   recoverToolCallsFromText,
   toCompleteTurnResult,
+  toOllamaChatRequest,
   toOllamaMessage,
   toOllamaMessages,
   toOllamaTool,
   unwrapToolNameParametersWrapper,
 } from '../ollama/mapping.js';
+import {
+  SEMANTIC_VERIFIER_SEED,
+  SEMANTIC_VERIFIER_TEMPERATURE,
+} from '../../agent/claimGate/semantic/llmSemanticClaimVerifier.js';
+import { SEMANTIC_VERIFIER_INSTRUCTION } from '../../agent/claimGate/semantic/instruction.js';
+import { SEMANTIC_VERIFIER_OUTPUT_JSON_SCHEMA } from '../../agent/claimGate/semantic/schema.js';
 import { NdjsonLineAssembler } from '../ollama/ndjson.js';
 import {
   AYA_RECORDED_ASSISTANT_TEXTS,
@@ -678,6 +685,81 @@ main(async () => {
     checks.ok(
       'the reconstructions match the character counts the transcripts recorded',
       AYA_RECORDED_ASSISTANT_TEXTS.every((entry) => entry.assistantText.length === entry.recordedChars),
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  heading('15. MISSION 2F: constrained structured output and the determinism controls');
+  {
+    // WHY THIS SECTION IS HERE AND NOT ONLY IN A VITEST FILE. Both exist, and they
+    // answer to different readers: `tests/llm/ollamaRequestShape.test.ts` is the
+    // regression net, and this is what an OPERATOR runs to see - with the network
+    // trap armed at the top of this file - that the semantic claim verifier's
+    // determinism story is a property of the request BODY rather than a paragraph
+    // in a document. The documentation task quotes these facts, so they are proven
+    // somewhere re-runnable.
+    const ordinary = toOllamaChatRequest({
+      model: 'qwen2.5:7b-instruct',
+      systemPrompt: 'BE GOOD',
+      messages: [{ role: 'user', content: 'hi' }],
+      tools: [],
+      stream: false,
+      keepAlive: '5m',
+      temperature: 0.7,
+      numCtx: 8192,
+    });
+
+    // THE NEGATIVE FIRST, because it is what a reader should care most about: the
+    // CONVERSATIONAL turn's body is what it was before Mission 2F existed.
+    checks.equal('an ordinary turn sends NO `format` key at all', 'format' in ordinary, false);
+    checks.equal('and its `options` carry only what they always carried', Object.keys(ordinary.options ?? {}), [
+      'temperature',
+      'num_ctx',
+    ]);
+    checks.equal('and its configured temperature is untouched', ordinary.options?.['temperature'], 0.7);
+
+    const constrained = toOllamaChatRequest({
+      model: 'qwen2.5:7b-instruct',
+      systemPrompt: SEMANTIC_VERIFIER_INSTRUCTION,
+      messages: [{ role: 'user', content: 'Your meeting is booked for Thursday at 2pm.' }],
+      // NO TOOLS. The verifier cannot cause an effect even by accident.
+      tools: [],
+      stream: false,
+      keepAlive: '5m',
+      temperature: SEMANTIC_VERIFIER_TEMPERATURE,
+      numCtx: 8192,
+      seed: SEMANTIC_VERIFIER_SEED,
+      responseJsonSchema: SEMANTIC_VERIFIER_OUTPUT_JSON_SCHEMA,
+    });
+
+    checks.equal(
+      'the verifier’s JSON SCHEMA arrives in Ollama’s `format`',
+      constrained.format,
+      SEMANTIC_VERIFIER_OUTPUT_JSON_SCHEMA,
+    );
+    checks.equal('`options.temperature` is 0', constrained.options?.['temperature'], 0);
+    checks.equal('`options.seed` is the fixed constant', constrained.options?.['seed'], SEMANTIC_VERIFIER_SEED);
+    checks.equal('and NO tools are offered', 'tools' in constrained, false);
+
+    // The last shape anything in this repository can observe: `client.ts` sends
+    // `JSON.stringify({ ...request, stream: false })`.
+    const wire = JSON.parse(JSON.stringify({ ...constrained, stream: false })) as {
+      format?: unknown;
+      options?: Record<string, unknown>;
+    };
+    checks.equal(
+      'all three survive JSON.stringify onto the wire',
+      { format: wire.format, temperature: wire.options?.['temperature'], seed: wire.options?.['seed'] },
+      { format: SEMANTIC_VERIFIER_OUTPUT_JSON_SCHEMA, temperature: 0, seed: SEMANTIC_VERIFIER_SEED },
+    );
+
+    // And it really is the STRICT schema rather than the weaker `'json'` Ollama
+    // also accepts, which would ask only for well-formed JSON and would let an
+    // out-of-enum family through to be refused a layer later.
+    checks.equal(
+      'the schema forbids additional properties, so it constrains the SHAPE and not merely "an object"',
+      (SEMANTIC_VERIFIER_OUTPUT_JSON_SCHEMA as { additionalProperties?: boolean }).additionalProperties,
+      false,
     );
   }
 

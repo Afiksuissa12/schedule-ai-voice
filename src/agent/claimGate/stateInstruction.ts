@@ -98,6 +98,22 @@ export function buildStateInstruction(input: BuildStateInstructionInput): string
       'asserted the following, and the records above do not support it.',
   );
   for (const entry of input.unsupported) {
+    // MISSION 2F. A fail-closed SECOND-LAYER entry is not a claim anybody found,
+    // so reporting it in the "you asserted X" shape would tell the model
+    // something false about its own previous turn - and a model handed a false
+    // premise argues with it, which is the § 6.5.4 behaviour this gate exists to
+    // stop rather than to provoke. It gets its own line, which says exactly what
+    // happened and what that means for what the model must now do.
+    if (entry.reason === 'SEMANTIC_CHECK_UNAVAILABLE') {
+      const layer = entry.detail.semanticLayer;
+      lines.push(
+        `  - the independent second check on the previous version did not complete ` +
+          `(${layer?.outcome ?? 'UNKNOWN'}${layer?.reason ? `: ${layer.reason}` : ''}). ` +
+          'Nothing about what that version asserted could be confirmed, so none of it may stand. ' +
+          'State only what the records above show.',
+      );
+      continue;
+    }
     lines.push(`  - asserted ${entry.claim.family} ${entry.claim.mode}; reason ${entry.reason}${describeDetail(entry)}`);
   }
 

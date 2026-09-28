@@ -49,7 +49,7 @@ import type {
 } from '../ports/llm.js';
 import { ConfigurationError } from '../shared/errors.js';
 import { OllamaClient, type OllamaClientOptions } from './ollama/client.js';
-import { toCompleteTurnResult, toOllamaMessages, toOllamaTool } from './ollama/mapping.js';
+import { toCompleteTurnResult, toOllamaChatRequest } from './ollama/mapping.js';
 import type { OllamaChatChunk, OllamaChatRequest, OllamaShowResponse } from './ollama/wire.js';
 
 /**
@@ -122,6 +122,20 @@ export const DEFAULT_LOCAL_LLM_NUM_CTX = 8192;
 /** Keep the model resident between turns; reloading costs seconds. */
 export const DEFAULT_LOCAL_LLM_KEEP_ALIVE = '5m';
 
+/**
+ * No seed unless a caller asks for one, and the omission is deliberate.
+ *
+ * Sending a fixed seed on every conversational turn would make the agent repeat
+ * itself across calls in a way nobody asked for, and Ollama's own default
+ * (a fresh seed per request) is the right behaviour for natural dialogue. The one
+ * caller that needs a pinned seed is the semantic claim verifier, and it asks per
+ * request through `CompleteTurnRequest.determinism`.
+ *
+ * `null` rather than `undefined` so "no seed configured" is a value this file
+ * states rather than a field a reader has to notice is missing.
+ */
+export const DEFAULT_LOCAL_LLM_SEED: number | null = null;
+
 export interface LocalLlmProviderOptions {
   readonly baseUrl?: string;
   readonly model?: string;
@@ -131,6 +145,16 @@ export interface LocalLlmProviderOptions {
   readonly numCtx?: number;
   /** Cap on generated tokens. Sent as Ollama's `num_predict`. Unset means the model's default. */
   readonly maxOutputTokens?: number;
+  /**
+   * A fixed RNG seed for EVERY request this provider makes. Sent as Ollama's
+   * `options.seed`.
+   *
+   * Unset is the default and is right for conversation - see
+   * `DEFAULT_LOCAL_LLM_SEED`. A per-request `CompleteTurnRequest.determinism.seed`
+   * overrides this one, so a provider shared between the agent and the semantic
+   * verifier can be unseeded for the first and seeded for the second.
+   */
+  readonly seed?: number;
   /** How long Ollama keeps the model resident after a request, e.g. `5m`, `0`. */
   readonly keepAlive?: string;
   readonly timeoutMs?: number;
@@ -171,6 +195,7 @@ export class LocalLlmProvider implements LlmProvider {
   private readonly maxOutputTokens: number | undefined;
   private readonly keepAlive: string;
   private readonly streamByDefault: boolean;
+  private readonly seed: number | undefined;
 
   /**
    * Runtime detail from `/api/show`, fetched lazily on the first turn and then
@@ -226,6 +251,7 @@ export class LocalLlmProvider implements LlmProvider {
     this.maxOutputTokens = options.maxOutputTokens;
     this.keepAlive = options.keepAlive ?? DEFAULT_LOCAL_LLM_KEEP_ALIVE;
     this.streamByDefault = options.streamByDefault ?? false;
+    this.seed = options.seed ?? DEFAULT_LOCAL_LLM_SEED ?? undefined;
   }
 
   /**
@@ -250,6 +276,21 @@ export class LocalLlmProvider implements LlmProvider {
   }
 
   supportsStreaming(): boolean {
+    return true;
+  }
+
+  /**
+   * Yes: Ollama's `/api/chat` takes a JSON Schema in `format` and a seed in
+   * `options.seed`, and `buildRequest` below puts them there.
+   *
+   * WHAT THIS DOES AND DOES NOT ASSERT. It asserts that the constraint REACHES
+   * the runtime - which is a property of this file and is tested on the request
+   * body. It does not assert that the runtime always obeys it: constrained
+   * decoding is a sampler-level guarantee about token choice, not a proof about
+   * the finished document, and a caller must still validate. The semantic claim
+   * verifier does, and treats a validation failure as UNSUPPORTED.
+   */
+  supportsStructuredOutput(): boolean {
     return true;
   }
 
@@ -318,20 +359,33 @@ export class LocalLlmProvider implements LlmProvider {
 
   // -------------------------------------------------------------------------
 
+  /**
+   * Resolve this provider's configuration against the caller's per-request
+   * asks, and hand the result to the pure mapper.
+   *
+   * THE PRECEDENCE IS THE REQUEST, AND IT IS ONE-WAY. A request that says
+   * nothing gets exactly the configured behaviour, which is what keeps every
+   * call site that existed before Mission 2F byte-identical - no `format` key,
+   * no `seed` key, same `options`. A request that DOES ask pins that one turn
+   * and nothing else: there is no way for a caller to change this provider's
+   * configuration, only to override it for the request in its hand.
+   */
   private buildRequest(req: CompleteTurnRequest, stream: boolean): OllamaChatRequest {
-    return {
+    const seed = req.determinism?.seed ?? this.seed;
+    return toOllamaChatRequest({
       model: this.model,
-      messages: toOllamaMessages(req.systemPrompt, req.messages),
+      systemPrompt: req.systemPrompt,
+      messages: req.messages,
+      tools: req.tools,
       stream,
-      ...(req.tools.length > 0 ? { tools: req.tools.map(toOllamaTool) } : {}),
-      keep_alive: this.keepAlive,
-      options: {
-        temperature: this.temperature,
-        num_ctx: this.numCtx,
-        ...(this.topP !== undefined ? { top_p: this.topP } : {}),
-        ...(this.maxOutputTokens !== undefined ? { num_predict: this.maxOutputTokens } : {}),
-      },
-    };
+      keepAlive: this.keepAlive,
+      temperature: req.determinism?.temperature ?? this.temperature,
+      numCtx: this.numCtx,
+      topP: this.topP,
+      maxOutputTokens: this.maxOutputTokens,
+      seed,
+      ...(req.responseJsonSchema !== undefined ? { responseJsonSchema: req.responseJsonSchema } : {}),
+    });
   }
 
   private async finish(

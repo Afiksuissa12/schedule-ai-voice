@@ -22,6 +22,31 @@
  *     a token boundary. `ScriptedLlmProvider` and `OpenAiLlmProvider` simply
  *     never set it.
  *
+ * Mission 2F adds a third, in the same shape and for the same reason:
+ *
+ *   - CONSTRAINED STRUCTURED OUTPUT (`CompleteTurnRequest.responseJsonSchema`)
+ *     and PER-REQUEST DETERMINISM (`CompleteTurnRequest.determinism`). Both
+ *     optional fields on the REQUEST, so every existing caller compiles
+ *     untouched and every existing provider keeps its current behaviour
+ *     byte-for-byte when they are absent. A caller that needs the schema to be
+ *     HONOURED rather than ignored asks `isStructuredOutputLlmProvider` first,
+ *     exactly as a caller that wants deltas asks `isStreamingLlmProvider`.
+ *
+ *     WHY A REQUEST FIELD AND NOT A PROVIDER OPTION. The semantic claim
+ *     verifier (`src/agent/claimGate/semantic/`) and the conversational agent
+ *     share one provider instance in the local-brain wiring, and they want
+ *     opposite things from it: the agent wants free-running natural language and
+ *     the verifier wants one JSON object in a fixed shape at temperature 0 with
+ *     a fixed seed. A provider-level setting cannot express that, and two
+ *     provider instances would double the resident model. So the constraint
+ *     travels with the request that needs it.
+ *
+ *     WHAT THE PORT DELIBERATELY DOES NOT PROMISE. Honouring a schema is a
+ *     capability, not a guarantee about the bytes: a provider may constrain
+ *     decoding and still return something that fails validation, and the caller
+ *     must validate anyway. `src/agent/claimGate/semantic/schema.ts` does, and
+ *     treats any failure as UNSUPPORTED rather than as clean.
+ *
  * Implementations live in `src/llm`.
  */
 
@@ -104,10 +129,52 @@ export interface LlmToolDefinition {
   readonly parametersJsonSchema: unknown;
 }
 
+/**
+ * Sampling controls a CALLER is entitled to pin for one request.
+ *
+ * Both fields are optional and an absent field means "leave the provider's own
+ * configuration alone" - never "use the port's idea of a default". There is no
+ * default here on purpose: a default in a port is a policy, and the policy about
+ * what temperature this agent runs at already lives in
+ * `src/llm/localLlmProvider.ts` and `src/config/env.ts`.
+ *
+ * WHAT THIS CAN AND CANNOT BUY, stated here because the semantic verifier
+ * records it as a determinism control and a reader will want the honest bound.
+ * `temperature: 0` and a fixed `seed` remove the SAMPLER as a source of
+ * variation. They do not make a local runtime bit-reproducible: batching,
+ * GPU kernel non-determinism, quantisation, a runtime upgrade and a model swap
+ * all remain, and none of them is visible from here.
+ */
+export interface LlmDeterminismControls {
+  /** 0 asks for greedy decoding. */
+  readonly temperature?: number;
+  /** A fixed RNG seed, where the runtime supports one. */
+  readonly seed?: number;
+}
+
 export interface CompleteTurnRequest {
   readonly systemPrompt: string;
   readonly messages: ReadonlyArray<LlmMessage>;
   readonly tools: ReadonlyArray<LlmToolDefinition>;
+  /**
+   * OPTIONAL. A JSON Schema the assistant's TEXT must conform to.
+   *
+   * `unknown` for the same reason `LlmToolDefinition.parametersJsonSchema` is:
+   * no JSON-Schema library may leak into a port. A provider that does not
+   * support this ignores it, which is why a caller that needs it honoured asks
+   * `isStructuredOutputLlmProvider` first.
+   *
+   * It constrains the assistant CHANNEL only. It says nothing about tool calls,
+   * and a caller wanting structured output and no actions passes `tools: []`.
+   */
+  readonly responseJsonSchema?: unknown;
+  /**
+   * OPTIONAL. Sampling controls for THIS request only.
+   *
+   * Absent leaves the provider exactly as configured, which is what keeps every
+   * existing call site byte-identical.
+   */
+  readonly determinism?: LlmDeterminismControls;
 }
 
 /**
@@ -266,6 +333,18 @@ export interface LlmProvider {
    * does with the answer.
    */
   completeTurnStreaming?(req: CompleteTurnRequest, onDelta: LlmStreamHandler): Promise<CompleteTurnResult>;
+
+  /**
+   * OPTIONAL. Declares that this provider will HONOUR
+   * `CompleteTurnRequest.responseJsonSchema` and
+   * `CompleteTurnRequest.determinism` rather than silently ignore them.
+   *
+   * Shaped exactly like `supportsStreaming`: a provider may implement the
+   * behaviour and still answer `false` - one configured against a backend that
+   * has no constrained-decoding endpoint, for instance - so the guard below
+   * checks what the provider SAYS and not merely what it defines.
+   */
+  supportsStructuredOutput?(): boolean;
 }
 
 /** An `LlmProvider` that has been proven to stream. Produced by the guard below. */
@@ -283,4 +362,22 @@ export interface StreamingLlmProvider extends LlmProvider {
  */
 export function isStreamingLlmProvider(provider: LlmProvider): provider is StreamingLlmProvider {
   return typeof provider.completeTurnStreaming === 'function' && provider.supportsStreaming?.() === true;
+}
+
+/** An `LlmProvider` that has said it will honour a response schema and a seed. */
+export interface StructuredOutputLlmProvider extends LlmProvider {
+  supportsStructuredOutput(): boolean;
+}
+
+/**
+ * Will this provider honour `responseJsonSchema` and `determinism`?
+ *
+ * Same discipline as `isStreamingLlmProvider`, and the same reason for it: the
+ * capability may depend on the provider's own configuration, which the caller
+ * has no business knowing. `ScriptedLlmProvider` and `OpenAiLlmProvider` declare
+ * nothing, so they answer `false` and no caller is misled into thinking a schema
+ * was enforced when it was not.
+ */
+export function isStructuredOutputLlmProvider(provider: LlmProvider): provider is StructuredOutputLlmProvider {
+  return provider.supportsStructuredOutput?.() === true;
 }

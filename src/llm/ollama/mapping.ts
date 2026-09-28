@@ -40,6 +40,7 @@ import type {
 import { ConfigurationError } from '../../shared/errors.js';
 import type {
   OllamaChatChunk,
+  OllamaChatRequest,
   OllamaRequestMessage,
   OllamaToolSpec,
   OllamaWireToolCall,
@@ -131,6 +132,79 @@ export function toOllamaMessages(
   messages: ReadonlyArray<LlmMessage>,
 ): OllamaRequestMessage[] {
   return [{ role: 'system' as const, content: systemPrompt }, ...messages.map(toOllamaMessage)];
+}
+
+/**
+ * Everything `toOllamaChatRequest` needs, already resolved.
+ *
+ * DELIBERATELY NOT `CompleteTurnRequest` PLUS A PROVIDER. This function takes
+ * values, not policy: `LocalLlmProvider` decides what the temperature and the
+ * seed for a given request ARE - reconciling its own configuration with the
+ * caller's `determinism` block - and this function only decides where they go on
+ * the wire. That split is what lets the body be asserted by a test with no
+ * provider, no clock and no network, which is the whole reason this module is
+ * pure (see `npm run llm:mapcheck`).
+ */
+export interface OllamaChatRequestInput {
+  readonly model: string;
+  readonly systemPrompt: string;
+  readonly messages: ReadonlyArray<LlmMessage>;
+  readonly tools: ReadonlyArray<LlmToolDefinition>;
+  readonly stream: boolean;
+  readonly keepAlive: string;
+  readonly temperature: number;
+  readonly numCtx: number;
+  readonly topP?: number | undefined;
+  readonly maxOutputTokens?: number | undefined;
+  /** Ollama's `options.seed`. Omitted when undefined - see the note below. */
+  readonly seed?: number | undefined;
+  /** Ollama's `format`. Omitted when undefined. */
+  readonly responseJsonSchema?: unknown;
+}
+
+/**
+ * One `/api/chat` request body, built from resolved values.
+ *
+ * WHY THIS MOVED OUT OF `LocalLlmProvider`
+ * ---------------------------------------------------------------------------
+ * It was a private method, so the only way to see what actually reached the wire
+ * was to run against Ollama. Mission 2F needs three properties PROVEN offline -
+ * that a JSON schema arrives in `format`, that `options.temperature` is 0, and
+ * that `options.seed` is the fixed value - because the semantic claim verifier's
+ * determinism story is a claim about the request body and nothing else. A private
+ * method cannot be asserted; a pure exported function can, by a unit test and by
+ * `npm run llm:mapcheck`, with the network trap armed.
+ *
+ * ABSENT KEYS ARE OMITTED, NOT SET TO `undefined`. On the wire the two are
+ * identical once `JSON.stringify` has run, and to a test asserting the body they
+ * are not. Omitting is also the only way to keep the CONVERSATIONAL turn's body
+ * byte-identical to what it was before this function existed: no `format`, no
+ * `seed`, `tools` present only when there are tools.
+ */
+export function toOllamaChatRequest(input: OllamaChatRequestInput): OllamaChatRequest {
+  return {
+    model: input.model,
+    messages: toOllamaMessages(input.systemPrompt, input.messages),
+    stream: input.stream,
+    ...(input.tools.length > 0 ? { tools: input.tools.map(toOllamaTool) } : {}),
+    keep_alive: input.keepAlive,
+    options: {
+      temperature: input.temperature,
+      num_ctx: input.numCtx,
+      ...(input.topP !== undefined ? { top_p: input.topP } : {}),
+      ...(input.maxOutputTokens !== undefined ? { num_predict: input.maxOutputTokens } : {}),
+      // Beside `temperature`, `top_p`, `num_ctx` and `keep_alive`, because that
+      // is where Ollama puts every sampler knob. A seed with a non-zero
+      // temperature is not determinism and this mapper does not pretend
+      // otherwise - it passes through what it was handed and the CALLER is
+      // responsible for asking for both.
+      ...(input.seed !== undefined ? { seed: input.seed } : {}),
+    },
+    // Ollama's own name for constrained decoding. A schema OBJECT here asks for
+    // that exact shape; the string 'json' would ask only for well-formed JSON,
+    // which is weaker and is not what any caller in this repository wants.
+    ...(input.responseJsonSchema !== undefined ? { format: input.responseJsonSchema } : {}),
+  };
 }
 
 function requireToolCallId(message: LlmMessage): string {

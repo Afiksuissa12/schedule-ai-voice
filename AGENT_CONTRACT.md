@@ -101,6 +101,10 @@ prints `(nothing)`, `src/app/localBrainDemo.ts` prints `(said nothing)`,
 interface ClaimGateTurnReport {
   enabled: boolean;                    // false only on a hand-wired service
   releases: ClaimGateRelease[];        // ONE per piece of text, in order
+  verifier?: {                         // Mission 2F. Always set by AgentTurnService
+    wired: boolean;                    // false is a VIOLATION, not a configuration
+    name: string | null;               // e.g. 'llm-semantic-claim-verifier'
+  };
 }
 
 interface ClaimGateRelease {
@@ -116,6 +120,16 @@ interface ClaimGateAttempt {
   text: string;                        // exactly what the model produced
   unsupportedClaims: UnsupportedClaim[];   // reason + machine-readable detail
   supportedClaimCount: number;
+  layers: {                            // Mission 2F. WHICH LAYER saw what
+    deterministicClaimCount: number;
+    semanticOutcome: 'CLASSIFIED' | 'MALFORMED' | 'TIMED_OUT'
+                   | 'UNAVAILABLE' | 'EMPTY' | 'ABSENT';
+    semanticClaimCount: number;        // contributing semantic claims only
+    unionClaimCount: number;           // always >= deterministicClaimCount
+    failClosed: boolean;               // true for every failure AND for ABSENT
+    sources: ('DETERMINISTIC' | 'SEMANTIC' | 'BOTH')[];   // one per union claim
+    semanticFailureReason: string | null;
+  };
 }
 ```
 
@@ -221,11 +235,22 @@ consulted and shows it is never reached for an invalid call.
 | `CLAIM_GATE_CLAIM_REJECTED` | `ClaimGate` — text asserted something the ledger does not support; NOT released |
 | `CLAIM_GATE_REGENERATION_REQUESTED` | `ClaimGate` — the authoritative state was handed back and the turn asked for again |
 | `CLAIM_GATE_TEXT_WITHHELD` | `ClaimGate` — every bounded attempt failed; nothing released, a person asked for |
+| `CLAIM_GATE_SEMANTIC_REQUESTED` | `ClaimGate` — the semantic claim verifier was asked about one proposed text (Mission 2F) |
+| `CLAIM_GATE_SEMANTIC_CLASSIFIED` | `ClaimGate` — it answered; carries its structured output verbatim |
+| `CLAIM_GATE_SEMANTIC_FAILED` | `ClaimGate` — malformed / timed out / unavailable / empty. Every one means the text was withheld |
+| `CLAIM_GATE_CLAIM_LAYERED` | `ClaimGate` — which LAYER caught which claim: `DETERMINISTIC`, `SEMANTIC` or `BOTH` |
 
-The four `CLAIM_GATE_*` types are in `AUDIT_EVENT_TYPES` (`src/audit/types.ts`),
+The eight `CLAIM_GATE_*` types are in `AUDIT_EVENT_TYPES` (`src/audit/types.ts`),
 validated by Zod on write and re-checked by `src/db/mappers.ts` on read.
 `AuditEvent.type` is a `String` column, so **no schema migration was needed** and
 `prisma/schema.prisma` is unchanged.
+
+The four Mission 2F types interleave with the original four on the **turn's own
+`correlationId`**, so one blocked attempt reads in order: the verifier was asked,
+the verifier answered or failed, which layer caught which claim, the
+reconciliation rejected it, a regeneration was requested. `src/app/auditReport.ts`
+renders the layer question as `summarizeChain().whichLayerCaughtIt`, beside the
+existing `whatWasSayable`.
 
 The chain for a follow-up turn, in order:
 
@@ -358,6 +383,17 @@ the next iteration. Fix the script; never the gate.
   `DueActionRunner` does, from the persisted payload. If a future product
   decision needs the full number in the context window, that is a decision, not
   a bug fix.
+- **A verifier outage hands off every CLAIMING turn to a human.** § 10A's
+  fail-closed matrix is the design, not a bug: a second layer that did not answer
+  is not a second layer that said the text was fine. A turn asserting nothing is
+  unaffected. Plan capacity for it rather than discovering it.
+- **The offline runtime's verifier double adds no suspicion at all.** `npm test`,
+  `npm run qa:sweep` and `npm run slice:demo` wire a rule-less
+  `RuleDrivenSemanticClaimVerifier`, so a green sweep is evidence the layered
+  PIPELINE holds — the layer is on every path, the union is additive, a fail-closed
+  verdict blocks — and it is **not** evidence that the semantic layer classifies
+  anything. That is the same caveat `docs/MISSION_2D_CLAIM_GATE.md` § 17.8
+  residual 1 already records about the independent oracle.
 - **The claim gate is a recall floor, not a proof.** § 10 lists what it catches.
   What it does NOT catch is in `docs/MISSION_2D_CLAIM_GATE.md` § 8 and is worth
   reading before trusting it: a bare participle used as a whole turn (`Booked.`),
@@ -422,7 +458,98 @@ string of its own - there is nothing in the module to emit.
 | `REGISTERED_CLAIM_LEXICONS` | `claimGate/lexicon/` | `en` + `he` as DATA behind a locale-agnostic engine |
 
 `UNSUPPORTED_CLAIM_REASONS` = `NO_MATCHING_EFFECT`, `EFFECT_WAS_REFUSED`,
-`WRONG_DAY`, `WRONG_TIME`, `INVENTED_IDENTIFIER`, `NO_TOOL_FOR_PROMISE`.
+`WRONG_DAY`, `WRONG_TIME`, `UNREADABLE_WHEN`, `INVENTED_IDENTIFIER`,
+`NO_TOOL_FOR_PROMISE`. Those are the reasons **the ledger** produces.
+`SEMANTIC_LAYER_UNSUPPORTED_REASONS` = `SEMANTIC_CHECK_UNAVAILABLE`, which is the
+one reason that is not a fact about the ledger, and
+`ALL_UNSUPPORTED_CLAIM_REASONS` is both. `UnsupportedClaimReason` is the union, so
+the type is unchanged for every existing consumer.
+
+---
+
+## 10A. The semantic claim verifier — the second LAYER of the same gate
+
+Mission 2F. `src/ports/claimVerifier.ts` and `src/agent/claimGate/semantic/`.
+
+**Why.** Eight successive independent QA rounds each found a phrasing shape the
+deterministic lexicon detector did not recognise, and each leaked a false success
+claim to a contact and persisted it with no effect behind it.
+`docs/MISSION_2D_CLAIM_GATE.md` § 17.8 states why the sequence does not terminate
+by itself: *the RULES over the lexicon are general now; the LEXICON is an open
+class, is not closeable by enumeration, and is the live fail-open surface.*
+
+**The order, for every customer-facing text including every regenerated attempt:**
+
+| # | Step | Where |
+|---|---|---|
+| 1 | deterministic detect | `detectMaterialClaims` — pure, free, unchanged |
+| 2 | semantic classify | `SemanticClaimVerifier.classify` — one provider call, **no tools**, JSON-schema-constrained, temperature 0, fixed seed, bounded deadline |
+| 3 | union, tagged by layer | `unionClaims` — provably ADDITIVE |
+| 4 | deterministic reconcile | the **existing** `verifyClaims`, given the union |
+| 5 | release byte-identical, or block and regenerate | unchanged: `MAX_CLAIM_GATE_REGENERATION_ATTEMPTS`, `buildStateInstruction`, `handOffAfterClaimGateExhaustion` |
+
+**The authority boundary is in the types.** The request carries only the text, an
+optional locale hint and a correlation id — no ledger, no database, no tool
+definitions, no clock, no effect-causing port. The result has **no field by which
+the verifier could say an effect exists or a claim is supported**: that vocabulary
+is only in `claimGate/verifier.ts`. `tests/invariants/verifierAuthorityBoundary.test.ts`
+asserts the same property as a transitive import walk over the whole directory.
+
+**It may only ADD.** `unionClaims` emits every deterministic claim entire, in
+order, **by object identity**, before it appends anything — for any verdict at all,
+including one that says every claim is clean, one that returns an empty list, and
+each of the four failures. A verifier saying `assertsEffect: false` for text the
+deterministic layer flagged still blocks it.
+
+**Fail-closed matrix.** `MALFORMED`, `TIMED_OUT`, `UNAVAILABLE`, `EMPTY` — and
+`ABSENT`, the declared test-only seam where no verifier is wired — each produce an
+UNSUPPORTED claim with reason `SEMANTIC_CHECK_UNAVAILABLE`, keep the reply away
+from the customer, run the existing bounded regeneration, and on exhaustion take
+the existing non-canned audited hand-off. **None is ever treated as clean.**
+
+> **So a verifier outage hands off every CLAIMING turn to a human.** That is the
+> fail-safe direction, stated here rather than discovered in production. A turn
+> that claims nothing is unaffected and is released normally.
+
+**The surface:**
+
+| Name | Where | What it is |
+|---|---|---|
+| `SemanticClaimVerifier` | `src/ports/claimVerifier.ts` | the port. ONE method, `classify` |
+| `SemanticClaimVerdict` | `src/ports/claimVerifier.ts` | `CLASSIFIED` \| `MALFORMED` \| `TIMED_OUT` \| `UNAVAILABLE` \| `EMPTY` |
+| `LlmSemanticClaimVerifier` | `claimGate/semantic/` | the real one, over an **injected** `LlmProvider` |
+| `ScriptedSemanticClaimVerifier` | `claimGate/semantic/` | a double: answers what a test dictates |
+| `RuleDrivenSemanticClaimVerifier` | `claimGate/semantic/` | a double: deterministic rules. **With no rules it adds nothing**, and that is what the offline runtime wires |
+| `unionClaims`, `ClaimSource` | `claimGate/semantic/` | the additive union: `DETERMINISTIC` \| `SEMANTIC` \| `BOTH` |
+| `SemanticVerifierOutputSchema` | `claimGate/semantic/` | zod `.strict()`, plus a grounding check on every quoted phrase |
+
+**Per-turn report, additively.** `ClaimGateAttempt.layers` says which layer saw
+what on each attempt, and `ClaimGateTurnReport.verifier` says which verifier ran.
+`verifier.wired === false` and `layers.semanticOutcome === 'ABSENT'` are the same
+fact at two levels, are a **violation rather than a configuration**, and the sweep
+and the benchmark should fail on them — exactly as INV-18 already treats
+`claimGate.enabled === false`.
+
+**Configuration.** `CLAIM_VERIFIER_MODEL` **defaults to the configured local
+model** (`LOCAL_LLM_MODEL`); leave it empty. `CLAIM_VERIFIER_TIMEOUT_MS` defaults
+to 20,000. No existing model default changed. Per-language routing is not
+implemented.
+
+**The one honest cost.** The previous *"no material claim, no cost"* fast path now
+still pays **one verifier call per customer-facing text**, because the verifier
+must run on every one of them and a fast path conditioned on the deterministic
+detector would let the layer whose gaps this exists to cover decide whether to
+cover them. The **ledger read is still lazy** — only when the union is non-empty or
+the second layer failed closed. On the measured figures in
+`docs/MISSION_2D_CLAIM_GATE_ASSURANCE.md` §§ 4.3 and 4.5, the provider round trip
+is the term that dominates everything else.
+
+**Determinism: in effect** — temperature 0, a fixed seed, a JSON schema in the
+runtime's constrained-decoding field, no tools, a constant instruction, a deadline
+in application code, and strict validation plus grounding on the answer.
+**Not guaranteed** — Ollama batching, GPU kernel non-determinism, quantisation,
+runtime version, model swap, and the model's judgement itself. Determinism is not
+accuracy, which is why this layer may only add to the deterministic one.
 
 **The order matters, and it is a latency decision.** The pure detector runs
 FIRST. A turn that asserts nothing material therefore costs no database read and

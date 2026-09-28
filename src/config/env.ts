@@ -96,6 +96,39 @@ export const LocalLlmConfigSchema = z.object({
 
   /** How long Ollama keeps the model resident after a turn, e.g. `5m`, `0`, `-1`. */
   localLlmKeepAlive: NonEmptyStringSchema.default(LOCAL_LLM_DEFAULTS.keepAlive),
+
+  /**
+   * MISSION 2F: which model serves the SEMANTIC CLAIM VERIFIER.
+   *
+   * `null` - the default, and what an unset or empty `CLAIM_VERIFIER_MODEL`
+   * produces - means USE THE CONFIGURED LOCAL MODEL. That is deliberate and it is
+   * what the mission brief requires: the verifier's default is not a second
+   * model tag written down twice, it is literally `localLlmModel`, so raising
+   * `LOCAL_LLM_MODEL` cannot leave the verifier behind on an older one. No model
+   * default in this repository was changed to add this key.
+   *
+   * WHAT SETTING IT COSTS, so nobody discovers it on a VRAM error. A DIFFERENT tag
+   * here means TWO models resident at once, because the verifier runs on every
+   * customer-facing text while the conversation is live. On the measured mission
+   * host (RTX 4060 Laptop, 8,188 MiB) `qwen2.5:7b-instruct` Q4_K_M at num_ctx
+   * 16384 is already 5.09 GiB (`LOCAL_PROVIDER.md` § 6), so a second 7B does not
+   * fit and Ollama will either spill to CPU or evict. Leaving this unset - one
+   * model, two roles - is the configuration the evidence supports.
+   *
+   * Per-language routing is NOT implemented and this key is not a hook for it.
+   */
+  claimVerifierModel: NonEmptyStringSchema.nullable().default(null),
+
+  /**
+   * MISSION 2F: the verifier's deadline, in milliseconds.
+   *
+   * Defaults to `DEFAULT_SEMANTIC_VERIFIER_TIMEOUT_MS` (20,000), which that
+   * constant argues from measured cold-load and p95 turn figures. Capped well
+   * below `localLlmTimeoutMs` on purpose: this call sits on the critical path of a
+   * live phone call and must fail fast rather than inherit a deadline chosen for a
+   * long conversational turn.
+   */
+  claimVerifierTimeoutMs: z.coerce.number().int().min(500).max(120_000).default(20_000),
 });
 
 export type LocalLlmConfig = z.infer<typeof LocalLlmConfigSchema>;
@@ -174,6 +207,10 @@ function readLocalLlmKeys(env: RawEnv): Record<string, unknown> {
     localLlmNumCtx: emptyToUndefined(env['LOCAL_LLM_NUM_CTX']),
     localLlmTimeoutMs: emptyToUndefined(env['LOCAL_LLM_TIMEOUT_MS']),
     localLlmKeepAlive: emptyToUndefined(env['LOCAL_LLM_KEEP_ALIVE']),
+    // `emptyToNull`, not `emptyToUndefined`: an empty CLAIM_VERIFIER_MODEL is a
+    // deliberate "use the configured local model", which is the `null` default.
+    claimVerifierModel: emptyToNull(env['CLAIM_VERIFIER_MODEL']),
+    claimVerifierTimeoutMs: emptyToUndefined(env['CLAIM_VERIFIER_TIMEOUT_MS']),
   };
 }
 

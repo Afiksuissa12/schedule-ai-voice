@@ -199,6 +199,30 @@ export interface ClaimGateTurnReport {
   readonly enabled: boolean;
   /** One entry per piece of text the model produced, in order. */
   readonly releases: readonly ClaimGateRelease[];
+  /**
+   * The SEMANTIC second layer's wiring - MISSION 2F.
+   *
+   * OPTIONAL, and only because `tests/invariants/runner.ts` constructs a
+   * `ClaimGateTurnReport` literal for a turn that threw and this mission does not
+   * own that file. `AgentTurnService` always sets it, so a consumer seeing it
+   * absent is looking at a report somebody else built.
+   *
+   * `wired: false` IS A VIOLATION, NOT A CONFIGURATION. `buildAgentRuntime` always
+   * constructs a verifier and offers no way to remove one, exactly as it does for
+   * the gate itself - so `false` here means the production composition root has
+   * changed, and the sweep and the benchmark should fail on it rather than record
+   * a pass. The same discipline applies per attempt:
+   * `ClaimGateAttemptLayers.semanticOutcome === 'ABSENT'` is the same fact seen
+   * one level down, and is already treated as fail-closed by the gate.
+   */
+  readonly verifier?: ClaimGateVerifierReport;
+}
+
+/** Which second layer this turn ran, if any. */
+export interface ClaimGateVerifierReport {
+  readonly wired: boolean;
+  /** `SemanticClaimVerifier.verifierName`, or null when none was wired. */
+  readonly name: string | null;
 }
 
 export interface ClaimGateRelease {
@@ -512,7 +536,19 @@ export class AgentTurnService {
       promptFingerprint: prompt.fingerprint,
       assembledContext: assembled,
       memoryRefresh,
-      claimGate: { enabled: this.claimGate !== null, releases: claimGateReleases },
+      claimGate: {
+        enabled: this.claimGate !== null,
+        releases: claimGateReleases,
+        // Read off the GATE rather than off this service's own belief about the
+        // wiring, for the reason `regenerationBound` is read the same way: a
+        // report that states a number this file chose could disagree with the one
+        // in force, and a report that can disagree with the code is worse than no
+        // report.
+        verifier: {
+          wired: this.claimGate?.semanticVerifier != null,
+          name: this.claimGate?.semanticVerifier?.verifierName ?? null,
+        },
+      },
     };
   }
 
@@ -612,6 +648,10 @@ export class AgentTurnService {
     const decision = await gate.review({
       text: input.text,
 
+      // The TURN's id, so the semantic layer's own events land on the same chain
+      // as the utterance that started this and the tool calls that follow it.
+      correlationId: scope.correlationId,
+
       // Built only when the detector has actually found a claim, so a turn that
       // asserts nothing costs no database read at all.
       loadLedger: () =>
@@ -683,14 +723,11 @@ export class AgentTurnService {
     iteration: number,
     event: ClaimGateAuditRecord,
   ): Promise<void> {
-    const type: AuditEventType =
-      event.kind === 'VERIFIED'
-        ? 'CLAIM_GATE_CLAIM_VERIFIED'
-        : event.kind === 'REJECTED'
-          ? 'CLAIM_GATE_CLAIM_REJECTED'
-          : event.kind === 'REGENERATION_REQUESTED'
-            ? 'CLAIM_GATE_REGENERATION_REQUESTED'
-            : 'CLAIM_GATE_TEXT_WITHHELD';
+    // A table rather than a nested ternary, because Mission 2F took it from four
+    // cases to eight and `satisfies Record<..., ...>` makes a missing case a
+    // typecheck failure - which a chain of ternaries with a trailing default
+    // could never be.
+    const type: AuditEventType = CLAIM_GATE_AUDIT_EVENT_TYPES[event.kind];
 
     await this.db.audit.record({
       type,
@@ -867,6 +904,27 @@ export function parseAllowedTools(configuration: AgentConfiguration): string[] {
   }
   return parsed as string[];
 }
+
+/**
+ * `ClaimGateAuditRecord.kind` -> `AuditEventType`, exhaustively.
+ *
+ * `satisfies Record<ClaimGateAuditRecord['kind'], AuditEventType>` is the point:
+ * a ninth kind added to the gate without a type added here fails
+ * `npm run typecheck` instead of silently landing on a default. The four
+ * Mission 2D types are unchanged and still carry exactly what they always did,
+ * so nothing reading the chain for a verified, rejected, regenerated or withheld
+ * turn sees any difference.
+ */
+const CLAIM_GATE_AUDIT_EVENT_TYPES = {
+  VERIFIED: 'CLAIM_GATE_CLAIM_VERIFIED',
+  REJECTED: 'CLAIM_GATE_CLAIM_REJECTED',
+  REGENERATION_REQUESTED: 'CLAIM_GATE_REGENERATION_REQUESTED',
+  WITHHELD: 'CLAIM_GATE_TEXT_WITHHELD',
+  SEMANTIC_REQUESTED: 'CLAIM_GATE_SEMANTIC_REQUESTED',
+  SEMANTIC_CLASSIFIED: 'CLAIM_GATE_SEMANTIC_CLASSIFIED',
+  SEMANTIC_FAILED: 'CLAIM_GATE_SEMANTIC_FAILED',
+  LAYERED: 'CLAIM_GATE_CLAIM_LAYERED',
+} as const satisfies Record<ClaimGateAuditRecord['kind'], AuditEventType>;
 
 function summarizeDecision(completion: CompleteTurnResult, iteration: number): string {
   const spoke = completion.assistantText ? `said "${truncate(completion.assistantText, 100)}"` : 'said nothing';

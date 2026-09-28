@@ -49,6 +49,22 @@ export interface OllamaChatRequest {
   readonly tools?: ReadonlyArray<OllamaToolSpec>;
   readonly keep_alive?: string;
   readonly options?: Record<string, unknown>;
+  /**
+   * Ollama's constrained-decoding field. `'json'` asks for any JSON object; a
+   * JSON SCHEMA OBJECT asks for that exact shape.
+   *
+   * `unknown` rather than a schema type, on the same principle as
+   * `OllamaToolSpec.parameters` directly above: no JSON-Schema library belongs in
+   * a wire declaration, and the schema is the caller's to author.
+   *
+   * ABSENT BY DEFAULT AND ABSENT FROM EVERY EXISTING CALL. The conversational
+   * turn must not be constrained - it produces natural language and tool calls -
+   * so `toOllamaChatRequest` omits the key entirely unless a caller supplied a
+   * schema. `format: undefined` and no `format` key are the same thing on the
+   * wire, but they are not the same thing to a test asserting the body, so the
+   * mapper omits rather than sets.
+   */
+  readonly format?: unknown;
 }
 
 /**
