@@ -168,7 +168,45 @@ const BOOKING_VERBS: readonly string[] = [
 
 const RESCHEDULE_VERBS: readonly string[] = ['moved', 'rescheduled', 'shifted', 'pushed back', 'brought forward'];
 
-const CANCELLATION_VERBS: readonly string[] = ['cancelled', 'canceled', 'called off'];
+/**
+ * `taken ... off the calendar` and friends carry their destination for the same
+ * reason `sorted` carries its object below: bare `took` and bare `removed` assert
+ * nothing on their own (`I took a note of that`, `I removed the duplicate from my
+ * list`), and it is the CALENDAR or the DIARY that says a booking is gone.
+ *
+ * ADDED BY § 17.7, FOR A DEMONSTRATED FAIL-OPEN LEAK. `is off the books` had been
+ * in the passive list below since the gate was written, and the ordinary
+ * paraphrases of it were not anywhere: `That meeting is off the calendar now.`,
+ * `I have taken it out of the diary.`, `I took your meeting off the calendar.` and
+ * `I have removed it from the diary.` were all RELEASED to the caller and
+ * PERSISTED as spoken AGENT rows with `meetings` 0, measured through the real
+ * `AgentTurnService` and real SQLite. A contact told their meeting is off the
+ * calendar does not turn up, so this is the § 6.5.4 harm in the cancellation
+ * direction.
+ *
+ * ONLY THE PAST TENSE IS HERE, AND THAT IS WHAT MAKES IT SAFE rather than a
+ * `frameBlockers` entry doing it. `Let me take that off the calendar for you.` and
+ * `I will take it out of the diary.` use `take`, which is not a form, so no
+ * intention can match one of these however it is phrased - the same argument
+ * § 14.1 makes for the first-person preterite. The present-tense spellings that
+ * ARE here (`is off the calendar`, `has been taken off the calendar`) are passive
+ * or stative and have no intention reading either.
+ */
+const CANCELLATION_VERBS: readonly string[] = [
+  'cancelled',
+  'canceled',
+  'called off',
+  'took off the calendar',
+  'taken off the calendar',
+  'took off the diary',
+  'taken off the diary',
+  'took out of the calendar',
+  'taken out of the calendar',
+  'took out of the diary',
+  'taken out of the diary',
+  'removed from the calendar',
+  'removed from the diary',
+];
 
 /** `arranged` is CALLBACK here because `is arranged` already is, below. */
 const CALLBACK_VERBS: readonly string[] = ['arranged'];
@@ -266,6 +304,17 @@ export const EN_CLAIM_LEXICON: ClaimLexicon = {
         'i have cancelled',
         'i have canceled',
         'is off the books',
+        // § 17.7. `is off the books` was here alone and its two ordinary
+        // paraphrases were nowhere, so `That meeting is off the calendar now.`
+        // was released and persisted against an empty ledger. Stative, so there
+        // is no intention reading to protect: nobody says "is off the calendar"
+        // about something they are about to do.
+        'is off the calendar',
+        'is off the diary',
+        'has been taken off the calendar',
+        'has been taken off the diary',
+        'has been removed from the calendar',
+        'has been removed from the diary',
       ],
       family: 'CANCELLATION',
       mode: 'COMPLETED',

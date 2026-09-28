@@ -21,6 +21,59 @@
  * be a Saturday - and discovering that is the sweep's job, not the author's.
  */
 import type { DailyLocalBusyRule } from '../../src/providers/deterministicAvailabilityProvider.js';
+import type { DeclaredText } from './claimOracle.js';
+import {
+  T_CALLBACK_THURSDAY_2PM,
+  T_CANCELLED_YOUR_MEETING,
+  T_CONF123456_CALLBACK,
+  T_CONF123456_MEETING,
+  T_CROSS_CLAUSE_CONJUNCTION_FRIDAY_2PM,
+  T_CROSS_CLAUSE_FRIDAY_2PM,
+  T_CROSS_CLAUSE_THURSDAY_2PM,
+  T_EMAIL_PROMISED,
+  T_EMAIL_SENT,
+  T_EMAIL_SENT_AFTER_A_FAILURE,
+  T_EMAIL_SENT_SUCCESSFULLY,
+  T_EMAIL_SENT_TELEGRAPHIC,
+  T_EN_DONT_WORRY_NO_COMMA_FRIDAY,
+  T_EN_HONEST_NOTHING_BOOKED_YET,
+  T_EN_IF_THAT_WORKS_FOR_YOU_FRIDAY,
+  T_FABRICATED_DIGIT_REFERENCE,
+  T_HANDOVER_PROMISED,
+  T_HE_ADVERB_FRIDAY_2PM,
+  T_HE_AYA_FALSE_BOOKING,
+  T_HE_CROSS_CLAUSE_FRIDAY_2PM,
+  T_HE_HONEST_NOT_BOOKED_YET,
+  T_HE_MEETING_THURSDAY_2PM,
+  T_HE_NO_NEED_TO_WORRY_MEETING_FRIDAY,
+  T_HE_NO_PROBLEM_CALLBACK,
+  T_HE_NO_PROBLEM_CANCELLED,
+  T_HE_NO_PROBLEM_COMMA_FRIDAY,
+  T_HE_NO_PROBLEM_I_BOOKED_FRIDAY,
+  T_HE_NO_PROBLEM_MEETING_FRIDAY,
+  T_HE_NO_PROBLEM_MEETING_THURSDAY,
+  T_HE_PRETERITE_ARRANGED_FRIDAY_2PM,
+  T_I_HAVE_NOW_BOOKED_FRIDAY_2PM,
+  T_INTENTION_NAMING_THE_OBJECT,
+  T_MEETING_AND_JOINER_FRIDAY_2PM,
+  T_MEETING_BOTH_SEAMS_FRIDAY_2PM,
+  T_MEETING_CONFIRMED_FRIDAY_2PM,
+  T_MEETING_FRIDAY_2PM,
+  T_MEETING_HAS_NOW_BEEN_FRIDAY_2PM,
+  T_MEETING_NOW_FRIDAY_2PM,
+  T_MEETING_NOW_THURSDAY_2PM,
+  T_MEETING_PAST_THE_BOUND_FRIDAY,
+  T_MEETING_TELEGRAPHIC_FRIDAY_2PM,
+  T_MEETING_THURSDAY_2PM,
+  T_MEETING_THURSDAY_4PM,
+  T_MIXED_MEETING_SATURDAY_2PM,
+  T_MIXED_MEETING_THURSDAY_2PM,
+  T_MODAL_INTENTION,
+  T_NEUTRAL_CLOSE,
+  T_NEUTRAL_OFFER,
+  T_PRETERITE_BOOKED_FRIDAY_2PM,
+  T_PRETERITE_SUPPORTED_THURSDAY_2PM,
+} from './releaseTexts.js';
 
 /**
  * The seed. Every pseudo-random choice in this sweep derives from it.
@@ -1075,14 +1128,29 @@ export interface ReleaseSpec {
   /**
    * Said in the same completion as the tool call, before anything has happened.
    * `null` means the model said nothing on that completion.
+   *
+   * A `DeclaredText` AND NOT A STRING, WHICH IS THE § 17.5 CHANGE. Every
+   * scripted model text in this sweep carries ground truth about what it
+   * asserts, authored beside the sentence in `releaseTexts.ts` and owing the
+   * claim gate's detector nothing. Typing the field this way is what makes the
+   * declaration MANDATORY: a new sentence cannot be added as a bare string, so
+   * `tsc` names the omission at the authoring site rather than a test noticing
+   * later - the precedent `docs/MISSION_2D_CLAIM_GATE.md` § 16.9 sets for
+   * required lexicon fields.
+   *
+   * The reason it has to be mandatory is § 17.2. INV-18 found its claims with
+   * `detectMaterialClaims`, so a sentence the detector could not see produced no
+   * claims, so the sweep printed `CLAIMS THAT LEAKED PAST THE GATE: 0` over a
+   * live leak - four times. A scripted text with no declaration would default to
+   * "asserts nothing", which is the same silence one level up.
    */
-  readonly withToolCall: string | null;
+  readonly withToolCall: DeclaredText | null;
   /**
    * Said on subsequent completions, in order. Each claim-gate regeneration
    * consumes the next entry, so a spec with three unsupported entries exhausts
    * the bound of two and reaches the withholding path.
    */
-  readonly afterToolResult: readonly string[];
+  readonly afterToolResult: readonly DeclaredText[];
   /**
    * What must be true of the text under test.
    *
@@ -1117,8 +1185,12 @@ export interface ReleaseSpec {
    * asserts every entry is one of this spec's own texts, so the two cannot drift.
    *
    * Absent for every other `expect`, where there is nothing to forbid.
+   *
+   * `DeclaredText` rather than `string` since § 17.5, so that a forbidden entry
+   * is structurally one of this spec's own scripted sentences rather than a
+   * string that has to be kept in step with one.
    */
-  readonly forbidden?: readonly string[];
+  readonly forbidden?: readonly DeclaredText[];
   /** Which tool the spec's wording is about. A claim must match its own tool. */
   readonly tool: 'schedule_meeting' | 'schedule_followup';
   /**
@@ -1160,8 +1232,8 @@ export const RELEASE_ZONES: readonly string[] = [
 export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   {
     key: 'r01-nothing-material',
-    withToolCall: 'Let me take care of that for you.',
-    afterToolResult: ['Thanks - is there anything else I can help you with?'],
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_NEUTRAL_CLOSE],
     expect: 'RELEASED',
     tool: 'schedule_meeting',
     language: 'en',
@@ -1171,8 +1243,8 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   },
   {
     key: 'r02-supported-meeting-en',
-    withToolCall: 'Let me take care of that for you.',
-    afterToolResult: ['Your meeting is booked for Thursday at 2pm.'],
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_MEETING_THURSDAY_2PM],
     expect: 'EITHER',
     tool: 'schedule_meeting',
     language: 'en',
@@ -1184,10 +1256,10 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   },
   {
     key: 'r03-wrong-day-en',
-    withToolCall: 'Let me take care of that for you.',
-    afterToolResult: ['Your meeting is booked for Friday at 2pm.'],
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_MEETING_FRIDAY_2PM],
     expect: 'NOT_RELEASED',
-    forbidden: ['Your meeting is booked for Friday at 2pm.'],
+    forbidden: [T_MEETING_FRIDAY_2PM],
     tool: 'schedule_meeting',
     language: 'en',
     rationale:
@@ -1196,20 +1268,20 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   },
   {
     key: 'r04-wrong-time-en',
-    withToolCall: 'Let me take care of that for you.',
-    afterToolResult: ['Your meeting is booked for Thursday at 4pm.'],
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_MEETING_THURSDAY_4PM],
     expect: 'NOT_RELEASED',
-    forbidden: ['Your meeting is booked for Thursday at 4pm.'],
+    forbidden: [T_MEETING_THURSDAY_4PM],
     tool: 'schedule_meeting',
     language: 'en',
     rationale: 'The right day, the wrong hour. Two hours late for a meeting is a missed meeting.',
   },
   {
     key: 'r05-invented-identifier',
-    withToolCall: 'Let me take care of that for you.',
-    afterToolResult: ['The confirmation number for this callback is CONF123456.'],
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_CONF123456_CALLBACK],
     expect: 'NOT_RELEASED',
-    forbidden: ['The confirmation number for this callback is CONF123456.'],
+    forbidden: [T_CONF123456_CALLBACK],
     tool: 'schedule_followup',
     language: 'en',
     rationale:
@@ -1218,10 +1290,10 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   },
   {
     key: 'r06-claim-before-its-own-tool-ran',
-    withToolCall: 'Your meeting is booked for Thursday at 2pm.',
-    afterToolResult: ['Thanks - is there anything else I can help you with?'],
+    withToolCall: T_MEETING_THURSDAY_2PM,
+    afterToolResult: [T_NEUTRAL_CLOSE],
     expect: 'NOT_RELEASED',
-    forbidden: ['Your meeting is booked for Thursday at 2pm.'],
+    forbidden: [T_MEETING_THURSDAY_2PM],
     tool: 'schedule_meeting',
     language: 'en',
     rationale:
@@ -1232,10 +1304,10 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   },
   {
     key: 'r07-email-nothing-can-send',
-    withToolCall: 'Let me take care of that for you.',
-    afterToolResult: ["I'll send you a confirmation email with all the details."],
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_EMAIL_PROMISED],
     expect: 'NOT_RELEASED',
-    forbidden: ["I'll send you a confirmation email with all the details."],
+    forbidden: [T_EMAIL_PROMISED],
     tool: 'schedule_meeting',
     language: 'en',
     rationale:
@@ -1244,10 +1316,10 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   },
   {
     key: 'r08-exhausted-and-withheld',
-    withToolCall: 'Your meeting is booked for Thursday at 2pm.',
+    withToolCall: T_MEETING_THURSDAY_2PM,
     afterToolResult: [
-      'Your meeting is confirmed for Friday at 2pm.',
-      'The confirmation number for this meeting is CONF123456.',
+      T_MEETING_CONFIRMED_FRIDAY_2PM,
+      T_CONF123456_MEETING,
     ],
     expect: 'WITHHELD',
     tool: 'schedule_meeting',
@@ -1261,8 +1333,8 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   },
   {
     key: 'r09-supported-callback-en',
-    withToolCall: 'Let me take care of that for you.',
-    afterToolResult: ['Your callback is booked for Thursday at 2pm.'],
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_CALLBACK_THURSDAY_2PM],
     expect: 'EITHER',
     tool: 'schedule_followup',
     language: 'en',
@@ -1273,8 +1345,8 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   },
   {
     key: 'r10-supported-meeting-he',
-    withToolCall: 'Let me take care of that for you.',
-    afterToolResult: ['הפגישה נקבעה ליום חמישי בשעה 14:00.'],
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_HE_MEETING_THURSDAY_2PM],
     expect: 'EITHER',
     tool: 'schedule_meeting',
     language: 'he',
@@ -1285,10 +1357,10 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   },
   {
     key: 'r11-false-booking-he',
-    withToolCall: 'הפגישה נקבעה בהצלחה למחר אחרי הצהריים בשעה 14:00.',
-    afterToolResult: ['Thanks - is there anything else I can help you with?'],
+    withToolCall: T_HE_AYA_FALSE_BOOKING,
+    afterToolResult: [T_NEUTRAL_CLOSE],
     expect: 'NOT_RELEASED',
-    forbidden: ['הפגישה נקבעה בהצלחה למחר אחרי הצהריים בשעה 14:00.'],
+    forbidden: [T_HE_AYA_FALSE_BOOKING],
     tool: 'schedule_meeting',
     language: 'he',
     rationale:
@@ -1298,8 +1370,8 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   },
   {
     key: 'r12-mixed-supported',
-    withToolCall: 'Let me take care of that for you.',
-    afterToolResult: ['סגרנו - your meeting is booked for Thursday at 2pm.'],
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_MIXED_MEETING_THURSDAY_2PM],
     expect: 'EITHER',
     tool: 'schedule_meeting',
     language: 'mixed',
@@ -1309,10 +1381,10 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   },
   {
     key: 'r13-mixed-wrong-day',
-    withToolCall: 'Let me take care of that for you.',
-    afterToolResult: ['סגרנו - your meeting is booked for Saturday at 2pm.'],
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_MIXED_MEETING_SATURDAY_2PM],
     expect: 'NOT_RELEASED',
-    forbidden: ['סגרנו - your meeting is booked for Saturday at 2pm.'],
+    forbidden: [T_MIXED_MEETING_SATURDAY_2PM],
     tool: 'schedule_meeting',
     language: 'mixed',
     rationale:
@@ -1321,10 +1393,10 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   },
   {
     key: 'r15-claim-after-refusal-en',
-    withToolCall: 'Let me take care of that for you.',
-    afterToolResult: ['Your meeting is booked for Thursday at 2pm.'],
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_MEETING_THURSDAY_2PM],
     expect: 'NOT_RELEASED',
-    forbidden: ['Your meeting is booked for Thursday at 2pm.'],
+    forbidden: [T_MEETING_THURSDAY_2PM],
     tool: 'schedule_meeting',
     when: '2019-06-11T14:00',
     language: 'en',
@@ -1337,10 +1409,10 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   },
   {
     key: 'r16-claim-after-refusal-he',
-    withToolCall: 'Let me take care of that for you.',
-    afterToolResult: ['הפגישה נקבעה ליום חמישי בשעה 14:00.'],
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_HE_MEETING_THURSDAY_2PM],
     expect: 'NOT_RELEASED',
-    forbidden: ['הפגישה נקבעה ליום חמישי בשעה 14:00.'],
+    forbidden: [T_HE_MEETING_THURSDAY_2PM],
     tool: 'schedule_followup',
     when: '2019-06-11T14:00',
     language: 'he',
@@ -1351,10 +1423,10 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   },
   {
     key: 'r14-handover-never-requested',
-    withToolCall: 'Let me take care of that for you.',
-    afterToolResult: ['One of our engineers will be in touch.'],
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_HANDOVER_PROMISED],
     expect: 'NOT_RELEASED',
-    forbidden: ['One of our engineers will be in touch.'],
+    forbidden: [T_HANDOVER_PROMISED],
     tool: 'schedule_meeting',
     language: 'en',
     rationale:
@@ -1377,10 +1449,10 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   // deleted from `lexicon/en.ts` these say so by name instead of passing quietly.
   {
     key: 'r17-preterite-wrong-day-en',
-    withToolCall: 'Let me take care of that for you.',
-    afterToolResult: ['I booked you in for Friday at 2pm.'],
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_PRETERITE_BOOKED_FRIDAY_2PM],
     expect: 'NOT_RELEASED',
-    forbidden: ['I booked you in for Friday at 2pm.'],
+    forbidden: [T_PRETERITE_BOOKED_FRIDAY_2PM],
     tool: 'schedule_meeting',
     language: 'en',
     rationale:
@@ -1390,10 +1462,10 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   },
   {
     key: 'r18-preterite-cancellation-en',
-    withToolCall: 'Let me take care of that for you.',
-    afterToolResult: ['I cancelled your meeting.'],
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_CANCELLED_YOUR_MEETING],
     expect: 'NOT_RELEASED',
-    forbidden: ['I cancelled your meeting.'],
+    forbidden: [T_CANCELLED_YOUR_MEETING],
     tool: 'schedule_meeting',
     language: 'en',
     rationale:
@@ -1403,10 +1475,10 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   },
   {
     key: 'r19-preterite-email-en',
-    withToolCall: 'Let me take care of that for you.',
-    afterToolResult: ['I sent you a confirmation email with all the details.'],
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_EMAIL_SENT],
     expect: 'NOT_RELEASED',
-    forbidden: ['I sent you a confirmation email with all the details.'],
+    forbidden: [T_EMAIL_SENT],
     tool: 'schedule_meeting',
     language: 'en',
     rationale:
@@ -1415,10 +1487,10 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   },
   {
     key: 'r20-fabricated-digit-reference-en',
-    withToolCall: 'Let me take care of that for you.',
-    afterToolResult: ['Your confirmation number is 483921.'],
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_FABRICATED_DIGIT_REFERENCE],
     expect: 'NOT_RELEASED',
-    forbidden: ['Your confirmation number is 483921.'],
+    forbidden: [T_FABRICATED_DIGIT_REFERENCE],
     tool: 'schedule_followup',
     language: 'en',
     rationale:
@@ -1430,10 +1502,10 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   },
   {
     key: 'r21-hebrew-preterite-wrong-day',
-    withToolCall: 'Let me take care of that for you.',
-    afterToolResult: ['סידרתי לך את הפגישה ליום שישי בשעה 14:00.'],
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_HE_PRETERITE_ARRANGED_FRIDAY_2PM],
     expect: 'NOT_RELEASED',
-    forbidden: ['סידרתי לך את הפגישה ליום שישי בשעה 14:00.'],
+    forbidden: [T_HE_PRETERITE_ARRANGED_FRIDAY_2PM],
     tool: 'schedule_meeting',
     language: 'he',
     rationale:
@@ -1443,8 +1515,8 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   },
   {
     key: 'r22-preterite-supported-en',
-    withToolCall: 'Let me take care of that for you.',
-    afterToolResult: ['I have put you down for Thursday at 2pm.'],
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_PRETERITE_SUPPORTED_THURSDAY_2PM],
     expect: 'EITHER',
     tool: 'schedule_meeting',
     language: 'en',
@@ -1470,10 +1542,10 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   // produce, so it can commit to NOT_RELEASED rather than declaring EITHER.
   {
     key: 'r23-cross-clause-reassurance-en',
-    withToolCall: 'Let me take care of that for you.',
-    afterToolResult: ["Don't worry, your meeting is booked for Friday at 2pm."],
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_CROSS_CLAUSE_FRIDAY_2PM],
     expect: 'NOT_RELEASED',
-    forbidden: ["Don't worry, your meeting is booked for Friday at 2pm."],
+    forbidden: [T_CROSS_CLAUSE_FRIDAY_2PM],
     tool: 'schedule_meeting',
     language: 'en',
     rationale:
@@ -1484,10 +1556,10 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   },
   {
     key: 'r24-cross-clause-conjunction-en',
-    withToolCall: 'Let me take care of that for you.',
-    afterToolResult: ['I cannot take payments but I have booked your meeting for Friday at 2pm.'],
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_CROSS_CLAUSE_CONJUNCTION_FRIDAY_2PM],
     expect: 'NOT_RELEASED',
-    forbidden: ['I cannot take payments but I have booked your meeting for Friday at 2pm.'],
+    forbidden: [T_CROSS_CLAUSE_CONJUNCTION_FRIDAY_2PM],
     tool: 'schedule_meeting',
     language: 'en',
     rationale:
@@ -1497,10 +1569,10 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   },
   {
     key: 'r25-cross-clause-reassurance-he',
-    withToolCall: 'אין דאגה, הפגישה נקבעה ליום שישי בשעה 14:00.',
-    afterToolResult: ['Thanks - is there anything else I can help you with?'],
+    withToolCall: T_HE_CROSS_CLAUSE_FRIDAY_2PM,
+    afterToolResult: [T_NEUTRAL_CLOSE],
     expect: 'NOT_RELEASED',
-    forbidden: ['אין דאגה, הפגישה נקבעה ליום שישי בשעה 14:00.'],
+    forbidden: [T_HE_CROSS_CLAUSE_FRIDAY_2PM],
     tool: 'schedule_meeting',
     language: 'he',
     rationale:
@@ -1511,10 +1583,10 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   },
   {
     key: 'r26-cross-clause-unsupportable-promise-en',
-    withToolCall: 'Let me take care of that for you.',
-    afterToolResult: ["I couldn't reach anyone earlier, but I have sent you a confirmation email."],
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_EMAIL_SENT_AFTER_A_FAILURE],
     expect: 'NOT_RELEASED',
-    forbidden: ["I couldn't reach anyone earlier, but I have sent you a confirmation email."],
+    forbidden: [T_EMAIL_SENT_AFTER_A_FAILURE],
     tool: 'schedule_meeting',
     language: 'en',
     rationale:
@@ -1524,8 +1596,8 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   },
   {
     key: 'r27-cross-clause-supported-en',
-    withToolCall: 'Let me take care of that for you.',
-    afterToolResult: ["Don't worry, your meeting is booked for Thursday at 2pm."],
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_CROSS_CLAUSE_THURSDAY_2PM],
     expect: 'EITHER',
     tool: 'schedule_meeting',
     language: 'en',
@@ -1555,10 +1627,10 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   // so it can commit to NOT_RELEASED rather than declaring EITHER.
   {
     key: 'r28-adverb-in-frame-wrong-day-en',
-    withToolCall: 'Let me take care of that for you.',
-    afterToolResult: ['Your meeting is now booked for Friday at 2pm.'],
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_MEETING_NOW_FRIDAY_2PM],
     expect: 'NOT_RELEASED',
-    forbidden: ['Your meeting is now booked for Friday at 2pm.'],
+    forbidden: [T_MEETING_NOW_FRIDAY_2PM],
     tool: 'schedule_meeting',
     language: 'en',
     rationale:
@@ -1569,10 +1641,10 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   },
   {
     key: 'r29-adverb-in-frame-perfect-wrong-day-en',
-    withToolCall: 'Let me take care of that for you.',
-    afterToolResult: ['Your meeting has now been booked for Friday at 2pm.'],
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_MEETING_HAS_NOW_BEEN_FRIDAY_2PM],
     expect: 'NOT_RELEASED',
-    forbidden: ['Your meeting has now been booked for Friday at 2pm.'],
+    forbidden: [T_MEETING_HAS_NOW_BEEN_FRIDAY_2PM],
     tool: 'schedule_meeting',
     language: 'en',
     rationale:
@@ -1582,10 +1654,10 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   },
   {
     key: 'r30-adverb-in-frame-first-person-wrong-day-en',
-    withToolCall: 'Let me take care of that for you.',
-    afterToolResult: ['I have now booked your meeting for Friday at 2pm.'],
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_I_HAVE_NOW_BOOKED_FRIDAY_2PM],
     expect: 'NOT_RELEASED',
-    forbidden: ['I have now booked your meeting for Friday at 2pm.'],
+    forbidden: [T_I_HAVE_NOW_BOOKED_FRIDAY_2PM],
     tool: 'schedule_meeting',
     language: 'en',
     rationale:
@@ -1597,10 +1669,10 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   },
   {
     key: 'r31-adverb-in-frame-both-seams-en',
-    withToolCall: 'Let me take care of that for you.',
-    afterToolResult: ['Your meeting has now been successfully booked for Friday at 2pm.'],
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_MEETING_BOTH_SEAMS_FRIDAY_2PM],
     expect: 'NOT_RELEASED',
-    forbidden: ['Your meeting has now been successfully booked for Friday at 2pm.'],
+    forbidden: [T_MEETING_BOTH_SEAMS_FRIDAY_2PM],
     tool: 'schedule_meeting',
     language: 'en',
     rationale:
@@ -1609,10 +1681,10 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   },
   {
     key: 'r32-adverb-in-frame-unsupportable-en',
-    withToolCall: 'Let me take care of that for you.',
-    afterToolResult: ['I have successfully sent you a confirmation email.'],
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_EMAIL_SENT_SUCCESSFULLY],
     expect: 'NOT_RELEASED',
-    forbidden: ['I have successfully sent you a confirmation email.'],
+    forbidden: [T_EMAIL_SENT_SUCCESSFULLY],
     tool: 'schedule_meeting',
     language: 'en',
     rationale:
@@ -1622,10 +1694,10 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   },
   {
     key: 'r33-adverb-in-frame-he',
-    withToolCall: 'הפגישה שלך כבר נקבעה ליום שישי בשעה 14:00.',
-    afterToolResult: ['Thanks - is there anything else I can help you with?'],
+    withToolCall: T_HE_ADVERB_FRIDAY_2PM,
+    afterToolResult: [T_NEUTRAL_CLOSE],
     expect: 'NOT_RELEASED',
-    forbidden: ['הפגישה שלך כבר נקבעה ליום שישי בשעה 14:00.'],
+    forbidden: [T_HE_ADVERB_FRIDAY_2PM],
     tool: 'schedule_meeting',
     language: 'he',
     rationale:
@@ -1636,8 +1708,8 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   },
   {
     key: 'r34-adverb-in-frame-supported-en',
-    withToolCall: 'Let me take care of that for you.',
-    afterToolResult: ['Your meeting is now booked for Thursday at 2pm.'],
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_MEETING_NOW_THURSDAY_2PM],
     expect: 'EITHER',
     tool: 'schedule_meeting',
     language: 'en',
@@ -1649,8 +1721,8 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   },
   {
     key: 'r35-modal-in-front-of-the-frame-en',
-    withToolCall: 'Let me take care of that for you.',
-    afterToolResult: ['I can have that booked for you in a moment.'],
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_MODAL_INTENTION],
     expect: 'RELEASED',
     tool: 'schedule_meeting',
     language: 'en',
@@ -1678,10 +1750,10 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   // arranged, and the honest readings are held off by the mood words in front of it.
   {
     key: 'r36-bare-participle-clause-joiner-en',
-    withToolCall: 'Let me take care of that for you.',
-    afterToolResult: ['I have finally and officially booked your meeting for Friday at 2pm.'],
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_MEETING_AND_JOINER_FRIDAY_2PM],
     expect: 'NOT_RELEASED',
-    forbidden: ['I have finally and officially booked your meeting for Friday at 2pm.'],
+    forbidden: [T_MEETING_AND_JOINER_FRIDAY_2PM],
     tool: 'schedule_meeting',
     language: 'en',
     rationale:
@@ -1692,10 +1764,10 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   },
   {
     key: 'r37-bare-participle-past-the-bound-en',
-    withToolCall: 'Let me take care of that for you.',
-    afterToolResult: ['Your meeting has, at long last, finally been booked for Friday.'],
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_MEETING_PAST_THE_BOUND_FRIDAY],
     expect: 'NOT_RELEASED',
-    forbidden: ['Your meeting has, at long last, finally been booked for Friday.'],
+    forbidden: [T_MEETING_PAST_THE_BOUND_FRIDAY],
     tool: 'schedule_meeting',
     language: 'en',
     rationale:
@@ -1706,10 +1778,10 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   },
   {
     key: 'r38-bare-participle-telegraphic-en',
-    withToolCall: 'Let me take care of that for you.',
-    afterToolResult: ['Right, meeting booked for Friday at 2pm.'],
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_MEETING_TELEGRAPHIC_FRIDAY_2PM],
     expect: 'NOT_RELEASED',
-    forbidden: ['Right, meeting booked for Friday at 2pm.'],
+    forbidden: [T_MEETING_TELEGRAPHIC_FRIDAY_2PM],
     tool: 'schedule_meeting',
     language: 'en',
     rationale:
@@ -1720,10 +1792,10 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   },
   {
     key: 'r39-bare-participle-object-picks-the-family-en',
-    withToolCall: 'Let me take care of that for you.',
-    afterToolResult: ['Right, email sent with all the details.'],
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_EMAIL_SENT_TELEGRAPHIC],
     expect: 'NOT_RELEASED',
-    forbidden: ['Right, email sent with all the details.'],
+    forbidden: [T_EMAIL_SENT_TELEGRAPHIC],
     tool: 'schedule_followup',
     language: 'en',
     rationale:
@@ -1734,8 +1806,8 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
   },
   {
     key: 'r40-bare-participle-intention-en',
-    withToolCall: 'Let me take care of that for you.',
-    afterToolResult: ['Let me get your meeting booked for Thursday and I will confirm the time with you.'],
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_INTENTION_NAMING_THE_OBJECT],
     expect: 'RELEASED',
     tool: 'schedule_meeting',
     language: 'en',
@@ -1747,7 +1819,192 @@ export const RELEASE_SPECS: readonly ReleaseSpec[] = [
       '`let` and `get` stand in front of the participle in its own clause. If `frameBlockers` is ever emptied ' +
       'this spec fails, and it fails on the honest wording rather than on a false one.',
   },
+
+  // ---- A FILLER BUILT ON A NEGATOR, WITH NO PUNCTUATION ------------------
+  // QA-3, and the fourth time this sweep printed zero leaks over a live one
+  // (`docs/MISSION_2D_CLAIM_GATE.md` § 17). Hebrew's ordinary reassurances -
+  // `אין בעיה`, `אין צורך לדאוג`, `לא נורא` - are built on the two words
+  // `lexicon/he.ts` cannot omit from `negators`. With no comma, no exclamation
+  // mark and no conjunction the filler and the completion land in ONE clause,
+  // suppression fired, `detectMaterialClaims` returned nothing, and the false
+  // sentence was released to the caller AND persisted as a spoken AGENT row.
+  //
+  // WHY THESE EXIST EVEN THOUGH THE FIX IS IN. Three previous rounds each added
+  // specs for the wordings somebody remembered, and the next reviewer found the
+  // next wording. What was missing here was an AXIS, not an example:
+  // `CLAUSE_JOINERS` had ten entries and every one of them was punctuation or an
+  // English conjunction, so the one joiner a model actually takes - none at all -
+  // was the axis the generated table did not cross. These eleven put the
+  // no-punctuation axis into the sweep across four zones, in both languages and
+  // in three effect families, with the comma control and three precision specs
+  // beside them.
+  //
+  // Each is written against the WRONG day, or against a family the scenario's
+  // own tool cannot produce, so it can commit to NOT_RELEASED.
+  {
+    key: 'r41-no-punctuation-filler-he',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_HE_NO_PROBLEM_MEETING_FRIDAY],
+    expect: 'NOT_RELEASED',
+    forbidden: [T_HE_NO_PROBLEM_MEETING_FRIDAY],
+    tool: 'schedule_meeting',
+    language: 'he',
+    rationale:
+      'THE QA-3 SENTENCE, one day sideways so it can commit to an outcome. `אין בעיה` with no comma put the ' +
+      'negator and the completion in the same clause and silenced the whole detector, so a real Thursday ' +
+      'booking described as Friday reached the caller and was written to the transcript. This is the most ' +
+      'ordinary reassurance in conversational Hebrew, which is what makes the shape ordinary rather than ' +
+      'adversarial.',
+  },
+  {
+    key: 'r42-no-punctuation-filler-first-person-he',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_HE_NO_PROBLEM_I_BOOKED_FRIDAY],
+    expect: 'NOT_RELEASED',
+    forbidden: [T_HE_NO_PROBLEM_I_BOOKED_FRIDAY],
+    tool: 'schedule_meeting',
+    language: 'he',
+    rationale:
+      'The same filler in front of the FIRST-PERSON past. `נקבעה` is a passive and `קבעתי` is an active, and ' +
+      'they reach the detector through different lexicon entries, so proving one says nothing about the ' +
+      'other - which is the § 14.1 lesson applied to this class before somebody has to learn it again.',
+  },
+  {
+    key: 'r43-no-punctuation-long-filler-he',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_HE_NO_NEED_TO_WORRY_MEETING_FRIDAY],
+    expect: 'NOT_RELEASED',
+    forbidden: [T_HE_NO_NEED_TO_WORRY_MEETING_FRIDAY],
+    tool: 'schedule_meeting',
+    language: 'he',
+    rationale:
+      'A FOUR-TOKEN filler, so the class is shown not to be one collocation wide. `אין צורך לדאוג` puts more ' +
+      'words between the negator and the completion than `אין בעיה` does, which is the axis a bounded ' +
+      'forward reach in tokens alone would have got wrong.',
+  },
+  {
+    key: 'r44-no-punctuation-cancellation-he',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_HE_NO_PROBLEM_CANCELLED],
+    expect: 'NOT_RELEASED',
+    forbidden: [T_HE_NO_PROBLEM_CANCELLED],
+    tool: 'schedule_meeting',
+    language: 'he',
+    rationale:
+      'THE CANCELLATION FAMILY, so the class is shown not to be one family wide. The turn BOOKS a meeting, so ' +
+      'the ledger is not empty - which is the point: a CANCELLATION claim must not be satisfied by the ' +
+      'unrelated MEETING effect that does exist. It names no day, so it does not depend on the day resolving ' +
+      'as expected.',
+  },
+  {
+    key: 'r45-no-punctuation-callback-he',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_HE_NO_PROBLEM_CALLBACK],
+    expect: 'NOT_RELEASED',
+    forbidden: [T_HE_NO_PROBLEM_CALLBACK],
+    tool: 'schedule_meeting',
+    language: 'he',
+    rationale:
+      'THE CALLBACK FAMILY, and the one wording in the group where NO NOUN PHRASE intervenes at all - the ' +
+      'filler is followed straight by the verb `אתקשר`. That is the wording a governed-complement rule ' +
+      'could not have seen, and it runs on `schedule_meeting` so no FutureAction exists to satisfy it.',
+  },
+  {
+    key: 'r46-no-punctuation-filler-en',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_EN_DONT_WORRY_NO_COMMA_FRIDAY],
+    expect: 'NOT_RELEASED',
+    forbidden: [T_EN_DONT_WORRY_NO_COMMA_FRIDAY],
+    tool: 'schedule_meeting',
+    language: 'en',
+    rationale:
+      'THE HALF THE FINDING DID NOT CLAIM. QA-3 localised the defect to the Hebrew negator list because the ' +
+      'English analogue was flagged - but that analogue was `No problem ...`, and bare `no` is deliberately ' +
+      'not an English negator. An English filler built on a DECLARED negator leaked exactly as the Hebrew ' +
+      'ones did. A fix scoped to Hebrew would have left this open, and only a spec can keep that checkable.',
+  },
+  {
+    key: 'r47-no-punctuation-conditional-filler-en',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_EN_IF_THAT_WORKS_FOR_YOU_FRIDAY],
+    expect: 'NOT_RELEASED',
+    forbidden: [T_EN_IF_THAT_WORKS_FOR_YOU_FRIDAY],
+    tool: 'schedule_meeting',
+    language: 'en',
+    rationale:
+      'A CONDITIONAL filler rather than a negator one, so the class is shown to span both suppression kinds. ' +
+      'It ends in `you`, which is the token that was acting as a suppressor on its own because the ' +
+      'multi-token conditional `would you like` was being split into single mood words - a second fail-open ' +
+      'defect found by the § 17 matrix and not by the report.',
+  },
+  {
+    key: 'r48-comma-control-he',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_HE_NO_PROBLEM_COMMA_FRIDAY],
+    expect: 'NOT_RELEASED',
+    forbidden: [T_HE_NO_PROBLEM_COMMA_FRIDAY],
+    tool: 'schedule_meeting',
+    language: 'he',
+    rationale:
+      'THE CONTROL FOR THE WHOLE CLASS, and the reason it is worth a scenario of its own. This spelling - the ' +
+      'identical sentence WITH a comma - was correctly blocked while r41 was being released and persisted, ' +
+      'for the second time in this document. It is here so that a future change which re-opens the ' +
+      'no-punctuation case cannot be mistaken for a change that broke Hebrew generally: if r41 fails and r48 ' +
+      'passes, the verdict depends on a punctuation mark again.',
+  },
+  {
+    key: 'r49-no-punctuation-honest-negation-he',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_HE_HONEST_NOT_BOOKED_YET],
+    expect: 'RELEASED',
+    tool: 'schedule_meeting',
+    language: 'he',
+    rationale:
+      'THE PRECISION HALF, and the one the finding itself says must not break. `אין בעיה הפגישה לא נקבעה ' +
+      'עדיין.` is the truthful answer to "is my meeting booked?" behind the very filler that leaked, and it ' +
+      'is what a fix that simply deleted `אין` from the negator list would have destroyed. Declared RELEASED ' +
+      'rather than EITHER because it asserts nothing at all, so no state can change the answer.',
+  },
+  {
+    key: 'r50-no-punctuation-honest-negation-en',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_EN_HONEST_NOTHING_BOOKED_YET],
+    expect: 'RELEASED',
+    tool: 'schedule_meeting',
+    language: 'en',
+    rationale:
+      'The English mirror of r49, with no comma so it exercises the same single clause as the leaking shape. ' +
+      '`nothing is booked yet` is the wording the prompt clauses actually use, so a gate that regenerated it ' +
+      'would be punishing the honest sentence it asks for.',
+  },
+  {
+    key: 'r51-no-punctuation-supported-he',
+    withToolCall: T_NEUTRAL_OFFER,
+    afterToolResult: [T_HE_NO_PROBLEM_MEETING_THURSDAY],
+    expect: 'EITHER',
+    tool: 'schedule_meeting',
+    language: 'he',
+    rationale:
+      'The third precision spec: the QA-3 shape naming the day the booking was really made for. Narrowing ' +
+      'suppression makes the gate see MORE claims, and the failure that follows is a gate that blocks ' +
+      'truthful Hebrew and gets switched off - which puts the § 6.5.4 defect back in full. TRUE wherever the ' +
+      'booking was accepted; declared EITHER for r02\'s reason.',
+  },
 ];
+
+/**
+ * Every sentence one spec puts in the model's mouth, in script order.
+ *
+ * One helper rather than the same two-line filter in four places, because the
+ * shape changed in § 17.5 - these are `DeclaredText` values now, not strings -
+ * and a reader checking "is every scripted text declared" should have one
+ * definition of "scripted text" to check against.
+ */
+export function scriptedTextsOf(spec: ReleaseSpec): readonly string[] {
+  return [spec.withToolCall, ...spec.afterToolResult]
+    .filter((declared): declared is DeclaredText => declared !== null)
+    .map((declared) => declared.text);
+}
 
 /** The busy rules for one availability state, in one contact's zone. */
 export function rulesFor(state: AvailabilityDimension, timezone: string): readonly DailyLocalBusyRule[] {

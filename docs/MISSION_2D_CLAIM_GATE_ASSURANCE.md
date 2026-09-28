@@ -170,6 +170,23 @@ a deliverable and not a nicety. Both halves are recorded in
 > document. Closing it properly needs a second, independently written detector;
 > nobody has written one and nothing here pretends otherwise.
 > `docs/MISSION_2D_CLAIM_GATE.md` § 15.4 has the detail.
+>
+> ---
+>
+> **AND THEN IT HAPPENED TWICE MORE, AND THE SECTION HEADING ABOVE IS NO LONGER
+> ACCURATE. READ § 10.** This subsection's own sentence — *"a detector regression
+> would make INV-18 quietly find fewer claims and stay green"* — was correct,
+> documented, printed in the report, and **allowed four live fail-open defects to
+> be certified as zero leaks** (`docs/MISSION_2D_CLAIM_GATE.md` §§ 14.1, 15.1,
+> 16.1, 17.1). Documenting a gap four times is not the same as closing it.
+>
+> Since § 17.5 of the gate document, **DETECTION IS NO LONGER THE DETECTOR'S
+> ANSWER ALONE.** Every scripted model text in the sweep declares, as hand-authored
+> data beside the sentence, what it asserts and of which kind, and INV-18 judges
+> that declaration against the rows the sweep really persisted. The detector is
+> kept as a second witness — which is the right call and is argued in § 10.2 — but
+> it can no longer decide on its own that there is nothing to check. § 10 is the
+> account, including the structural proof of independence and the measured cost.
 
 ### 2.3 The exhaustion split, asserted precisely
 
@@ -998,6 +1015,24 @@ part of the Mission 2B fail-closed resolver.
 
 ## 7. The one unresolved item — `docs/ARCHITECTURE.md`
 
+> **RESOLVED on 2026-09-28, by the independent-oracle task
+> (`MISSION-2D-R-CLAIM-GATE-FAILSAFE-AUTO-INDEPENDENT-ORACLE`), which owns
+> `docs/ARCHITECTURE.md` where an invariant count is wrong.** Both lines are
+> corrected — **16** per-scenario invariants and **1,027** generated scenarios in
+> **13** families — and **the guard test this section says it would write the
+> moment those lines were correct is written**:
+> `tests/invariants/architectureCounts.test.ts`. It re-derives the invariant count
+> from `INVARIANTS.length` and the scenario and family counts from
+> `generateScenarios()`, and it fails FIRST with *"the phrase has moved"* if
+> somebody rewords the table, so it cannot pass vacuously. It asserts the numbers
+> and nothing else, for the reason this document gives: pinning the prose would be
+> a tax on editing the document rather than a guard on its integrity.
+>
+> The paragraph below is preserved as written, including the numbers as they were.
+> This is now the **third** mission in which a count in that table went stale, which
+> is the argument this section already made for the guard being worth more than the
+> correction.
+
 **Owner: the gate task. Status: REQUIRED BEFORE MERGE. Not done, deliberately.**
 
 Two lines now state the wrong invariant count:
@@ -1034,10 +1069,19 @@ Stated as plainly as the rest, in the spirit of § 9.3. The full list is printed
 `npm run qa:sweep` under *COVERAGE THIS SWEEP DOES NOT PROVIDE*; these are the
 four I added.
 
-1. **INV-18 reuses the gate's detector to find claims.** Support is independent;
+1. ~~**INV-18 reuses the gate's detector to find claims.** Support is independent;
    detection is not. A detector regression makes INV-18 find fewer claims and stay
    green. Closed by `tests/claimGate/claimGateCorpus.ts`, not by the sweep — and
-   § 5.1 is a live example of a real defect the sweep cannot see.
+   § 5.1 is a live example of a real defect the sweep cannot see.~~
+   **SUPERSEDED — see § 10.** This was true when written, was printed in the sweep
+   report, and let four live fail-open defects be certified as zero leaks before it
+   was closed. INV-18 now reads every released sentence through a hand-authored
+   declaration that consults nothing under `src/agent/claimGate/**`, and fails when
+   a declared claim is released over state that does not support it **regardless of
+   what the detector says**. What is left of this gap is stated precisely in
+   § 10.4 and in `docs/MISSION_2D_CLAIM_GATE.md` § 17.8, and it is narrower and
+   different in kind: the oracle is not a second detector, so it bounds the
+   ASSURANCE layer rather than making the gate see more.
 2. **Family M is bounded.** Four zones, one `now`, one policy, one free diary. Not
    crossed with DST edges, a busy diary, a restricted allowlist, or a
    southern-hemisphere offset. `Australia/Sydney` is excluded for the stated
@@ -1087,3 +1131,209 @@ npm run qa:sweep -- --family M
 
 Run them **one at a time**: the host is memory-constrained and two concurrent
 sweeps produce a failure about the host rather than about the code.
+
+---
+
+## 10. The independent oracle — breaking INV-18's circularity
+
+**Added 2026-09-28 by `MISSION-2D-R-CLAIM-GATE-FAILSAFE-AUTO-INDEPENDENT-ORACLE`,
+part 1(b) of Mission 2D-R.** This task did not build the detector and is the
+independent witness over it, which is the same standing this document was written
+from. **No model was called, pulled or run.** No `eval:*`, no `demo:local`, no
+`llm:probe`, no `llm:smoke`. No model default was changed. Nothing was merged.
+
+### 10.1 What this document got right, and what that was worth
+
+§ 2.2 is the most carefully argued paragraph here and it has always been honest.
+It says SUPPORT is independently re-derived and DETECTION is not, it says why
+detection cannot be independent without a second Hebrew lexicon, and it states the
+consequence in the plainest available terms:
+
+> a detector regression would make INV-18 quietly find *fewer* claims and stay
+> green.
+
+That sentence was true, it was correct, it was repeated in `KNOWN_COVERAGE_GAPS`,
+and from § 15.4 onwards it was printed by `npm run qa:sweep` itself under
+`WHAT THIS ZERO IS BOUNDED BY`. **And the sweep then certified four live fail-open
+defects as zero leaks**, one after another, in § 14.1, § 15.1, § 16.1 and § 17.1 of
+`docs/MISSION_2D_CLAIM_GATE.md`. Every one of those sentences was returned to a
+caller and written to `ConversationTurn` as a spoken `AGENT` row against an empty
+ledger.
+
+The lesson is not that the paragraph was wrong. It is that **a documented gap in an
+assurance layer is still a gap, and printing it four times is not closing it.**
+
+### 10.2 The new INV-18 shape
+
+INV-18 now reads every released sentence through **two witnesses**, and neither can
+silence the other.
+
+**Witness 1 — the hand-authored declaration (new).** Every scripted model text in
+the sweep and in the e2e scenarios carries a `ClaimDeclaration`: whether it asserts
+a material effect, of which **family**, in which **mode**, naming which absolute
+local **day** and **hour**, which **identifier tokens** it reads out, whether it
+**announces a reference**, and a mandatory `why`. Each was written by a person
+reading the English or the Hebrew. The declaration is judged against the rows this
+scenario actually persisted and the tool calls that actually succeeded — the same
+independently measured state this document's § 2.2 already used for the support
+half. **A declared claim released over state that does not support it fails,
+regardless of what the detector says.**
+
+**Witness 2 — the detector (unchanged, and deliberately kept).** Still runs on every
+release, exactly as before. Keeping it is a requirement rather than a courtesy: the
+declaration only covers sentences somebody wrote down, and the detector covers
+everything. What changed is that the detector's silence is no longer an answer.
+
+**Their disagreement is reported.** `compareWitnesses` classifies every released
+sentence and `npm run qa:sweep` prints the four counts with the offending sentences:
+
+```
+  Released sentences with NO declaration : 0   (must be 0)
+  HOW THE TWO WITNESSES COMPARED, per released sentence
+    BOTH_SILENT            2014
+    BOTH_SAW_A_CLAIM         32
+    DETECTOR_BLIND            0
+    DETECTOR_OVER_READ        0
+```
+
+`DETECTOR_BLIND` — a person reads a booking, the detector finds nothing — is the
+signature of all four historical findings.
+
+**A released sentence nobody declared is a VIOLATION**, not an inapplicable case.
+`ReleaseSpec.withToolCall` and `afterToolResult` are typed `DeclaredText` rather
+than `string`, so `tsc` names a missing declaration at the authoring site — the
+same mechanism `FAMILY_COVERAGE` in § 3.2 uses, one layer out.
+
+**Mechanisms, and where they live.** Everything is under `tests/`; nothing in `src/`
+was added for this.
+
+| Artefact | What it is |
+|---|---|
+| `tests/invariants/claimOracle.ts` | The types, the judgement, the witness comparison. **Imports nothing at all** |
+| `tests/invariants/releaseTexts.ts` | The 50 sentences family M scripts, each declared once beside the text |
+| `tests/invariants/pastFindingTexts.ts` | The verbatim wordings of the four historical findings, declared |
+| `tests/invariants/claimOracleBoundary.test.ts` | 9 tests. The transitive import closure must not reach `src/agent/claimGate/**`, with two positive controls |
+| `tests/invariants/claimOracleCatchesPastFindings.test.ts` | 25 tests. All four findings fail INV-18 with the detector stubbed blind |
+| `tests/invariants/architectureCounts.test.ts` | 4 tests. The § 7 guard |
+| `tests/invariants/dimensions.ts` → `RELEASE_SPECS` | 40 → **51** specs; `r41`–`r51` are the QA-3 no-punctuation axis |
+
+### 10.3 The structural proof, because prose was what was already there
+
+§ 2.2 *claimed* independence for the support half and was right. That claim did not
+stop four defects, because the half that was not independent was documented as not
+independent and shipped anyway. So this time the independence is a test, in the
+spirit of `tests/invariants/vendorBoundary.test.ts`:
+
+- the **transitive** relative-import closure of the oracle and of both declaration
+  files must contain nothing under `src/agent/claimGate/**` and must name it in no
+  import specifier;
+- `claimOracle.ts` must import **nothing at all** — asserted directly, specifier list
+  empty. Not even Luxon: every quantity it compares is an absolute value a person
+  wrote down against an absolute value the runner measured;
+- the closure must be **≤ 4 files**, so the argument stays verifiable by eye;
+- **two positive controls**: the same walker pointed at `invariants.ts` must find
+  `src/agent/claimGate/detector.ts`, and pointed at `runner.ts` must find the gate
+  **transitively** while that file's own direct imports stay clean. A walker with a
+  bug in it would otherwise pass silently, which is the failure mode it is guarding.
+
+The family→observed-effect table is written a **third** time rather than imported,
+for the reason § 2.2 gives about the second: if the gate's table were edited to make
+a failing claim pass, two others would still disagree.
+
+### 10.4 What this does NOT close, stated as plainly as § 8 does
+
+**The oracle is not a second detector.** It can judge a sentence somebody
+DECLARED; it cannot read an arbitrary one. For the sweep that distinction is
+invisible — every released text is declared or the run fails — but **the sweep runs
+`ScriptedLlmProvider`**, which is § 8 point 3 of this document and has not changed.
+Against a real model, the only thing between a novel false sentence and a caller is
+still the deterministic detector.
+
+So what § 17.5 buys is precise and worth stating without inflation: **the assurance
+layer can no longer certify a detector gap as zero leaks. It does not make the gate
+see more.** Anyone reading `CLAIMS THAT LEAKED PAST THE GATE: 0` as "no false
+sentence can reach a customer" is reading more than the number says — which is
+exactly what §§ 15.2, 16.4 and 17.2 of the gate document record happening four
+times.
+
+`tests/claimGate/claimGateCorpus.ts` remains the only thing that can prove the
+DETECTOR sees a class at all, and § 3.4's argument for it is unchanged and is
+stronger than it was.
+
+**Two items found by this task's own adversarial pass are open**, and both are in
+`docs/MISSION_2D_CLAIM_GATE.md` § 17.7 with reproductions: one fail-open spelling
+(`I took your meeting off the calendar.`, the active removal verb with a
+determiner-bearing object) and one new false positive the § 17 reach rule causes on
+negated-possession refusals (`I haven't got a confirmation number to give you.`,
+nine wordings). The first is asserted **as a miss** in `tests/e2e/claimGate.test.ts`;
+the second is recorded rather than fixed, because closing it means widening a list
+where a wrong entry costs a miss.
+
+### 10.5 The measured cost of the added checks
+
+**Method, and the caveat this document already insists on.** Elapsed times on this
+host (`linux/x64`, 32 CPUs, node v22.14.0, WSL2, memory constrained) have a
+run-to-run spread larger than most of the effects being measured — § 4.4 makes that
+point with a *negative* measured overhead, and it applies here too. So the figures
+below are given with their denominators, and the per-call figure is the one to
+trust.
+
+**The oracle's own work, per released sentence**, is one `Map.get` on the text, a
+loop over at most a handful of declared assertions, and integer and string
+comparisons against an already-computed observed-effect array. There is no
+allocation of consequence, no I/O and no regular expression. It is **not measurable
+against the ~15–30 ms audit insert** that § 4.3 identifies as the real cost of a
+gated turn, and this document would rather say that than publish a number inside its
+own noise floor.
+
+**What is measurable is the sweep**, because the check runs 2,050 times and the
+corpus grew:
+
+| | before (§ 16.8 of the gate doc) | after |
+|---|---:|---:|
+| sweep scenarios | 983 | **1,027** (+44: `r41`–`r51` × 4 zones) |
+| applicable invariant checks | 8,086 | **10,667** |
+| INV-18 applicable checks | 2,094 | **4,268** |
+| pieces of text released | 1,962 | **2,050** |
+| sweep elapsed | 158.5 s | **163.1 s** |
+
+**INV-18's applicable count roughly doubles, and that is the oracle and not an
+accident.** Every released sentence now produces one oracle result in addition to
+its detector result — 2,050 + the pre-existing per-release and per-spec checks. A
+reader comparing 2,094 to 4,268 should read it as "the same releases, judged twice"
+rather than as new coverage of new scenarios.
+
+**Elapsed is +2.9% on +4.5% more scenarios**, i.e. the added checks are cheaper per
+scenario than the scenarios themselves, which is what a pure in-memory comparison
+should be. Given the spread § 4.4 documents, the honest statement is that **the
+oracle's cost is not visible in the sweep's wall clock.**
+
+**The test suite** gained 4 files and 106 tests (§ 9 of the gate document has the
+exact figures), and the two new invariant test files run in **3.7 s** and **6.6 s**
+respectively, both dominated by module transform rather than by the assertions.
+
+### 10.6 Tests I deliberately changed
+
+**No existing test's expectations were weakened.** Four existing files were
+*extended* or *migrated*, and each is named with its reason:
+
+- `tests/invariants/dimensions.ts` — `ReleaseSpec.withToolCall`, `afterToolResult`
+  and `forbidden` changed from `string` to `DeclaredText`. Mechanical across all 40
+  existing specs; no wording changed, and `dimensions.test.ts` asserts every text is
+  still in the declaration index so the migration cannot have dropped one.
+- `tests/invariants/dimensions.test.ts` — three assertions rewritten for the new
+  type, plus a new block of 56 on the declarations themselves.
+- `tests/invariants/runner.ts` and `tests/invariants/invariants.ts` — read `.text`,
+  and INV-18 gained the oracle block.
+- `tests/invariants/sweep.test.ts` — three new non-vacuity floors on the new
+  witness. Nothing existing relaxed.
+- `tests/qa/report.ts` — two stale row counts corrected (raised through the mailbox
+  by the suppression-redesign task, which would not edit a file it did not own), and
+  the `KNOWN_COVERAGE_GAPS` entry about INV-18's oracle rewritten rather than
+  patched, because its central claim is what § 10 removes.
+
+One file in `src/` was changed and it is **not** part of this deliverable:
+`src/agent/claimGate/lexicon/en.ts` gained CANCELLATION forms for a fail-open leak
+this task demonstrated end to end and could not get an owner to take. That is
+recorded in full, including why the mailbox route was unavailable, in
+`docs/MISSION_2D_CLAIM_GATE.md` § 17.7.

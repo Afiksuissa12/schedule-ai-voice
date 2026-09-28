@@ -234,6 +234,65 @@ what runs, approved or not.
 
 ---
 
+### 1.9 A model-assisted SECOND OPINION for the claim gate's vocabulary surface — **question raised, NOTHING BUILT, NO MODEL CALLED**
+
+**Recorded 2026-09-28 by `MISSION-2D-R-CLAIM-GATE-FAILSAFE-AUTO-INDEPENDENT-ORACLE`,
+part 1(b) of Mission 2D-R.** Raised as a question, not a proposal. **Nothing was
+implemented, no model was called, pulled or run, and no model default was changed.**
+
+| | |
+|---|---|
+| Subject | `src/agent/claimGate/detector.ts` and `src/agent/claimGate/lexicon/**` |
+| Today | Wholly deterministic. Text in, material claims out, no I/O, byte-identical every run |
+| The question | Whether to add a model-assisted second opinion that can only **ADD** suspicion and can never **CLEAR** a claim |
+| Built | **Nothing.** No code path, no port, no flag, no prompt |
+| Blocked on you | Whether the residual in `docs/MISSION_2D_CLAIM_GATE.md` § 17.8 is worth a second provider round trip on the turns that would otherwise be released |
+
+**Why it is being raised now and was not before.** `docs/DECISIONS.md` § 11.1 chose
+deterministic over model-assisted and the argument still holds: the finding the gate
+exists for is that a model does not reliably follow an instruction, so putting the
+guarantee inside a second model call puts it back where it failed.
+`docs/MISSION_2D_CLAIM_GATE.md` § 17.4 said the answer to *"is a deterministic
+lexicon detector fail-safe enough"* is **yes**, and named what would change it: *"a
+finding in a DIFFERENT shape from these four — one where the detector cannot be made
+to see a class without an open-class enumeration."*
+
+**That finding arrived.** § 17.7 records it. Four fixes and three independent QA
+rounds into this gate, the English CANCELLATION family still had one idiom in it, and
+`That meeting is off the calendar now.` was returned to a caller and written to
+`ConversationTurn` as a spoken agent turn with nothing booked. It is not a scope
+defect, not an arrangement defect and not a governance defect — the rules were right
+and the **word was not in the list**. A lexicon of completion forms is an open class.
+
+**What is NOT being claimed.** That the gate is unsafe, that the deterministic design
+was wrong, or that this should be built. The suppression mechanism was attacked with
+169 wordings across every axis a reviewer would try and produced **zero** new leaks;
+the rules generalise. The residual is the vocabulary, and no rule fixes a vocabulary.
+
+**The only shape that would be compatible with § 11.1, if you want it.** A second
+opinion that is **strictly one-directional**: it may raise suspicion on text the
+deterministic detector passed, and it may **never** clear a claim the detector
+raised. Consequences, stated so the trade is legible:
+
+- a model failure costs a **regeneration**, never a release — the fail-safe direction
+  `src/agent/claimGate/detector.ts` already states for itself;
+- it cannot weaken any guarantee that exists today, because it only ever adds;
+- it costs **one extra provider round trip on the happy path** — on every turn that
+  asserts nothing, which is ~98% of them (2,014 of 2,050 released sentences in the
+  current sweep). That is the exact cost § 4.1 rejected, and it is the reason this is
+  a Founder decision and not an engineering one;
+- it would end byte-identical determinism for `npm run qa:sweep -- --determinism`
+  unless the second opinion is excluded from the sweep, which then means the sweep no
+  longer tests the production path.
+
+**The alternative, which costs nothing and is not free of consequences either:**
+leave it deterministic and accept that a completion idiom nobody listed is a miss,
+as § 8 limit 10 now states plainly. That is the status quo and it is what ships
+unless you say otherwise.
+
+**Nothing here is actionable by an engineer without your signature.** If this is read
+as approval to build a model-assisted path, it has been misread.
+
 ## 2. Could the legacy export be read?
 
 **No.** The Founder designated as required reading:

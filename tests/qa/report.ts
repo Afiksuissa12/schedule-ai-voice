@@ -16,8 +16,10 @@
  *  - When the corpus was filtered, the report says so at the top instead of
  *    quietly presenting a subset as the whole.
  */
+import { detectMaterialClaims } from '../../src/agent/claimGate/detector.js';
 import { VALIDATION_ERROR_CODES } from '../../src/ports/validation.js';
-import { INVARIANTS } from '../invariants/invariants.js';
+import { compareWitnesses, WITNESS_AGREEMENT_MEANING, type WitnessAgreement } from '../invariants/claimOracle.js';
+import { declarationFor, INVARIANTS } from '../invariants/invariants.js';
 import type { InvariantResult } from '../invariants/invariants.js';
 import type { ScenarioObservation } from '../invariants/runner.js';
 import { FAMILY_PURPOSE, type Scenario } from '../invariants/scenarios.js';
@@ -85,30 +87,29 @@ export const KNOWN_COVERAGE_GAPS: readonly string[] = [
     'call including read-only ones - but it says nothing about REFUSED calls. That a refusal NAMES the ' +
     'token it could not account for is asserted in tests/scheduling/localeRefusalBreadth.test.ts, across ' +
     'thirteen scripts, rather than across this matrix.',
-  'INV-18 re-derives SUPPORT independently - from rows read back through the repositories and from the ' +
-    "turn's own ToolOutcome values, with Luxon doing the timezone arithmetic - but it reuses the claim " +
-    'gate\'s own DETECTOR to find the claims in the first place. That half is therefore NOT an independent ' +
-    'measurement, and it cannot be: knowing that נקבעה asserts a completed booking needs a Hebrew lexicon, ' +
-    'and writing a second one inside the harness would be the reimplementation this design forbids (the same ' +
-    'argument INV-16 makes). The consequence is precise: a bug in buildActionLedger or verifyClaims is ' +
-    'caught here, and a bug in the DETECTOR is caught only for the family M specs that declare ' +
-    'NOT_RELEASED - which is what makes the simple-past, fabricated-reference and cross-clause specs ' +
-    '(r17-r21, r23-r27) a regression guard on the lexicon and not only on the ledger. Those specs now NAME ' +
-    'the wording they forbid in ReleaseSpec.forbidden rather than having it inferred by running the ' +
-    'detector over their texts, and that change was not cosmetic: the old form dropped a wording the ' +
-    'detector MISSED out of the forbidden list, so a live fail-open detector gap was reported here as zero ' +
-    'leaks while eight unsupported claims reached real callers. A missed wording now fails as an ESCAPE, ' +
-    'and the failure says whether the gate failed to stop a claim it saw or never saw one. What is still ' +
-    'open: a detector rule that stopped firing on wording no spec declares unsupportable would make INV-18 ' +
-    'quietly find fewer claims - and that is not hypothetical. It happened: an adverb inside an English ' +
-    'completion frame (`Your meeting is NOW booked`) was released and persisted while this report printed ' +
-    'zero leaks, because no spec named a wording of that shape, so `ReleaseSpec.forbidden` had nothing to ' +
-    'keep away from the caller. Naming the strings stops the detector overruling a declaration; it cannot ' +
-    'write the declaration. r28-r40 are that class - the interrupted frame and the bare participle beside a ' +
-    'domain object - and the remaining gap is closed by ' +
-    'tests/claimGate/claimGateCorpus.ts, a corpus with the answers written down in which every detector ' +
-    'rule must fire, every known-good sample must stay clean, and a 500-row cross-clause matrix and a ' +
-    '144-row adverb-by-frame matrix must stay fully detected.',
+  'INV-18 HAS TWO WITNESSES SINCE SECTION 17.5, AND THE FIRST ONE IS NOT THE DETECTOR. It always ' +
+    're-derived SUPPORT independently - from rows read back through the repositories and from the turn\'s ' +
+    'own ToolOutcome values, with Luxon doing the timezone arithmetic - but it used to find the CLAIMS by ' +
+    "calling the gate's own detectMaterialClaims, and that circle certified four live fail-open defects as " +
+    'zero leaks (docs/MISSION_2D_CLAIM_GATE.md sections 14.1, 15.1, 16.1, 17.1). Now every scripted model ' +
+    'text in this sweep declares, as hand-authored data beside the sentence in ' +
+    'tests/invariants/releaseTexts.ts, whether it asserts a material effect and of which kind; the ' +
+    'declaration is judged against observed state; and a released sentence that no declaration covers is a ' +
+    'VIOLATION rather than an inapplicable case. tests/invariants/claimOracleBoundary.test.ts asserts ' +
+    'structurally that neither the oracle nor the declarations reach src/agent/claimGate, directly or ' +
+    'transitively, and tests/invariants/claimOracleCatchesPastFindings.test.ts drives all four historical ' +
+    'findings through INV-18 with the detector stubbed to see nothing and requires all four to fail. ' +
+    'WHAT IS STILL NOT INDEPENDENT, AND WHAT THAT COSTS: the detector is kept as a SECOND witness, ' +
+    'deliberately, because the declaration only covers sentences somebody wrote down. The oracle is not a ' +
+    'second detector and cannot read an arbitrary sentence - so for this sweep it covers everything (every ' +
+    'released text is declared or the run fails), and for any FUTURE text nobody declares it covers ' +
+    'nothing. That bound is stated in section 17.8 rather than implied. Disagreement between the two ' +
+    'witnesses is printed under INV-18 rather than resolved quietly, because a sentence a person reads as ' +
+    'a booking and the detector reads as nothing is the exact signature of all four findings. The thing ' +
+    'that proves the DETECTOR sees a class at all is still tests/claimGate/claimGateCorpus.ts, a corpus ' +
+    'with the answers written down: MUST_FLAG, MUST_NOT_FLAG, DOCUMENTED_MISSES, DOCUMENTED_OVERREACH, a ' +
+    '1,430-row cross-clause matrix, a 144-row adverb-by-frame matrix, a 2,739-row suppression matrix ' +
+    'carrying both directions, and a 1,262-row generated honest corpus.',
   'BOUNDED DELIBERATELY: family M crosses its claim texts with FOUR zones (America/New_York, Europe/London, ' +
     'Asia/Jerusalem, Asia/Kolkata) at ONE `now` instant, under ONE policy and one free diary. Australia/Sydney ' +
     'is deliberately excluded rather than overlooked: at n01-midweek Sydney is already on Thursday, so ' +
@@ -205,6 +206,38 @@ export interface ClaimGateSummary {
   readonly regenerationsRequested: number;
   readonly byOutcome: readonly { readonly outcome: string; readonly count: number }[];
   readonly byUnsupportedReason: readonly { readonly reason: string; readonly count: number }[];
+  /**
+   * Released sentences that NO hand-authored declaration covers.
+   *
+   * Must be 0, and INV-18 fails each one, so this is a second reading of the
+   * same fact rather than a new check. It is here because a reader looking at
+   * the leak count deserves to see how much of the corpus the independent oracle
+   * actually judged.
+   */
+  readonly releasesUndeclared: number;
+  /**
+   * HOW THE TWO WITNESSES COMPARED, sentence by sentence.
+   *
+   * INV-18 now reads every released sentence twice: once through the
+   * hand-authored declaration (`tests/invariants/claimOracle.ts`), which owes the
+   * gate nothing, and once through `detectMaterialClaims`, which is the gate's
+   * own. Keeping both is the requirement - the declaration only covers sentences
+   * somebody wrote down, and the detector covers everything - and neither can
+   * silence the other.
+   *
+   * `DETECTOR_BLIND` is the row worth watching. It is the signature of all four
+   * Mission 2D fail-open findings: a person reading the sentence says it asserts
+   * an effect and the detector found none. It is not by itself a leak, because
+   * the sentence may be true - but it means the gate would not have stopped it
+   * if it were false.
+   */
+  readonly witnessAgreement: Readonly<Record<WitnessAgreement, number>>;
+  /** The actual sentences behind a `DETECTOR_BLIND` or `DETECTOR_OVER_READ` row. */
+  readonly witnessDisagreements: readonly {
+    readonly agreement: WitnessAgreement;
+    readonly text: string;
+    readonly count: number;
+  }[];
 }
 
 export function claimGateSummary(observations: readonly ScenarioObservation[]): ClaimGateSummary {
@@ -218,6 +251,14 @@ export function claimGateSummary(observations: readonly ScenarioObservation[]): 
   let rawModelAttemptsUnsupported = 0;
   let leakedClaims = 0;
   let regenerationsRequested = 0;
+  let releasesUndeclared = 0;
+  const witnessAgreement: Record<WitnessAgreement, number> = {
+    BOTH_SILENT: 0,
+    BOTH_SAW_A_CLAIM: 0,
+    DETECTOR_BLIND: 0,
+    DETECTOR_OVER_READ: 0,
+  };
+  const disagreements = new Map<string, { agreement: WitnessAgreement; text: string; count: number }>();
 
   for (const observation of observations) {
     if (observation.claimGate.enabled) scenariosWithAGate += 1;
@@ -227,6 +268,26 @@ export function claimGateSummary(observations: readonly ScenarioObservation[]): 
       releases += 1;
       outcomes.set(release.outcome, (outcomes.get(release.outcome) ?? 0) + 1);
       if (release.releasedText === null) releasesWithheld += 1;
+
+      // ---- the two witnesses, compared -------------------------------------
+      if (release.releasedText !== null) {
+        const declaration = declarationFor(release.releasedText);
+        if (declaration === undefined) {
+          releasesUndeclared += 1;
+        } else {
+          const agreement = compareWitnesses(declaration, detectMaterialClaims(release.releasedText).length);
+          witnessAgreement[agreement] += 1;
+          if (agreement === 'DETECTOR_BLIND' || agreement === 'DETECTOR_OVER_READ') {
+            const key = `${agreement} ${release.releasedText}`;
+            const existing = disagreements.get(key);
+            if (existing === undefined) {
+              disagreements.set(key, { agreement, text: release.releasedText, count: 1 });
+            } else {
+              existing.count += 1;
+            }
+          }
+        }
+      }
 
       // A release "carried a claim" when the gate had something to verify -
       // which is exactly the case where attempt 1 produced either a supported or
@@ -265,6 +326,11 @@ export function claimGateSummary(observations: readonly ScenarioObservation[]): 
     byUnsupportedReason: [...reasons.entries()]
       .map(([reason, count]) => ({ reason, count }))
       .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason)),
+    releasesUndeclared,
+    witnessAgreement,
+    witnessDisagreements: [...disagreements.values()].sort(
+      (a, b) => b.count - a.count || a.text.localeCompare(b.text),
+    ),
   };
 }
 
@@ -454,18 +520,59 @@ export function renderReport(sweep: SweepResult, options: RenderOptions = {}): s
   // in exactly the same way and a reader is entitled to know that before quoting
   // the zero.
   lines.push('  WHAT THIS ZERO IS BOUNDED BY');
-  lines.push('    INV-18 reads released text with the gate\'s own detector, so it counts claims the detector');
-  lines.push('    CAN see. A detector miss is invisible here by construction. Two things bound that:');
-  lines.push('      - the NOT_RELEASED release specs check escapes against the SPEC\'s declaration rather');
-  lines.push('        than the detector\'s opinion, so a missed wording fails as an escape, not as nothing;');
-  lines.push('      - tests/claimGate/claimGateCorpus.ts carries MUST_FLAG, MUST_NOT_FLAG, DOCUMENTED_MISSES,');
-  lines.push('        DOCUMENTED_OVERREACH, a 500-row cross-clause matrix and a 144-row adverb-by-frame');
-  lines.push('        matrix, and is the only thing that can prove the detector sees a class at all.');
+  lines.push('    THIS ZERO WAS WRONG FOUR TIMES, AND THE REASON DIFFERED EACH TIME: fixtures one punctuation');
+  lines.push('    mark wide, an escape check filtered through the detector it was policing, specs that did not');
+  lines.push('    name a wording of the failing shape, and a GENERATED matrix whose joiner axis never included');
+  lines.push('    the empty joiner. See docs/MISSION_2D_CLAIM_GATE.md sections 15.2, 15.4, 16.4 and 17.2.');
+  lines.push('    The common cause was one thing: INV-18 found its claims with the gate\'s OWN detector, so a');
+  lines.push('    sentence the detector could not see was a sentence this line could not count.');
+  lines.push('');
+  lines.push('    SINCE SECTION 17.5 THERE ARE TWO WITNESSES, AND THIS ONE IS NOT THE DETECTOR.');
+  lines.push('    Every scripted model text in this sweep DECLARES, as hand-authored test data beside the');
+  lines.push('    sentence, whether it asserts a material effect and of which kind. The declaration consults');
+  lines.push('    nothing under src/agent/claimGate - tests/invariants/claimOracleBoundary.test.ts walks the');
+  lines.push('    transitive import closure and fails if it ever does - and INV-18 judges it against what this');
+  lines.push('    sweep actually persisted and dispatched. So a declared claim released over an empty ledger');
+  lines.push('    fails REGARDLESS OF WHAT THE DETECTOR SAYS.');
+  lines.push('    tests/invariants/claimOracleCatchesPastFindings.test.ts drives all four findings above');
+  lines.push('    through INV-18 with detectMaterialClaims stubbed to return nothing, and all four fail.');
+  lines.push('');
+  lines.push('    WHAT IS STILL BOUNDED. The oracle is not a second detector: it can only judge a sentence');
+  lines.push('    somebody declared. For the sweep that is every sentence - an UNDECLARED released text is an');
+  lines.push('    INV-18 violation, counted below - but it is a real limit on what this mechanism generalises');
+  lines.push('    to, and docs/MISSION_2D_CLAIM_GATE.md section 17.8 states it rather than implying more.');
+  lines.push('      - tests/claimGate/claimGateCorpus.ts is still the thing that proves the DETECTOR sees a');
+  lines.push('        class at all: MUST_FLAG, MUST_NOT_FLAG, DOCUMENTED_MISSES, DOCUMENTED_OVERREACH, a');
+  lines.push('        1,430-row cross-clause matrix, a 144-row adverb-by-frame matrix, a 2,739-row suppression');
+  lines.push('        matrix carrying both directions, and a 1,262-row generated honest corpus.');
   lines.push('        Read it beside this number, not after it.');
-  lines.push('    THIS ZERO HAS BEEN WRONG BEFORE, THREE TIMES, AND THE REASON DIFFERED EACH TIME: fixtures');
-  lines.push('    one punctuation mark wide, an escape check filtered through the detector it was policing,');
-  lines.push('    and specs that simply did not name a wording of the failing shape. See');
-  lines.push('    docs/MISSION_2D_CLAIM_GATE.md sections 15.2, 15.4 and 16.4.');
+  lines.push('');
+  lines.push(
+    `  Released sentences with NO declaration : ${gate.releasesUndeclared}` +
+      (gate.releasesUndeclared === 0
+        ? '   (must be 0)'
+        : '   <- each is an INV-18 VIOLATION; the oracle had no ground truth for it'),
+  );
+  lines.push('  HOW THE TWO WITNESSES COMPARED, per released sentence');
+  for (const agreement of ['BOTH_SILENT', 'BOTH_SAW_A_CLAIM', 'DETECTOR_BLIND', 'DETECTOR_OVER_READ'] as const) {
+    lines.push(`    ${agreement.padEnd(20)} ${String(gate.witnessAgreement[agreement]).padStart(6)}`);
+  }
+  if (gate.witnessDisagreements.length === 0) {
+    lines.push('    The declaration and the detector agreed on every sentence this sweep released.');
+  } else {
+    lines.push('    THEY DISAGREED, WHICH IS INFORMATION RATHER THAN A FAILURE:');
+    for (const row of gate.witnessDisagreements.slice(0, 12)) {
+      lines.push(`      [${row.agreement} x${row.count}] ${JSON.stringify(row.text.slice(0, 90))}`);
+    }
+    if (gate.witnessDisagreements.length > 12) {
+      lines.push(`      ... and ${gate.witnessDisagreements.length - 12} more distinct sentence(s)`);
+    }
+    for (const agreement of ['DETECTOR_BLIND', 'DETECTOR_OVER_READ'] as const) {
+      if (gate.witnessAgreement[agreement] > 0) {
+        lines.push(`      ${agreement}: ${WITNESS_AGREEMENT_MEANING[agreement]}`);
+      }
+    }
+  }
   lines.push('');
   lines.push('  gate outcome');
   for (const row of gate.byOutcome) {
