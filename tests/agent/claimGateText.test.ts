@@ -22,10 +22,12 @@ import { describe, expect, it } from 'vitest';
 
 import {
   bridgeSegments,
+  expandCopulaClitics,
   matchLongestForm,
   readSentences,
   readTokens,
   type ClaimSentence,
+  type CopulaClitic,
 } from '../../src/agent/claimGate/text.js';
 
 describe('the claim gate text engine', () => {
@@ -298,6 +300,95 @@ describe('the clause boundaries inside a sentence', () => {
     const sentences = readSentences('\u2014\nbooked for Thursday.');
     expect(sentences[0]?.tokens.length ?? -1).toBe(0);
     expect(bridgeSegments(sentences[0] as ClaimSentence, sentences[1] as ClaimSentence)).toBeNull();
+  });
+
+  // -------------------------------------------------------------------------
+  // § 21: the apostrophe clitic, read as a SECOND view rather than a rewrite
+  // -------------------------------------------------------------------------
+
+  /** English's own clitic, passed in as data exactly as the detector passes it. */
+  const EN_CLITIC: readonly CopulaClitic[] = [{ suffix: "'s", copulas: ['is', 'has'] }];
+
+  const readingsOf = (text: string, clitics: readonly CopulaClitic[] = EN_CLITIC): string[][] =>
+    expandCopulaClitics(readSentences(text)[0] as ClaimSentence, clitics).map((reading) =>
+      reading.tokens.map((token) => token.text),
+    );
+
+  it('reads a noun carrying a copula clitic as its stem PLUS the copula, one reading per copula', () => {
+    // The defect in one assertion. `meeting's` is one token, so `is booked` has no
+    // `is` to match and `domainObjects` has no `meeting` to find. Both come back
+    // when the token is read the second way.
+    expect(readingsOf("Your meeting's booked for Thursday at 2pm.")).toEqual([
+      ['your', 'meeting', 'is', 'booked', 'for', 'thursday', 'at', '2pm'],
+      ['your', 'meeting', 'has', 'booked', 'for', 'thursday', 'at', '2pm'],
+    ]);
+  });
+
+  it('returns NOTHING for a sentence with no declared clitic in it, which is the common case', () => {
+    expect(readingsOf('Your meeting is booked for Thursday at 2pm.')).toEqual([]);
+    expect(readingsOf('הפגישה נקבעה למחר בשעה 14:00.')).toEqual([]);
+  });
+
+  it('holds no clitic of its own: an empty declaration expands nothing at all', () => {
+    // The same proof `clauseBreakers` gets above. This module is the half that is
+    // not a language; `'s` is English, and English is data.
+    expect(readingsOf("Your meeting's booked for Thursday at 2pm.", [])).toEqual([]);
+  });
+
+  it('refuses a stem carrying a DIGIT, which is what keeps an identifier shape whole', () => {
+    // Every identifier shape `detector.ts` declares needs a digit, and so do
+    // `15:00`, `2pm` and `483921`. So the guard is a property of the stem rather
+    // than a copy of the identifier table.
+    expect(readingsOf("The 2pm's the one I have.")).toEqual([]);
+    expect(readingsOf("CONF123456's reference is on file.")).toEqual([]);
+    expect(readingsOf("REF-4821's details are on file.")).toEqual([]);
+  });
+
+  it('but does NOT refuse a hyphenated word, because a noun list is what this rule exists not to be', () => {
+    expect(readingsOf("Your follow-up's arranged for 3pm.")[0]).toEqual([
+      'your',
+      'follow-up',
+      'is',
+      'arranged',
+      'for',
+      '3pm',
+    ]);
+  });
+
+  it('keeps `o\'clock` whole, because the clitic is a SUFFIX and `o\'clock` does not end in one', () => {
+    expect(readingsOf("I have you down for two o'clock.")).toEqual([]);
+  });
+
+  it('carries the sentence over unchanged apart from its tokens, so the audit excerpt stays the model own bytes', () => {
+    const sentence = readSentences("Your meeting's booked for Thursday at 2pm.")[0] as ClaimSentence;
+    const reading = expandCopulaClitics(sentence, EN_CLITIC)[0] as ClaimSentence;
+    expect(reading.raw, 'the gate withholds or releases and never edits').toBe(sentence.raw);
+    expect(reading.index).toBe(sentence.index);
+    expect(reading.interrogative).toBe(sentence.interrogative);
+    expect(reading.terminator).toBe(sentence.terminator);
+  });
+
+  it('gives both halves of an expanded token the SAME clause, so every clause-scoped rule is unchanged', () => {
+    // `Don't worry, your meeting's booked` has to keep the reassurance in clause 0
+    // and the claim in clause 1 - the § 15 boundary - however the claim is spelled.
+    const sentence = readSentences("Don't worry, your meeting's booked for Thursday.")[0] as ClaimSentence;
+    const reading = expandCopulaClitics(sentence, EN_CLITIC)[0] as ClaimSentence;
+    const meeting = reading.tokens.findIndex((token) => token.text === 'meeting');
+    expect(reading.tokens[meeting]?.clause).toBe(1);
+    expect(reading.tokens[meeting + 1]?.text).toBe('is');
+    expect(reading.tokens[meeting + 1]?.clause).toBe(1);
+  });
+
+  it('returns the FULL grid whenever it returns anything, so reading k of two segments is the same copula', () => {
+    // What the bridged pass needs: segment A carries a clitic and segment B does
+    // not, and the pairing is positional. A short-circuit that returned one
+    // reading for A and none for B would pair A's `is` reading with B's raw
+    // tokens - which is correct - but a segment carrying TWO clitics must still
+    // return exactly one reading per copula, not one per token.
+    expect(readingsOf("Your meeting's booked and your callback's arranged.")).toEqual([
+      ['your', 'meeting', 'is', 'booked', 'and', 'your', 'callback', 'is', 'arranged'],
+      ['your', 'meeting', 'has', 'booked', 'and', 'your', 'callback', 'has', 'arranged'],
+    ]);
   });
 
   it('holds no conjunction of any language, because those are lexicon data', () => {

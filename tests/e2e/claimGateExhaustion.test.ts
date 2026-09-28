@@ -158,3 +158,77 @@ describe('when every bounded attempt is still unsupported', () => {
     expect(JSON.parse(transfer?.detailJson ?? '{}')).toMatchObject({ requestedBy: 'CLAIM_GATE' });
   });
 });
+
+// ---------------------------------------------------------------------------
+// § 21: the same exhaustion path, over the wordings that used to escape it.
+// ---------------------------------------------------------------------------
+
+/**
+ * THE WORDINGS THAT NEVER REACHED THIS FILE AT ALL, AND THAT IS THE POINT.
+ *
+ * Exhaustion is the LAST line: a model that will not stop asserting something the
+ * records do not support produces silence and a handover. A claim the detector
+ * cannot see never reaches that line - it is released on the first attempt with
+ * `outcome=NO_MATERIAL_CLAIM`, which is exactly what all nine wordings below did.
+ * So the assertion that matters here is not that the bound holds; it is that a
+ * repeated contracted or plural claim now EXHAUSTS instead of being spoken.
+ *
+ * `onExhausted: 'repeat-last'` makes the model argue forever, which is the shape
+ * of the § 6.5.4 transcript where the recommended model repeated its assertion
+ * when pushed. Every case asserts the three end-to-end consequences the finding
+ * is about: nothing released, nothing persisted as a spoken AGENT turn, and zero
+ * domain rows.
+ */
+const STUBBORN: readonly { readonly label: string; readonly text: string; readonly hebrew: boolean }[] = [
+  { label: "A1 `Your meeting's booked`", text: "Your meeting's booked for Thursday at 2pm.", hebrew: false },
+  { label: "A2 `Your appointment's confirmed`", text: "Your appointment's confirmed for Thursday at 2pm.", hebrew: false },
+  { label: "A3 `The meeting's been booked`", text: "The meeting's been booked for Thursday at 2pm.", hebrew: false },
+  { label: "A4 `Your callback's arranged`", text: "Your callback's arranged for 3pm tomorrow.", hebrew: false },
+  { label: 'B5 ביטלנו', text: 'ביטלנו את הפגישה שלך.', hebrew: true },
+  { label: 'B6 שלחנו', text: 'שלחנו לך אישור במייל.', hebrew: true },
+  { label: 'B7 רשמנו', text: 'רשמנו אותך לפגישה מחר בשעה 14:00.', hebrew: true },
+  { label: 'B8 שינינו', text: 'שינינו את הפגישה ליום חמישי בשעה 14:00.', hebrew: true },
+  { label: 'B9 סגרתי', text: 'סגרתי לך את הפגישה למחר בשעה 14:00.', hebrew: true },
+  // ---- the two A/B controls, which exhausted correctly all along ----------
+  { label: 'CONTROL A: the copula spelled out', text: 'Your meeting is booked for Thursday at 2pm.', hebrew: false },
+  { label: 'CONTROL B: the singular of the same verb', text: 'ביטלתי את הפגישה שלך.', hebrew: true },
+];
+
+describe('a contracted or plural claim the model will not withdraw', () => {
+  for (const stubborn of STUBBORN) {
+    it(`is withheld, handed off and never persisted: ${stubborn.label}`, async () => {
+      const harness = await createSliceHarness({
+        label: `gate-exhaustion-clitic-${STUBBORN.indexOf(stubborn)}`,
+        llm: { script: [{ assistantText: stubborn.text }], onExhausted: 'repeat-last' },
+        ...(stubborn.hebrew ? { world: { contactTimezone: 'Asia/Jerusalem' } } : {}),
+      });
+      harnesses.push(harness);
+      const conversation = await harness.startConversation();
+      const turn = await harness.runtime.agent.handleTurn({
+        conversationId: conversation.id,
+        utterance: stubborn.hebrew ? 'תודה שסידרת את זה.' : 'Thanks for sorting that.',
+      });
+
+      // 1. nothing reached the caller, and the bound in application code held.
+      expect(turn.assistantText).toBeNull();
+      expect(turn.assistantMessages).toEqual([]);
+      expect(turn.stopReason).toBe('CLAIM_GATE_WITHHELD');
+      expect(turn.claimGate.releases[0]?.outcome).toBe('WITHHELD_HANDED_OFF');
+      expect(turn.claimGate.releases[0]?.attempts).toHaveLength(1 + MAX_CLAIM_GATE_REGENERATION_ATTEMPTS);
+
+      // 2. the sentence appears NOWHERE in the durable transcript.
+      const rows = await harness.db.conversationTurns.listByConversation(conversation.id);
+      expect(rows.filter((row) => row.role === 'AGENT' && row.toolName === null)).toEqual([]);
+      expect(rows.map((row) => row.text ?? '').join(' ')).not.toContain(stubborn.text);
+
+      // 3. and the thing it claimed still does not exist.
+      const counts = await harness.countDomainRows();
+      expect({ meetings: counts.meetings, futureActions: counts.futureActions }).toEqual({
+        meetings: 0,
+        futureActions: 0,
+      });
+      // The handover Task is the ONLY row the gate itself wrote. § 9.1.
+      expect(counts.tasks).toBe(1);
+    });
+  }
+});

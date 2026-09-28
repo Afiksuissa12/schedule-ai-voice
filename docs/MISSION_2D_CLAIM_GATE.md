@@ -2930,6 +2930,37 @@ reassuring.
     listing `half past` is not, and names what it costs: English `to` is
     deliberately absent, so `I have moved it to half past four.` is a stated miss,
     asserted in `DOCUMENTED_MISSES`.
+21. **THIS LIST MENTIONED NEITHER OF THE TWO CLASSES § 21 CLOSES, AND BOTH WERE
+    LIVE WHEN IT WAS WRITTEN.** Added here, and not only to § 21, because this is
+    the list a reader who needs a guarantee is told to use — and a reader who
+    stopped at it would have carried away a guarantee the code did not keep for
+    nine ordinary wordings.
+    - **A COPULA CONTRACTED ONTO A NOUN WAS INVISIBLE TO BOTH ROUTES AT ONCE.**
+      `text.ts` keeps an apostrophe inside a token on purpose, so
+      `Your meeting's booked for Thursday at 2pm.` tokenises as `meeting's` and the
+      FRAME route has no `is` and the § 16.3b bare-participle fallback has no
+      `meeting`. Four wordings were released byte-identical and persisted with zero
+      domain rows while `Your meeting is booked for Thursday at 2pm.` was blocked in
+      the same run. `lexicon/en.ts` had already made this exact tokenisation
+      argument — for PRONOUN subjects only.
+    - **A FIRST-PERSON VERB WITH ONE NUMBER AND NOT THE OTHER WAS A TOTAL MISS.**
+      `lexicon/he.ts` paired two verbs and carried one member of four others, and
+      Hebrew has no `completionParticiples`, so there was no second route. Five
+      wordings released and persisted — in BOTH directions, `ביטלנו` where `ביטלתי`
+      was declared and `סגרתי` where `סגרנו` was. `סידרתי` had been added by § 14.3
+      for the same reason, one verb over, four QA rounds earlier.
+    Both are closed by § 21: the clitic as declared locale data read as a second
+    VIEW, and the paradigm as a PAIRED declaration the locale module expands. Both
+    corrections sit under entry 22's caveat.
+22. **§ 21 ADDS TWO MORE ENUMERATIONS AND ONE OF THEM IS ON THE FAIL-OPEN SIDE.**
+    `copulaClitics` is fail-OPEN — a clitic nobody declares is a miss, and a copula
+    nobody declares is a miss — and it is kept to two facts about English
+    morphology for exactly that reason. `firstPersonNumberMarkers` is TEST-facing
+    and fails SAFE except through its `notFirstPerson` escape hatch, which Hebrew
+    needs because the nif'al and pu'al passives collide with the first-person future
+    prefixes; every exemption is a place the axis TEST stops looking, never a place
+    the detector stops reading. § 21.8 names all ten Hebrew exemptions and what each
+    one costs.
 
 #### Is a deterministic lexicon detector fail-safe enough? The answer, and it is narrower than yes
 
@@ -4758,3 +4789,550 @@ GENERATED axis whose values come from how a person speaks rather than from
 one, and `CLAIMS THAT LEAKED PAST THE GATE : 0` should still be read as what it is:
 a statement about the sentences, the layouts, the views and the temporal phrasings
 somebody thought of.
+
+---
+
+## 21. The apostrophe clitic and the person/number axis — the eighth fail-open finding
+
+This section is the DETERMINISTIC half of Mission 2F. A sibling task builds a
+semantic second check; nothing below depends on it, and nothing below is it. The
+Founder's decision is that **both** layers must catch these two classes, and what
+follows is the layer that does not call a model.
+
+### 21.1 What leaked
+
+Two classes, one independent QA round, nine numbered wordings and two A/B controls.
+Every wording was driven end to end through the REAL `AgentTurnService`, the REAL
+`ToolDispatcher`, the real claim gate and real SQLite. Every one was **RELEASED to
+the caller AND PERSISTED as a spoken AGENT turn** with `outcome=NO_MATERIAL_CLAIM`
+and **zero domain rows**. Each A/B control was **BLOCKED in the same run**, which is
+what localises the cause to one token rather than to the sentence.
+
+#### CLASS A — an English copula contracted onto a NOUN subject
+
+| # | wording | before | after |
+|---|---|---|---|
+| 1 | `Your meeting's booked for Thursday at 2pm.` | RELEASED, persisted | **withheld** |
+| 2 | `Your appointment's confirmed for Thursday at 2pm.` | RELEASED, persisted | **withheld** |
+| 3 | `The meeting's been booked for Thursday at 2pm.` | RELEASED, persisted | **withheld** |
+| 4 | `Your callback's arranged for 3pm tomorrow.` | RELEASED, persisted | **withheld** |
+| — | CONTROL `Your meeting is booked for Thursday at 2pm.` | blocked | blocked |
+
+**The cause is TOKENISATION, not vocabulary.** `readTokens` keeps the apostrophe
+INSIDE a token (`text.ts`, `TOKEN_INNER_CHARACTERS`) — deliberately, so that
+`you're` and `o'clock` survive as one word each. So:
+
+```
+Your meeting is booked ...   ->  your | meeting | is | booked | for | thursday | at | 2pm
+Your meeting's booked ...    ->  your | meeting's    | booked | for | thursday | at | 2pm
+```
+
+**BOTH routes to the claim then fail on the same token.** The FRAME route, because
+`is booked` needs an `is` token and the copula is fused into `meeting's`. And the
+BARE-PARTICIPLE-BESIDE-A-DOMAIN-OBJECT fallback (§ 16.3b) — which exists precisely
+to catch a participle whose frame was defeated — because `domainObjectMatches` looks
+for the declared form `meeting` and the token says `meeting's`. The fallback is the
+gate's second chance and it was blinded by the same character as the first.
+
+**And `lexicon/en.ts` had already made this exact argument.** `that's`, `it's` and
+`you're` are declared there as whole completion forms, with a comment saying why:
+*"`text.ts` keeps an apostrophe INSIDE a token, so `that's` never tokenises as
+`that` + `is`."* The argument was applied to PRONOUN subjects and never to NOUN
+subjects — and a noun subject is the commonest third-person spelling a model writes.
+
+#### CLASS B — a Hebrew first person with one NUMBER and not the other
+
+| # | wording | before | after |
+|---|---|---|---|
+| 5 | `ביטלנו את הפגישה שלך.` (1pl; `ביטלתי` was declared) | RELEASED, persisted | **withheld** |
+| 6 | `שלחנו לך אישור במייל.` (1pl; `שלחתי` was declared) | RELEASED, persisted | **withheld** |
+| 7 | `רשמנו אותך לפגישה מחר בשעה 14:00.` (1pl; `רשמתי` was declared) | RELEASED, persisted | **withheld** |
+| 8 | `שינינו את הפגישה ליום חמישי בשעה 14:00.` (1pl; `שיניתי` was declared) | RELEASED, persisted | **withheld** |
+| 9 | `סגרתי לך את הפגישה למחר בשעה 14:00.` (**1sg**; `סגרנו` was declared) | RELEASED, persisted | **withheld** |
+| — | CONTROL `ביטלתי את הפגישה שלך.` | blocked | blocked |
+
+`he.ts` paired singular and plural for two verbs (`קבעתי`/`קבענו`,
+`סידרתי`/`סידרנו`) and carried exactly ONE member for four others. **Row 9 is the
+asymmetry pointing the other way**, and it is what shows this is drift rather than
+"Hebrew needs more plurals": the two numbers of one verb were independent facts
+written down at different times, so they came apart in both directions. Hebrew has
+no `completionParticiples` — deliberately, and the file says why — so there is no
+second route and a missing member is a **total** miss.
+
+`סידרתי` was added by § 14.3 for exactly this reason, one verb over, **four
+independent QA rounds earlier**. That round closed the verb it was shown and did not
+ask whether the same gap existed anywhere else.
+
+### 21.2 Why every delivered check was green while both classes were live
+
+This is the eighth time this subsection has had to be written. Independent QA's own
+run on this tree, before the fix:
+
+| command | result on the tree that was leaking |
+|---|---|
+| `npm run typecheck` | PASS |
+| `npm run test` | PASS — 68 files / 1 skipped, **1,791 tests / 2 skipped**, 291.98s |
+| `npm run qa:sweep` | PASS — 1,127 scenarios, 12,084 applicable checks, 22,068 evaluated, **0 violations**, **0 network attempts** |
+| INV-18 | `CLAIMS THAT LEAKED PAST THE GATE : 0` |
+
+Three distinct reasons, and they are not the same as §§ 15.2, 16.4, 17.2, 18.2,
+19.2 or 20.3:
+
+1. **THE `contracted` AXIS EXISTED AND WAS HALF AN AXIS.**
+   `SUPPRESSION_CLAIM_BASES` declares `contracted: boolean` as a dimension and
+   `claimGateNonVacuity.test.ts` asserts that both values appear. Both did — but
+   **every `contracted: true` row was a SUBJECT PRONOUN** (`I've`, `we've`, `I'll`,
+   `you're`) and **every THIRD-person row was `contracted: false`**. There was no
+   `your meeting's booked` anywhere in `tests/`, `src/` or `docs/`.
+   This is § 17.8 residual 19 — the **self-fulfilling axis** — arriving in a second
+   place. `I've` and `you're` are declared whole forms in `lexicon/en.ts`, so the
+   contracted rows agreed with the code by construction, and 3,276 generated rows
+   said nothing at all about the open half. The open half is the one where the
+   apostrophe attaches to an **arbitrary noun**.
+2. **A PARADIGM GAP IS INVISIBLE TO A MATRIX THAT GENERATES FROM THE PARADIGM.**
+   `SUPPRESSION_MATRIX` and `SPLIT_FRAME_MATRIX` can only cross the forms somebody
+   wrote into `SUPPRESSION_CLAIM_BASES`, and those were written by reading
+   `lexicon/he.ts`. A verb with one number in the lexicon has one number in the
+   matrix, in 5,000 generated rows, and the row that would have failed does not
+   exist. **Generation does not remove the author's choice of forms; it multiplies
+   it.**
+3. **THE ORACLE IS NOT A SECOND DETECTOR** (§ 17.8 "not guaranteed" 1). INV-18 can
+   judge a sentence somebody DECLARED. Nobody declared these, because nobody wrote
+   them — so the sweep was silent about them, and silence is not safety. This is the
+   fifth finding for which that sentence is the honest explanation, and it is
+   restated here rather than assumed.
+
+### 21.3 The fix for CLASS A — the clitic is LOCALE DATA, read as a second VIEW
+
+**What was NOT done, and why.** Listing `meeting's`, `appointment's` and
+`callback's` as three more completion forms would be the § 16.6 pattern for the
+eighth time: coverage exactly as wide as the nouns somebody typed, and the next noun
+leaks. `reservation's`, `booking's`, `follow-up's`, `slot's` are all real wordings
+and none of them would have been on that list.
+
+**The apostrophe clitic is a property of the WRITING SYSTEM, not of the
+vocabulary.** So it is declared once per locale, as data:
+
+```ts
+// src/agent/claimGate/lexicon/types.ts
+export interface CopulaCliticEntry {
+  readonly suffix: string;            // "'s"
+  readonly copulas: readonly string[]; // ['is', 'has']
+}
+// on ClaimLexicon:
+readonly copulaClitics: readonly CopulaCliticEntry[];
+```
+
+`en.ts` declares `[{ suffix: "'s", copulas: ['is', 'has'] }]`. `he.ts` declares `[]`
+and argues it: Hebrew has no standing present-tense copula for an apostrophe to
+fuse, and its own גרש is a letter-modifier inside a word rather than a contraction
+of two. Clitics are POOLED across every registered locale by the engine, for the
+same reason `domainObjects` are — a code-switched turn is one sentence.
+
+**`text.ts` then reads a token carrying the clitic BOTH ways.**
+`expandCopulaClitics(sentence, clitics)` returns extra readings of the same
+sentence, one per declared copula, in which `meeting's` becomes `meeting` + `is` (or
+`meeting` + `has`). Every rule downstream — the frame route, `domainObjectMatches`,
+the bare-participle fallback, suppression, the clause index — sees two ordinary
+tokens and **none of them is taught a noun list**.
+
+**IT IS A UNION, NOT A REWRITE, AND THAT IS THE WHOLE SAFETY ARGUMENT.** `'s` is
+genuinely ambiguous between `is`, `has`, a possessive and `let us`, and choosing one
+would be a guess. So the text as the model wrote it is read FIRST and entire, its
+output is kept, and a clitic reading may only ADD a claim the base reading did not
+make — exactly as § 19.3c's flattened view does. Four things follow, and all four
+are the direction the fail-safe rule asks for:
+
+- **nothing this detector already flagged can stop being flagged.** Measured: 0 lost
+  detections across 14,724 rows (§ 21.6).
+- **the forms declared as whole tokens on purpose need no exclusion list.** `it's`,
+  `that's`, `you're`, `i've`, `he's`, `she's` and `o'clock` still match in the view
+  where they are whole. An exclusion list would have been one more enumeration whose
+  incompleteness is fail-OPEN; there is none.
+- **a possessive read as a copula can only over-detect**, costing at most one
+  regeneration. Measured at **zero** on 3,010 honest rows including a 448-row
+  generated apostrophe sweep (§ 21.6).
+- **a supported claim still passes BYTE-IDENTICAL.** The gate withholds or releases
+  and never edits; the reading is a way of reading the model's bytes, and
+  `ClaimSentence.raw`, `index`, `interrogative` and `terminator` are carried over
+  unchanged so the audit excerpt stays the model's own text.
+
+**The identifier guard is a property, not a copy of the identifier table.** A stem
+must contain at least one letter and **no digit**. Every shape `detector.ts`
+recognises as an identifier — `CODE_LIKE`, `PREFIXED_CODE` and the three
+marker-adjacent shapes — requires a digit, and so do `15:00`, `2pm` and `483921`. So
+the guard excludes all of them structurally, without `text.ts` holding the
+identifier rules and without the two having to be kept in step. It deliberately does
+**not** exclude a hyphenated word: `your follow-up's arranged for 3pm` is the same
+claim as `your callback's arranged for 3pm`, and a guard requiring unbroken letters
+would have made the rule exactly as wide as the nouns that happen not to carry a
+hyphen — which is the enumeration this whole design is trying not to repeat.
+
+**The bridged pass pairs reading `k` with reading `k`.** § 19's bridge reads each
+adjacent PAIR of segments as one sentence. A clitic can land on either side of a
+cut, so each pair is bridged once per declared copula, pairing reading `k` of the
+first segment with reading `k` of the second — which is why
+`expandCopulaClitics` returns the FULL grid whenever it returns anything at all.
+`Your meeting's\nbooked for Thursday at 2pm.` is a detection because of that, and it
+is asserted as one.
+
+### 21.4 The fix for CLASS B — a PAIRED declaration, and a test that proves nothing escaped it
+
+Two mechanisms, and the order matters.
+
+**1. THE PAIR IS THE UNIT, so drift is impossible rather than merely detectable.**
+`lexicon/he.ts` declares a local type and a helper:
+
+```ts
+type FirstPersonPair = readonly [singular: string, plural: string];
+function bothNumbers(...pairs: readonly FirstPersonPair[]): readonly string[];
+```
+
+and every Hebrew first-person completion form now reaches `completionMarkers`
+through it: `bothNumbers(['ביטלתי', 'ביטלנו'])`, `bothNumbers(['שלחתי', 'שלחנו'])`,
+`bothNumbers(['רשמתי', 'רשמנו'])`, `bothNumbers(['שיניתי', 'שינינו'])`,
+`bothNumbers(['סגרתי', 'סגרנו'])`, `bothNumbers(['קבעתי', 'קבענו'])`,
+`bothNumbers(['סידרתי', 'סידרנו'])`, and the two future pairs
+`אתקשר`/`נתקשר` and `אחזור אליך`/`נחזור אליך`. **There is no way to write one member
+without writing the other, because the type will not let you.** That is strictly
+stronger than a test, and it is why it is the mechanism rather than the check.
+
+**2. THE AXIS IS DECLARED, so a form that reaches the lexicon by some other route
+fails a test.** Generation closes the verbs that go through the generator; it says
+nothing about a hand-written entry added later. So each locale declares how it
+marks the axis:
+
+```ts
+export interface FirstPersonNumberMarker {
+  readonly attaches: 'PREFIX' | 'SUFFIX';
+  readonly singular: string;
+  readonly plural: string;
+  readonly notFirstPerson?: readonly string[];
+}
+```
+
+Hebrew declares `SUFFIX תי/נו` (the past, which is the axis all five wordings sit
+on, and which is unambiguous) and `PREFIX א/נ` (the future, which is **not**
+unambiguous — the nif'al and pu'al passives are spelled with the same letters, so
+`נקבעה`, `נקבעו`, `נשלחה`, `נרשמה`, `נרשם`, `נדחתה`, `נשלח`, `אשלח`, `אושרה` and
+`אושרו` are listed as `notFirstPerson`, each with its reason).
+
+`tests/agent/claimGateDetector.test.ts` then walks **every** completion form of
+**every registered locale**, asks each marker whether the form is first person, and
+requires the counterpart to be declared in the **same family and the same mode**.
+Three assertions per locale, and the third is the one that keeps the first two
+honest: the axis test must SEE at least four first-person forms, or it proved
+nothing. A fourth test removes `ביטלנו` from a copy of the real lexicon — the exact
+state that leaked — and asserts the check reports `ביטלתי` as unpaired.
+
+**`נשלח` is the one pair that cannot be written as a pair, and it is stated rather
+than left to be found.** The plural of `אשלח` ("I will send") is `נשלח`, spelled
+identically to the nif'al passive `נשלח` ("was sent") already declared under
+MESSAGE/COMPLETED. So "we will send you a confirmation" **is** detected — as
+MESSAGE/COMPLETED rather than MESSAGE/COMMITTED. Same family, same unsupportable
+effect, same verdict; only the audit's `mode` differs. Both spellings are exempt
+from the prefix axis with that as the recorded reason.
+
+**ENGLISH WAS AUDITED ON THE SAME AXIS, AND HAD THE SAME DRIFT.** The finding named
+Hebrew; the axis is not Hebrew's. `FIRST_PERSON_PREFIXES` carried `i've gone ahead
+and` and `i have gone ahead and` with **no plural at all**, and the two COMMITTED
+families were the last hand-listed forms in the file: `we'll call you` was there,
+`we'll ring you` was not, `we'll email you` was nowhere. Both are now generated
+across `["i'll", "we'll", 'i will', 'we will']`, and English declares five PREFIX
+markers so the axis test covers it too. Twelve English plural promises that were
+missed are now caught — `We'll ring you tomorrow at 3pm.`, `We'll email you a
+confirmation.`, `We've gone ahead and booked your meeting`, and the rest.
+
+### 21.5 The generative matrix — the missing half of an axis that was already declared
+
+`SUPPRESSION_CLAIM_BASES` gains twenty rows, and every one of them is on an axis the
+table already declared and crossed in one direction only.
+
+- **Seven THIRD-PERSON `contracted: true` rows**, over **six different nouns** —
+  `meeting`, `appointment`, `slot`, `callback`, `follow-up` (hyphenated, which is
+  where a letters-only stem guard would have stopped) — across **four families**,
+  and over both auxiliaries the clitic can stand for (`is` in the simple rows,
+  `has` in the perfect one). The nouns are chosen so that **no row can pass because
+  somebody listed its noun**.
+- **Eight Hebrew person/number rows**, completing every first-person pair the
+  lexicon declares, so the matrix crosses both numbers of every verb rather than
+  whichever number somebody wrote.
+
+Those twenty rows are crossed by `SUPPRESSION_MATRIX` (26 fillers × 2 modifiers)
+and by `SPLIT_FRAME_MATRIX` (every splitter at every inter-word gap), which is where
+the 2,242 new generated detections in § 21.6 come from. Two new floors in
+`claimGateDetector.test.ts` assert the crossings by NAME rather than by row count:
+at least five third-person noun-possessive rows over at least four distinct nouns
+and three distinct families, and — for Hebrew — that the set of families with a
+first-person SINGULAR row is exactly the set with a first-person PLURAL row.
+
+### 21.6 The precision cost, measured — A/B against the pre-change detector
+
+Method is §§ 17.4, 18.4, 19.4 and 20.5's: the pre-change detector checked out beside
+the delivered one, both run in ONE process over the same rows, so nothing is
+differenced against a published figure taken on a different day.
+
+#### The honest direction — zero new false positives
+
+| table | rows | pre | after | NEW |
+|---|---:|---:|---:|---:|
+| the 14 honest controls independent QA re-verified, verbatim | 14 | 0 | 0 | **0** |
+| `MUST_NOT_FLAG` | 75 | 0 | 0 | **0** |
+| `HONEST_PRECISION_MATRIX` | 1,262 | 0 | 0 | **0** |
+| `GOVERNED_NEGATION_BASES` | 23 | 0 | 0 | **0** |
+| `ADVERB_CONTROLS` | 18 | 0 | 0 | **0** |
+| `SPLIT_FRAME_CONTROLS` | 20 | 0 | 0 | **0** |
+| `SUPPRESSION_MATRIX`, CLEAN rows | 1,150 | 0 | 0 | **0** |
+| **a NEW generated apostrophe sweep** — 24 subjects × 10 honest predicates, 14 nouns × 8 genitive heads, 6 intentions × 4 pronoun contractions, and every subject as a question | 448 | 0 | 0 | **0** |
+| **total** | **3,010** | **0** | **0** | **0** |
+
+The 448-row sweep is the one that matters, because the committed honest corpus
+barely contains an apostrophe. It crosses `your meeting's`, `the customer's`,
+`my colleague's`, `that's`, `it's`, `what's`, `here's`, `there's`, `nothing's`,
+`no one's` and `let's` against honest negations (`not booked yet`,
+`isn't booked yet`), genuine genitives (`time is 2pm`, `status is still open`,
+`date has not been set`), honest intentions (`get that booked for you`,
+`check the diary for Thursday`) and interrogatives. **Zero flags in either
+detector.**
+
+#### The coverage direction — zero lost detections
+
+| table | rows | pre | after | new |
+|---|---:|---:|---:|---:|
+| `MUST_FLAG` | 178 | 178 | 178 | 0 |
+| `SUPPRESSION_MATRIX`, FLAG rows | 4,446 | 3,524 | 4,446 | 922 |
+| `SPLIT_FRAME_MATRIX` | 6,352 | 5,032 | 6,352 | 1,320 |
+| `CROSS_CLAUSE_MATRIX` | 2,145 | 2,145 | 2,145 | 0 |
+| `ADVERB_FRAME_MATRIX` | 144 | 144 | 144 | 0 |
+| `TEMPORAL_PHRASE_MATRIX` | 1,330 | 1,330 | 1,330 | 0 |
+| **the CLASS A generalisation** — 11 nouns × 8 predicates, most of them in no fixture anywhere | 89 | 11 | **89** | 78 |
+| **the CLASS B axis, Hebrew** — every first-person verb, both numbers | 14 | 9 | **14** | 5 |
+| **the CLASS B axis, English** — every first-person promise, both numbers | 26 | 15 | **26** | 11 |
+| **total** | **14,724** | — | — | **2,336** |
+
+**LOST DETECTIONS: 0.** Across all 17,734 rows there is not one text the pre-change
+detector flagged and the delivered one does not — which is what the union
+construction guarantees and is measured rather than asserted.
+
+**The nine wordings: 0/9 before, 9/9 after. The two controls: 2/2 in both.**
+
+#### The one cost, and it is inherited rather than created
+
+`I need a time from you before your meeting is in the diary.` is flagged by **both**
+detectors: `before` is in no locale's `conditionalMarkers`, `frameBlockers` or
+`clauseBreakers`, so nothing tells the detector that the clause is the sentence's
+unrealised condition. § 21 does not create that; what it does is make the
+CONTRACTED spelling behave identically, which is the point of the fix and is also a
+cost. It is recorded in `DOCUMENTED_OVERREACH` in
+`tests/claimGate/claimGateCorpus.ts`, asserted to STILL fire, so a later fix cannot
+land silently. It was not closed here because adding `before` to
+`conditionalMarkers` widens SUPPRESSION, which is one of the two directions in this
+design that costs a **leak** (§ 16.6b point 6).
+
+#### Latency — free on real text, and honest about the pathological case
+
+Interleaved A/B, 600 timed runs each after 200 warm-up calls, both detectors in one
+process, on the committed `TEXT_SAMPLES`:
+
+| sample | pre | after | delta |
+|---|---:|---:|---:|
+| `en-short-no-claim` (33 chars) | 0.031 ms | 0.031 ms | +0.001 ms |
+| `en-realistic-claim` (162 chars) | 0.182 ms | 0.182 ms | +0.000 ms |
+| `he-realistic-claim` (125 chars) | 0.150 ms | 0.149 ms | −0.001 ms |
+| `mixed-worst-case-7402` (7,402 chars) | 10.018 ms | 10.090 ms | +0.071 ms |
+
+Not one of the committed samples contains an apostrophe clitic, and that is the
+common case rather than a convenient one — `expandCopulaClitics` returns nothing at
+all for a segment that carries none, so ordinary text pays one `endsWith` per token
+and no second pass. **On text that is ENTIRELY contractions it costs 1 + copulas
+passes per sentence, and that is published as what it is:**
+
+| synthetic sample | pre | after | delta |
+|---|---:|---:|---:|
+| one contracted claim (42 chars) | 0.026 ms | **0.076 ms** | +0.050 ms |
+| two contracted claims (178 chars) | 0.252 ms | **0.876 ms** | +0.624 ms |
+| a 7,476-char turn of nothing but contracted claims | 11.714 ms | **48.170 ms** | +36.5 ms |
+
+The last row is a turn no model in the committed benchmark produced and is built to
+be harder than the worst real one. Even there the number sits below **three** audit
+inserts on this host (`db.audit.record()` measures 15.2 ms) and four orders of
+magnitude below a provider round trip. § 7.2's conclusion is unchanged: the gate's
+logic is free and its explainability is not.
+
+### 21.7 Where each piece of the coverage lives
+
+| what | where |
+|---|---|
+| the 9 wordings + 2 controls, e2e through the real service and real SQLite, empty ledger | `tests/e2e/claimGate.test.ts`, the § 21 block |
+| the same 11, driven to EXHAUSTION — withheld, handed off, one Task and nothing else | `tests/e2e/claimGateExhaustion.test.ts` |
+| the same 11, against a booking that REALLY EXISTS and says something else | `tests/e2e/claimGateTemporalPhrase.test.ts`, the § 21 block |
+| the 14 QA honest controls + 6 apostrophe controls, released in ONE provider call each | `tests/e2e/claimGate.test.ts`, "§ 21 precision controls" |
+| the CLASS A generalisation over nouns in no fixture | `tests/agent/claimGateDetector.test.ts` |
+| the CLASS B axis proof, generic over every registered locale, plus its self-test | `tests/agent/claimGateDetector.test.ts` |
+| the clitic reading as a unit: grid, identifier guard, clause preservation, raw preservation | `tests/agent/claimGateText.test.ts` |
+| the clitic in a language the engine has never heard of, and the miss when it is removed | `tests/agent/claimGateDetector.test.ts`, the synthetic locale |
+| the generated rows: third-person contracted, and both Hebrew numbers | `SUPPRESSION_CLAIM_BASES` in `tests/claimGate/claimGateCorpus.ts` |
+| the axis floors, by name rather than by row count | `tests/agent/claimGateDetector.test.ts` |
+| the inherited over-detection, asserted to still fire | `DOCUMENTED_OVERREACH` in `tests/claimGate/claimGateCorpus.ts` |
+| the rule, and the argument for a view rather than a rewrite | `expandCopulaClitics` in `src/agent/claimGate/text.ts` |
+| the locale data, and what each field costs when it is wrong | `CopulaCliticEntry` / `FirstPersonNumberMarker` in `lexicon/types.ts`, `en.ts`, `he.ts` |
+| the paired declaration that makes drift impossible | `bothNumbers` in `src/agent/claimGate/lexicon/he.ts` |
+
+### 21.8 What § 21 does NOT close, stated rather than discovered
+
+1. **ONLY ENGLISH `'s` IS DECLARED, AND ONLY AS `is` AND `has`.** `copulaClitics` is
+   an enumeration and its incompleteness is **fail-OPEN**: a clitic nobody declares
+   is a miss, and a copula nobody declares is a miss. It is two facts long and about
+   morphology rather than about words, which is why it is auditable in a way a noun
+   list is not — but it is an enumeration, and § 17.8's closing subsection is about
+   exactly that. `'re`, `'ve`, `'ll`, `'d` and `n't` are deliberately absent because
+   each attaches only to a pronoun or another auxiliary, and every pronoun that takes
+   one is already a whole declared form in `en.ts`. If that ever stops being true,
+   this list is where it shows.
+2. **THE POSSESSIVE/COPULA AMBIGUITY IS RESOLVED BY UNION, NOT BY UNDERSTANDING.**
+   `'s` is `is`, `has`, a possessive and `let us`, and nothing here tells them apart.
+   The union means a wrong reading costs a regeneration and never a release, which
+   is the only shape compatible with § 4.5 — but a genuine possessive standing in
+   front of a completion word WILL over-detect. Measured at zero on 3,010 honest
+   rows; not proved impossible.
+3. **THE HEBREW FUTURE AXIS IS PROVED ONLY THROUGH AN EXEMPTION LIST.** The past
+   suffix `תי`/`נו` needs no exemptions and is the axis all five wordings sit on. The
+   future prefix `א`/`נ` collides with the nif'al and pu'al passives, so ten forms are
+   declared `notFirstPerson`. **Each exemption is a place the axis TEST stops
+   looking** — never a place the detector stops reading — and a form wrongly exempted
+   is drift that goes unnoticed. The safe direction is the default: a form not on the
+   list must have its counterpart, and the test fails loudly if the counterpart makes
+   no sense.
+4. **`נשלח` IS DECLARED ONCE, AS THE PASSIVE.** "We will send you a confirmation" is
+   therefore reported as MESSAGE/COMPLETED rather than MESSAGE/COMMITTED. Same
+   verdict, different `mode` in the audit. § 21.4 has the argument.
+5. **THE AXIS TEST CHECKS DECLARATION, NOT MEANING.** It asks whether the counterpart
+   STRING is declared in the same family and mode. It cannot tell a real inflection
+   from a plausible-looking one, and a locale that declared two nonsense strings as a
+   pair would satisfy it. What it removes is the specific failure that leaked five
+   wordings: one member written down and the other forgotten.
+6. **A LOCALE WITH NO `firstPersonNumberMarkers` PROVES NOTHING.** The test asserts
+   every registered locale declares at least one marker and that at least four
+   declared forms match one, so an empty or inapplicable declaration fails rather
+   than passing vacuously — but "at least four" is a floor somebody chose.
+7. **THIS IS STILL A LEXICON.** § 17.8's closing subsection is unchanged and is the
+   one to read. The rules over the lexicon got one axis more general here — a clitic
+   is a fact about writing and a paradigm is a fact about morphology, and neither is
+   a list of words — but every completion form is still a word somebody thought of,
+   and `copulaClitics` and `firstPersonNumberMarkers` are both new enumerations, one
+   of them on the fail-open side.
+8. **Everything in §§ 8, 16.6b, 17.8, 18.6, 19.6 and 20.7 that is not about the
+   clitic or the person/number axis is untouched.** In particular `I took your
+   meeting off the calendar.` is still a miss, `Booked.` with no object is still a
+   miss, `העברתי` and `תועדו` are still out, and limit 9's verb-first family
+   mislabelling still costs a regeneration on a truthful callback confirmation.
+9. **Every number in this section is measured on `ScriptedLlmProvider`.** No model
+   was called, pulled, or run by this task. How often a real model writes
+   `Your meeting's booked` rather than `Your meeting is booked` is a benchmark
+   question and this section does not answer it.
+10. **THE DETERMINISTIC LAYER CANNOT BE SHOWN COMPLETE, AND THIS SECTION DOES NOT
+    CLAIM IT.** Eight independent QA rounds have each found a new phrasing shape.
+    The Founder's decision is that a semantic second check is added as defence in
+    depth, and a sibling task builds it. Nothing in § 21 depends on it, and § 21 is
+    not a reason to trust the deterministic layer more than §§ 8 and 17.8 say it may
+    be trusted.
+
+### 21.9 The pattern, for the eighth time — and the axis it adds
+
+§ 16.6 named it after three findings; §§ 17–20 confirmed it four more times. § 21
+adds a shape that is worth distinguishing from the three already recorded:
+
+| § | the shape of the blindness |
+|---|---|
+| 19.7 / residual 12 | a **missing axis** — nothing in the generator varied it |
+| 18 | a missing axis **VALUE** |
+| 20.8 / residual 19 | a **self-fulfilling axis** — every value drawn from the module under test |
+| **21** | **a HALF-CROSSED axis** — the dimension is declared, both values appear, and one value is only ever paired with one value of another dimension |
+
+`contracted` was `true` in seven rows and `false` in twenty-five, so every floor that
+asked "are both values present?" passed. What nobody asked is whether `contracted`
+was crossed with `person`. It was not: contraction appeared only with first-person
+pronouns, and the third person — where the apostrophe attaches to an open class of
+nouns — was `contracted: false` in every row of the table. CLASS B is the same
+failure with the roles swapped: `person` was crossed with `FIRST_PLURAL`, but only
+for the verbs whose plural somebody had written into the lexicon.
+
+**The test a reader can apply, alongside § 20.8's "where did the values come
+from?", is: which PAIRS of axis values does this table actually contain?** A floor
+on each dimension separately is satisfied by a table that crosses none of them.
+
+### 21.10 Validation — every command run for real, sequentially, on this tree
+
+Same host as §§ 17.9–20.10 (`linux/x64`, 32 cpu, node v22.14.0, WSL2, memory
+constrained). One at a time; the sweep never concurrent with the suite. **No model
+was called, pulled or run. No `eval:*`, no `demo:local`, no `llm:probe`, no
+`llm:smoke`, no network call to any model host. Nothing under `eval-output/` or
+`eval-output-fair-20260927/` was written. Nothing was merged anywhere.**
+
+| # | Command | Result | Wall | Exit |
+|---|---|---|---:|---|
+| 1 | `npm run typecheck` | PASS, no output | 6.2s | 0 |
+| 2 | `npm run build` | PASS, no output | 9.0s | 0 |
+| 3 | `npm run test` | PASS — **68 files passed, 1 skipped (69); 1,858 tests passed, 2 skipped (1,860)** | 291.79s | 0 |
+| 4 | `npm run qa:sweep` | **PASS** — 1,127 scenarios, 12,084 applicable checks (22,068 evaluated), **0 violations**, **0 network attempts** | 199.1s | 0 |
+| 5 | `npm run check:anti-scripting` | **PASS** — no canned dialogue on the customer-facing path | 0.8s | 0 |
+| 6 | `npm run context:prove` | **PASS — 9/9 proofs** | 17.7s | 0 |
+| 7 | claim-gate detector, text, corpus and e2e suites | PASS — 7 files, **328 tests** | 52.9s | 0 |
+| 8 | `localeParity`, `hebrewGrammar`, `localeRefusalBreadth`, `localeDateAndTime` | PASS — 4 files, **235 tests** | 3.5s | 0 |
+
+#### Against the tree independent QA measured
+
+| | QA's tree | this tree | |
+|---|---:|---:|---|
+| test files | 68 passed / 1 skipped | **68 / 1** | = ✅ |
+| tests | 1,791 passed / 2 skipped | **1,858 / 2** | +67, none removed ✅ |
+| sweep scenarios | 1,127 | **1,127** | = ✅ |
+| applicable checks | 12,084 | **12,084** | = ✅ |
+| evaluated checks | 22,068 | **22,068** | = ✅ |
+| INV-18 applicable | 4,760 | **4,760** | = ✅ |
+| violations | 0 | **0** | = ✅ |
+| network attempts | 0 | **0** | = ✅ |
+| texts released / asserting something | 2,250 / 256 | **2,250 / 256** | = ✅ |
+| releases WITHHELD | 4 | **4** | = ✅ |
+| `CLAIMS THAT LEAKED PAST THE GATE` | 0 | **0** | = ✅ |
+| `DETECTOR_BLIND` / `DETECTOR_OVER_READ` | 0 / 0 | **0 / 0** | = ✅ |
+| **QA's 9 wordings, driven end to end** | **9 released and PERSISTED** | **9 withheld, regenerated, never persisted** | ✅ |
+| **QA's 2 A/B controls, same runs** | 2 blocked | **2 blocked** | = ✅ |
+| the 14 honest controls QA re-verified | released | **released, 1 provider call each** | = ✅ |
+
+**Every pre-existing test still passes and no existing expectation was weakened. No
+test was deleted, skipped or relaxed.** The +67 are additions: 11 leak specs plus 3
+control/precision specs in `tests/e2e/claimGate.test.ts`, 11 in
+`claimGateExhaustion.test.ts`, 11 in `claimGateTemporalPhrase.test.ts`, 9 clitic
+readings in `claimGateText.test.ts`, and the CLASS A table, the CLASS B axis proofs
+and the two matrix floors in `claimGateDetector.test.ts`.
+
+**One existing fixture changed, and it is named here rather than left to be found.**
+The synthetic locale in `tests/agent/claimGateDetector.test.ts` — the runtime-
+registered third language that proves `detector.ts` holds no language-specific
+literal — gained `copulaClitics` and `firstPersonNumberMarkers`, because both fields
+are required on `ClaimLexicon` and `tsc` names a missing key rather than a test
+noticing later (§ 16.9's precedent). Its clitic `'z` stands for `zis`, the first
+token of its CANCELLATION frame, so the reading is only reachable through the data
+and the test asserts the detection **disappears** when the declaration is removed.
+
+#### The honest note this section owes, for the eighth time
+
+**`npm run qa:sweep` printed `RESULT: PASS`, `INV-18 4760/4760`, `CLAIMS THAT
+LEAKED PAST THE GATE : 0`, `DETECTOR_BLIND 0`, `DETECTOR_OVER_READ 0` and
+`Released sentences with NO declaration : 0` while both classes were live** —
+telling contacts their meeting was booked when nothing was, and persisting it.
+
+The reason is § 21.2's, and the honest summary of it is that **a generated matrix
+removes the author's choice of examples, not the author's choice of CROSSES.** Five
+generated matrices and 15,000-odd rows contained the `contracted` axis and the
+`person` axis and never put the two together in the third person; the Hebrew rows
+could only contain the forms the lexicon contained. `CLAIMS THAT LEAKED PAST THE
+GATE : 0` should still be read as what it is: a statement about the sentences, the
+layouts, the views, the temporal phrasings and now the spellings and the paradigms
+somebody thought of.
+
+**That is the argument the Founder's defence-in-depth decision rests on, and this
+section is evidence for it rather than against it.** The two classes are closed
+deterministically, structurally, and in the fail-safe direction — and that is the
+eighth time a section of this document has been able to say so.
