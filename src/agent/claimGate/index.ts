@@ -25,6 +25,15 @@
  *   SemanticVerifierOutputSchema           strict, and fails closed on anything else
  *   SEMANTIC_VERIFIER_INSTRUCTION          model-facing only; no customer-facing wording
  *
+ * MISSION 2G adds one more, from `./semantic/segmentation.ts`:
+ *
+ *   segmentForClassification, renderSegments
+ *                                          PRESENTATION ONLY. It cuts a text into numbered
+ *                                          pieces for the model inside the SAME one provider
+ *                                          call, on typographic rules alone. It holds no
+ *                                          vocabulary and produces no verdict, so it is not a
+ *                                          third reader.
+ *
  * The PORT itself lives in `src/ports/claimVerifier.ts`, because the authority
  * boundary belongs in the types every implementation is written against.
  */

@@ -170,7 +170,7 @@ export const SEMANTIC_VERIFIER_OUTPUT_JSON_SCHEMA: Readonly<Record<string, unkno
  * point where this design's whole argument is that it cannot. So a quoted phrase
  * that is not in the text is not a small inaccuracy; it is malformed output.
  *
- * HOW CONTAINMENT IS CHECKED, EXACTLY, IN TWO STEPS AND NO MORE
+ * HOW CONTAINMENT IS CHECKED, EXACTLY, IN THREE STEPS AND NO MORE
  * ---------------------------------------------------------------------------
  *  1. RAW SUBSTRING CONTAINMENT, `text.includes(phrase)`, byte for byte, with no
  *     normalisation, no case folding and no trimming beyond the phrase's own
@@ -183,6 +183,25 @@ export const SEMANTIC_VERIFIER_OUTPUT_JSON_SCHEMA: Readonly<Record<string, unkno
  *     normalisation and is exactly what `src/agent/claimGate/text.ts` runs
  *     before tokenising, so this fallback agrees with the detector rather than
  *     inventing a second notion of sameness.
+ *
+ *  3. IF AND ONLY IF STEP 2 ALSO FAILS, THE SAME TEST AGAIN WITH EVERY RUN OF
+ *     WHITESPACE ON BOTH SIDES WRITTEN AS ONE SPACE. **MISSION 2G ADDED THIS
+ *     STEP, AND IT IS HERE TO REPAIR A FAILURE THIS REPOSITORY NOW CAUSES
+ *     ITSELF.** `./segmentation.ts` presents the text to the model a second time
+ *     as numbered segments whose line breaks are written as single spaces, so
+ *     that a label and the words continuing it read as one line. A model quoting
+ *     a phrase out of a segment is therefore quoting a form in which a newline
+ *     has become a space - and without this step, that phrase would be rejected
+ *     as ungrounded, making the output MALFORMED because of how WE chose to
+ *     display it. `normalizeScript` does not touch whitespace, so step 2 cannot
+ *     absorb it.
+ *
+ *     IT FORGIVES WHITESPACE AND NOTHING ELSE. Every letter, digit and mark still
+ *     has to be present, in order, with no gap that is not whitespace in the
+ *     original. A paraphrase still fails, a translated day name still fails, an
+ *     invented reference still fails, and a phrase assembled from two places in
+ *     the text still fails. It is a test in
+ *     `tests/agent/semanticSegmentation.test.ts`.
  *
  * WHY THE FALLBACK IS NEEDED AND WHY IT IS NOT A LOOPHOLE. Hebrew is the reason,
  * and it is a real one rather than a hypothetical: `normalizeScript` strips
@@ -220,7 +239,20 @@ export function isGroundedInText(phrase: string, text: string): boolean {
   const normalizedText = normalizeScript(text).text.toLowerCase();
   const normalizedPhrase = normalizeScript(quoted).text.toLowerCase().trim();
   if (normalizedPhrase.length === 0) return false;
-  return normalizedText.includes(normalizedPhrase);
+  if (normalizedText.includes(normalizedPhrase)) return true;
+
+  // Step 3: the same again with whitespace runs written as one space. Applied to
+  // the step-2 forms rather than to the raw ones, so it is strictly a widening of
+  // step 2 and can never accept something step 2 already rejected for a reason
+  // other than whitespace.
+  const flatPhrase = collapseWhitespace(normalizedPhrase);
+  if (flatPhrase.length === 0) return false;
+  return collapseWhitespace(normalizedText).includes(flatPhrase);
+}
+
+/** Every run of whitespace, in any script, written as a single space. */
+function collapseWhitespace(value: string): string {
+  return value.replace(/\s+/gu, ' ').trim();
 }
 
 // ---------------------------------------------------------------------------

@@ -1,5 +1,27 @@
 # Mission 2F — the semantic claim verifier
 
+> ## ⚠ PARTLY SUPERSEDED BY MISSION 2G — read `docs/MISSION_2G_VERIFIER_ROUND.md` beside this file
+>
+> **This document is still correct about the DESIGN — the port, the authority boundary, the
+> fail-closed matrix, the union's additive property and the determinism controls are all unchanged.
+> Four specific things in it are out of date, and a reader who acts on them will be acting on
+> superseded facts.**
+>
+> | What this document says | What is true after Mission 2G |
+> | --- | --- |
+> | The model-facing instruction is `semantic-claim-classifier@v1` (§ 6 point 5, § 4.2) | It is **`semantic-claim-classifier@v2`**. The instruction was rewritten around one decidable test and five rules about meaning. `docs/MISSION_2G_VERIFIER_ROUND.md` § 7.2 |
+> | The verifier is handed the proposed text inside markers, and nothing else (§ 4.2) | It is handed the text **and a numbered segmentation of the same text, inside the same markers**, in the same ONE provider call. `src/agent/claimGate/semantic/segmentation.ts` |
+> | `isGroundedInText` checks containment in **two** steps (§ 3.1) | **Three.** A whitespace-tolerant step was added, because the segmentation's display form writes joined line breaks as single spaces. It forgives whitespace and nothing else |
+> | *"It does not claim the semantic layer works... the honest statement is unmeasured"* (§ 13) | It has now been **measured on a dev split** — 91.2% semantic recall, 100% layered recall, 0 of 17 semantic false positives, 0 of 68 dev claims missed by both layers, on `qwen2.5:7b-instruct`. **That is the half the tuning task was allowed to read and tuned against, and it is not the gate.** `docs/MISSION_2G_VERIFIER_ROUND.md` §§ 0, 8 and 9 |
+>
+> **The corpus this document describes was also split.** § 10 and § 12 residual 15 carry that change
+> and are owned by Mission 2G's corpus-and-harness task. **§ 12 gained residuals 16–19 at the end,**
+> which are the residual limits of the Mission 2G verifier change itself; the fuller list is
+> `docs/MISSION_2G_VERIFIER_ROUND.md` § 9.
+>
+> **Nothing in Mission 2G changed a model default, the seed, the temperature, the schema's claim
+> shape, the union, or the rule that this layer may only ADD suspicion.**
+
 **A second, model-assisted reader in front of the claim gate. It may only ADD suspicion. It can
 never clear, suppress or override anything, and it can never execute, approve or create anything.**
 
@@ -879,6 +901,36 @@ and the types keep them so.
     base held-out rows are quoted in `src/agent/` comments and have been since Mission 2D documented the
     findings it fixed, so for those 24 "held out" means *not run and not scored against* rather than
     *unseen*.
+
+### 12.4 Four more, APPENDED BY MISSION 2G — the residual limits of the tuned verifier
+
+**Added at the end of this section rather than woven into it, so a reader can see which limits belong
+to which mission.** `docs/MISSION_2G_VERIFIER_ROUND.md` § 9 is the full list of fifteen; these four are
+the ones a reader of THIS document most needs, because each one qualifies a sentence above.
+
+16. **THE SEMANTIC LAYER HAS NOW BEEN MEASURED, AND THE MEASUREMENT IS ON THE HALF THAT WAS TUNED
+    AGAINST.** § 13's *"unmeasured"* is out of date; what replaces it is weaker than it sounds. The
+    task that rewrote the instruction read the dev rows its verifier missed, diagnosed them, and
+    changed the wording until they moved — so a dev recall figure cannot separate a general rule from a
+    rule shaped to ten rows. The held-out split, a sealed set nobody on the team can read, and
+    independent QA are the gate. **A green dev number is not evidence that the semantic layer
+    generalises, in exactly the way residual 1 says a green sweep is not evidence that it classifies.**
+17. **THREE OF THE SIX CLASSES THE ROUND WAS AIMED AT COULD NOT BE MEASURED AT ALL.** The dev half
+    carries no `HANDOVER` row, no row of the very-short shape, and one OFFER and one CONDITIONAL
+    control in total. The instruction's rules for those three were written from a description and have
+    never been run against a row that exercises them.
+18. **ONE CLASS OF MISS SURVIVED THE ROUND, AND ONE ROW REGRESSED INTO IT.** A reply that opens with a
+    negation or a pleasantry and runs straight into the claim **with no punctuation between the two**
+    is five of the six remaining dev misses. Segmentation cannot help — there is no boundary to cut on.
+    All six are caught by the deterministic layer, which is defence in depth working rather than the
+    second layer being sufficient, and the deterministic layer is the one eight QA rounds have already
+    found holes in.
+19. **THE SECOND LAYER IS NOW 8–13% MORE EXPENSIVE PER TEXT, AND THE GROUNDING CHECK IS LOOSER.**
+    p50 942 → 1,019 ms and p95 1,042 → 1,175 ms on the mission host, paid on every customer-facing
+    text, for the prefill of the segmentation. And `isGroundedInText` is whitespace-insensitive where
+    it used to be whitespace-exact — a widening this repository's own segmentation display made
+    necessary. § 3.1's *"two steps and no more"* is now three, and § 8's arithmetic is now a floor
+    rather than the figure.
 
 ---
 

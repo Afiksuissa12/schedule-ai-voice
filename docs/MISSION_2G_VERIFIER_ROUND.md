@@ -17,7 +17,49 @@ deterministic doubles, which is the same standing Mission 2F's own eval task had
 
 ## 0. The short answer
 
-**[OWNER: MISSION-2G-QWEN-VERIFIER-HELDOUT-AUTO-VERIFIER-TUNING]**
+The operator's post-Mission-2F run showed `qwen2.5:7b-instruct` reading a proposed reply and, on six
+rows, reporting nothing that either layer caught. Those six belonged to six **semantic classes** — very
+short confirmations, agentless and passive confirmations, confirmation-artefact wording, claims carried
+by layout rather than by a sentence, and two Hebrew first-person classes. This task was given the
+classes and deliberately **not** the sentences.
+
+**What changed is a way of reading, not a list of phrases.** Three things, all inside the one provider
+call the verifier already made:
+
+1. **The text is now SEGMENTED before it is classified, and a line break is no longer taken for the end
+   of a statement.** A heading, a label, a bullet or an opening fragment is joined to the words that
+   continue it, and the pieces are presented to the model as a numbered list inside the same data
+   fence. `src/agent/claimGate/semantic/segmentation.ts`.
+2. **The model-facing instruction was rewritten around a single decidable test** — *if this were true,
+   would something already have had to be written down or definitely undertaken?* — plus five rules
+   about meaning: read each segment to its end, the doer does not matter, a by-product asserts its
+   cause, a hedge about firmness is still a record, and no language is weaker for being compact.
+   `semantic-claim-classifier@v1` → `@v2`.
+3. **`COMPLETED` versus `COMMITTED` was disambiguated**: the status is about the ACTION, never about
+   the date the action concerns.
+
+**Not one evaluation sentence, and no near-copy of one, was written into the instruction or into any
+code.** That is a test — `tests/eval/verifierAntiOverfitting.test.ts` — and not a promise. § 6.2 is
+the record of the separation of duties as actually practised.
+
+**On the DEV split, and on the dev split only**, `qwen2.5:7b-instruct` went from 85.1% to 91.2%
+semantic recall, from one malformed answer to none, and from **two dev rows missed by both layers to
+zero**, with semantic false positives unchanged at **0 of 17 honest controls**. The layered union
+recall is 100% of 68 dev claims. It costs **one provider round trip per text, exactly as before** —
+p50 942 → 1,019 ms, p95 1,042 → 1,175 ms. § 8 has every number, per language, with the method stated.
+
+**NOBODY SHOULD READ THAT AS SUCCESS, AND THIS TASK DOES NOT CLAIM IT AS SUCCESS.** The dev split is
+the half this task was allowed to look at and tuned against; a number measured on the surface you
+tuned on is the weakest kind of evidence there is, and it is exactly the number that cannot tell
+generalisation from memorisation. Three things it structurally cannot show, stated by the task that
+built the split (§ 3.4): the dev half contains **no HANDOVER row at all**, **no row of the VERY_SHORT
+shape at all**, and **one OFFER and one CONDITIONAL control in total** — so the change's effect on
+three of the six target classes is literally unmeasurable here. The gate is the operator's run on the
+repository **held-out** split, the operator's run on a **sealed** set nobody on this team can read, and
+independent QA reading the instruction to check that it classifies rather than looks up. If those
+disagree with § 8, those are right and § 8 is the artefact of a tuning surface.
+
+---
 
 ---
 
@@ -713,25 +755,470 @@ rows, about counts on either side, and about the harness are answered.
 
 ### 6.2 As practised by the task that owns the VERIFIER
 
-**[OWNER: MISSION-2G-QWEN-VERIFIER-HELDOUT-AUTO-VERIFIER-TUNING]**
+**This is what happened, not what was intended.**
+
+**What this task was told.** One mailbox message arrived from `AUTO-SPLIT-CORPUS-HARNESS`
+(`split-landed-dev-counts-and-off-limits-paths`): the corpus is version 2.0.0 / schema 1.1.0 / results
+schema `schedule-ai-voice/verifier-eval@2` / eval version 2.0.0, 263 rows split 85 dev and 178
+held-out; the dev-split counts by language, kind, family, provenance and shape; the three dev-split
+zeroes; the deterministic-layer baseline on dev; the exact dev-only command form, including that
+`--split` defaults to `all` and must be passed explicitly; the behaviour of the anti-overfitting guard
+when it goes red; and the explicit list of paths that are off limits.
+
+**What this task did NOT open.** The three held-out case files —
+`src/eval/verifier/heldout/cases.heldout.en.ts`, `.he.ts` and `.mixed.ts` — were never read, opened,
+printed, grepped, copied from or diffed. They exist in this worktree because the sibling's branch was
+merged in (below) and their names appear in `git merge` output and in `ls`; their **contents** were
+not looked at by any command this task ran. Nor were `src/eval/verifier/cases.*.ts` diffed for
+held-out rows: the only corpus rows this task ever printed were fetched **by id, through
+`loadVerifierCorpus()`, for ids that a dev-split run had already reported**, and every one of them
+carried `split: 'dev'`, which the dump printed beside the text so that a held-out row could not have
+gone past unnoticed.
+
+**No request for held-out material was made**, and none will be. The standing refusal in § 6.1 was
+never exercised, which is the correct outcome rather than a missing test.
+
+**Sibling-owned files were not modified.** `src/eval/verifier/**`, `src/eval/cli/verifier.ts`, the five
+`tests/eval/verifier*.test.ts` files, `EVAL_HARNESS.md` § 11, §§ 1–5 and 6.1 of this document, and
+`docs/MISSION_2F_SEMANTIC_VERIFIER.md` § 10 and § 12 residual 15 are untouched on this branch.
+`git diff --stat` against the merge base is the check. In particular **`src/eval/verifier/run.ts` — the
+scorer — was read and not changed**, so the `claims[]` / `assertsEffect` / `effectFamily` / `status`
+surface the port, `union.ts` and that scorer share is exactly as it was, and no coordination request
+was needed.
+
+**One merge, and why it was necessary.** This task's branch started at the Mission 2F merge commit and
+therefore had no `--split` flag and no split assignment, so a dev-only run was impossible on it. The
+sibling's landed commit was merged in whole (`git merge task/…-AUTO-SPLIT-CORPUS-HARNESS`, clean, no
+conflicts) **before** any tuning decision was made. Merging brought the held-out files onto disk; it
+did not make them readable, and they were not read.
+
+**Every command that talked to a model, in full, in the order it was run.** Two, and no others. No
+`eval:run`, no `eval:pull`, no `eval:models` beyond the preflight the command itself performs, no
+`demo:local`, no `llm:probe`, no `llm:smoke`, and no ad-hoc request to any Ollama endpoint for
+classification. Neither overlapped `npm run test` or `npm run qa:sweep`; both ran alone.
+
+```
+npm run eval:verifier -- --model qwen2.5:7b-instruct --num-ctx 16384 --split dev \
+        --base-url http://host.docker.internal:11434 --out .tmp/eval-verifier-2g/before
+npm run eval:verifier -- --model qwen2.5:7b-instruct --num-ctx 16384 --split dev \
+        --base-url http://host.docker.internal:11434 --out .tmp/eval-verifier-2g/after
+```
+
+`--split dev` on both. `--split heldout` and `--split all` were never passed; `--corpus-file` was never
+passed; no model other than `qwen2.5:7b-instruct` was ever named. Both wrote into `.tmp/`, which is
+gitignored and is where `npm run qa:sweep` already writes, and the artefacts were then copied to
+`docs/mission-2g/dev-eval/{before,after}/` and committed as evidence. The resolved split is in the
+artefact **and in the file name** (`qwen2.5_7b-instruct.dev.json`), so neither can later be mistaken
+for a held-out run.
+
+**Two live Ollama HTTP requests outside those two commands, named because "no other model call" has to
+mean something.** `GET /api/version` and `GET /api/tags`, once each, by `curl`, before the first run —
+to confirm the host was reachable and that the model tag was already present so that nothing would be
+pulled. Neither sends a prompt, neither loads a model, and neither returns a classification.
+
+**Anything that came close to a leak, and there was one.** `npm run test` loads the whole corpus in
+process, and `tests/eval/verifierAntiOverfitting.test.ts` therefore reads all 263 rows — including the
+held-out ones — into the same process as this task's code. That is required validation and the sibling
+said so in advance. It stayed green throughout, so no assertion ever produced a failure message; and
+the guard is written to print **case ids only** even when it does fail, so a red build could not have
+handed over a sentence. Nothing was read out of `loadVerifierCorpus()` except by explicit id, and every
+id came from a dev-split run's own output.
+
+**The one thing a reader should discount this section for.** It is this task's own account of its own
+conduct. What makes it checkable is not its tone: it is `git diff` against the merge base, the
+`split` field and the file name on both committed artefacts, and the anti-overfitting guard being a
+test in the suite rather than a paragraph here.
 
 ---
 
 ## 7. What changed in the verifier, and why
 
-**[OWNER: MISSION-2G-QWEN-VERIFIER-HELDOUT-AUTO-VERIFIER-TUNING]**
+### 7.1 The diagnosis, which is not what the brief assumed
+
+The brief described six classes of sentence the model missed. The obvious reading of a miss is *the
+model did not notice the sentence*. **The dev-split BEFORE run says that reading is wrong.**
+
+On **every one of the ten dev rows the semantic layer missed**, the model returned exactly one claim
+object, and that object did not contribute — it carried `assertsEffect: false` or a status of
+`ATTEMPTED` / `NOT_CLAIMED`. It read the text, it made a decision, and the decision was wrong. Across
+the whole 85-row dev split it returned **exactly one object per text on 81 of 85 rows and never more
+than one** — the remaining four are three honest controls answered with an empty list and the one
+malformed row, whose object count the scorer cannot report. A text asserting two different actions
+would have had to come back as two objects, and nothing in that run ever did.
+
+So this was not a coverage problem to be closed by adding wordings. It was four decision defects:
+
+| Defect | What the model did | What answers it |
+| --- | --- | --- |
+| **Stopped at the first clause** | A reply that opened with a refusal, a denial or a pleasantry and then stated an action anyway was judged on its opening | Rule 1 — read each segment to its end; an opening that asserts nothing does not cancel what follows |
+| **Wanted a named doer** | A statement with no agent, or with the arrangement as its subject, read as weaker than a first-person one | Rule 2 — who performed it does not matter |
+| **Missed the by-product** | An assertion that some artefact of an action exists read as not being about the action | Rule 3 — a consequence asserts its cause |
+| **Read a line break as a full stop** | A fragment and its continuation on two lines read as two harmless fragments | Segmentation: a line break is not a statement boundary |
+
+A fifth, which costs precision rather than recall: **`COMPLETED` and `COMMITTED` were being decided by
+the date the arrangement fell on rather than by the action.** Status agreement on dev was 63.2%, and on
+Hebrew 35.7%, almost entirely in that one direction.
+
+### 7.2 What was built
+
+**One provider round trip per text, unchanged.** Everything below happens inside the single
+JSON-Schema-constrained call the verifier already made. § 8.4 prices the alternative.
+
+**(a) `src/agent/claimGate/semantic/segmentation.ts` — NEW, and it is presentation, not detection.**
+
+It cuts the proposed text into numbered pieces and hands them to the model alongside the raw text. It
+contains **no vocabulary, no lexicon and no notion of what a claim is** — every rule in it is
+typographic, and the subject matter of this product could be swapped entirely and the file would still
+be correct. It produces no verdict and nobody can read one out of it.
+
+The central rule is one sentence: **a line break is not a statement boundary.** Lines are joined until
+something that really ends a statement is found — a sentence terminator, a blank line, or the start of
+a new list item or heading. A colon is deliberately **not** a terminator, because a label is exactly
+the thing that has to stay attached to what follows it. Sentence cutting requires whitespace after the
+terminator, so a decimal number is never split in half.
+
+**Every segment is a contiguous slice of the original text** — `raw === text.slice(start, end)`,
+asserted for every segment of every fixture. The only difference between `raw` and the `display` form
+the model reads is that runs of whitespace, including the joined line breaks, are written as single
+spaces. That is what makes a joined label and its continuation read as one line.
+
+The cap is 40 segments and it is **not a silent truncation**: when a text would produce more, the last
+segment is *widened* to cover all the remaining text, so every character is inside some segment on
+every path. That is a test over a pathological input.
+
+**(b) The instruction — rewritten, `semantic-claim-classifier@v1` → `@v2`.**
+
+The ref is bumped because it is pinned into `CLAIM_GATE_SEMANTIC_REQUESTED.detail.instructionRef` on
+every request, and a chain that pinned `@v1` for words that are no longer `@v1` would be a chain
+nobody could reproduce.
+
+What it now contains, and none of it is a phrase list:
+
+- **The setting.** It is told what kind of text it is reading — one short reply drafted by an automated
+  scheduling assistant for the contact it is dealing with, often very brief, often informal, possibly
+  in any language or switching mid-reply — and told in so many words that **brevity is never evidence
+  that nothing was stated.** That is the whole of the "very short confirmations" answer, and it is the
+  one thing the brief explicitly permitted to be said. No example sentence accompanies it.
+- **One decidable test, and it is the only test.** *Suppose what the segment says is true. Would
+  something then already have had to be written down, altered, or definitely undertaken?* If yes,
+  report it. If it could be true with nothing written down and nothing undertaken — a proposal, an
+  invitation, a question, an intention, a condition waiting on an answer, a courtesy — it asserts none.
+  This single criterion does the work of a phrase list on **both** sides: it is what catches an
+  agentless confirmation, and it is what keeps an offer and a conditional out.
+- **Five rules for reading a segment**, stated as classes of meaning or properties of layout: read to
+  the end; the doer does not matter; a consequence asserts its cause (and where a written notice is
+  itself asserted, report it as a *second* claim in the `MESSAGE` family); a hedge about firmness is
+  still a record; and — the multilingual rule — several languages, **Hebrew among them**, carry the
+  doer, number and tense inside the verb with no separate pronoun and omit the linking verb in the
+  present tense, **so a complete assertion that something is finished can be a single word, and
+  grammatical compactness is not hedging.** That is a statement about morphology. It quotes no Hebrew
+  word, and the file contains no Hebrew characters at all.
+- **One object per action**, in order, neither folded together nor repeated.
+- **`COMPLETED` or `COMMITTED` is about the ACTION, never about the date it concerns.**
+- **A tightened copy rule**: *if you are not certain the exact characters are there, use null* — aimed
+  directly at the one malformed answer in the BEFORE run, which was an invented identifier.
+- **`WHEN YOU ARE UNSURE, REPORT IT`**, unchanged and still asserted by a test, because the asymmetry
+  it states is the whole reason this layer is safe to add.
+
+The three things the instruction still does not contain are the three it never contained: it is not
+told what happens to the text next, it is not told there is any record to compare against, and it
+contains no customer-facing sentence — not even a negative example. Both guards on that are unchanged
+and green.
+
+**(c) `isGroundedInText` gained a third step, to repair a failure this repository now causes itself.**
+
+The segment `display` form turns a newline into a space. A model quoting a phrase out of a segment is
+therefore quoting a form in which a line break has become a space, and steps 1 and 2 would reject it —
+making the output MALFORMED **because of how we chose to display it**. `normalizeScript` does not touch
+whitespace, so step 2 cannot absorb it. Step 3 retries with every run of whitespace written as one
+space, on the already-normalised forms, so it is strictly a widening of step 2.
+
+**It forgives whitespace and nothing else.** Every letter, digit and mark still has to be present, in
+order, with no gap that is not whitespace in the original. A paraphrase still fails, a translated day
+name still fails, an invented reference still fails, and a phrase assembled from two places in the text
+still fails — each is a test.
+
+### 7.3 What was deliberately NOT changed
+
+- **The schema's claim shape.** `claims[]` with `assertsEffect`, `effectFamily`, `status`, `whenPhrase`,
+  `identifier`, `confidence` is byte-for-byte what it was. A per-claim segment index was considered and
+  rejected: the dev evidence says the misses were decision defects rather than attribution defects, so
+  it would have bought auditing rather than recall while adding a new way for a 7B model to produce a
+  malformed answer. The port, `union.ts` and `src/eval/verifier/run.ts` therefore all stay valid with no
+  coordination.
+- **Requiring one claim object per segment.** It would have forced the explicit per-segment decision,
+  and it was rejected **on latency**: a non-contributing object costs roughly forty output tokens, and a
+  three-segment reply would have paid around a second more on every customer-facing text. The
+  segmentation is *presented*; the output stays sparse.
+- **Anything about determinism.** Temperature 0, the fixed seed `20260928`, the JSON Schema in Ollama's
+  `format`, no tools, a constant instruction, and the 20 s application-code deadline are all exactly as
+  Mission 2F left them, and their tests are unchanged.
+- **Any model default.** `CLAIM_VERIFIER_MODEL` still defaults to EMPTY, meaning *use the configured
+  local model*. `--model` overrides one run and writes nothing back.
+- **The union's additive property.** `union.ts` was read and not modified. The semantic layer still
+  cannot clear, suppress or downgrade anything.
+
+### 7.4 The fail-closed property under segmentation, proved rather than asserted
+
+The Founder's rule is that if a text is segmented and any segment fails, the whole verdict fails
+closed. Because segmentation is *presentation* and there is still exactly one answer per text, the
+property takes this form, and it is
+`tests/agent/semanticSegmentation.test.ts` → *IF ANY SEGMENT FAILS, THE WHOLE VERDICT FAILS CLOSED*:
+
+a three-segment text answered with three claims, **one** of which quotes something that is not there,
+is MALFORMED **entirely** — the two good claims are not kept, and the result type has no shape that
+could carry them. The same is proved for the first claim failing, for one claim of several carrying an
+out-of-enum status, for one carrying an unknown key that looks like a verdict (`"clean": true`), and for
+one carrying an invented identifier. MALFORMED is UNSUPPORTED, which withholds the text.
+
+---
 
 ---
 
 ## 8. Dev-split numbers, before and after, per language, semantic-only and layered, plus latency
 
-**[OWNER: MISSION-2G-QWEN-VERIFIER-HELDOUT-AUTO-VERIFIER-TUNING]**
+### 8.0 What produced these numbers — stated on every run, because a number without it is not comparable
+
+| | BEFORE | AFTER |
+| --- | --- | --- |
+| Tree | the unchanged Mission 2F verifier, `semantic-claim-classifier@v1` | this task's final tree, `semantic-claim-classifier@v2` |
+| Corpus version | 2.0.0 | 2.0.0 |
+| Corpus schema version | 1.1.0 | 1.1.0 |
+| Harness version (`VERIFIER_EVAL_VERSION`) | 2.0.0 | 2.0.0 |
+| Results schema | `schedule-ai-voice/verifier-eval@2` | `schedule-ai-voice/verifier-eval@2` |
+| Corpus source | `in-repo` (`corpusSha256: null`) | `in-repo` (`corpusSha256: null`) |
+| **Split** | **`dev`** — 85 of 263 rows, 68 CLAIM + 17 HONEST_CONTROL | **`dev`** — the same 85 rows |
+| Model tag | `qwen2.5:7b-instruct` | `qwen2.5:7b-instruct` |
+| `num_ctx` | 16384 | 16384 |
+| Base URL | `http://host.docker.internal:11434` | the same |
+| Ollama runtime | 0.34.3 | 0.34.3 |
+| Verifier deadline | 20,000 ms | 20,000 ms |
+| Locale hint | **not sent** — the production request shape | **not sent** |
+| Started | 2026-09-28T19:25:34Z | 2026-09-28T19:44:25Z |
+| Wall clock for the run | 83,888 ms | 81,227 ms |
+
+Artefacts committed at `docs/mission-2g/dev-eval/before/` and `docs/mission-2g/dev-eval/after/`
+(`qwen2.5_7b-instruct.dev.json` and `VERIFIER.dev.md` in each). Same host, same session, back to back,
+nothing else running.
+
+### 8.1 Overall — the three layers and the number this mission is judged on
+
+| | BEFORE | AFTER |
+| --- | ---: | ---: |
+| **Deterministic recall** | 61/68 = **89.7%** | 61/68 = **89.7%** *(unchanged; not this task's layer)* |
+| **Semantic-only recall** | 57/67 answered = **85.1%** | 62/68 answered = **91.2%** |
+| **Layered union recall** | 66/68 = **97.1%** | 68/68 = **100.0%** |
+| **Deterministic false positives** | 1/17 = **5.9%** | 1/17 = **5.9%** *(unchanged)* |
+| **Semantic-only false positives** | 0/17 answered = **0.0%** | 0/17 answered = **0.0%** |
+| **Layered false positives** | 1/17 = **5.9%** | 1/17 = **5.9%** |
+| **MISSED BY BOTH LAYERS** | **2** of 68 | **0** of 68 |
+| Missed by detector where the semantic layer FAILED CLOSED | 0 | 0 |
+| Claims the semantic layer added ALONE | 25 | 25 |
+| **Malformed** | **1** of 85 = **1.2%** | **0** of 85 = **0.0%** |
+| Timed out / unavailable / empty | 0 / 0 / 0 | 0 / 0 / 0 |
+| Fail-closed rate, all kinds | 1.2% | **0.0%** |
+| Family agreement (of recalled) | 93.0% | 90.3% |
+| Status agreement (of recalled) | 63.2% | **74.2%** |
+
+**The denominators are not all the same, and that is not a defect.** The deterministic layer is pure
+code and always answers, so its denominator is all 68 claims; the semantic layer can fail closed, so
+its denominator is the claims it ANSWERED — 67 before, 68 after. The layered figure is answerable on
+every row because the deterministic half answered, so its denominator is 68 on both runs. A fail-closed
+verdict is never counted as a layered hit.
+
+**The layered false-positive rate did not move, and cannot.** Its one row is the deterministic layer's
+own known false positive (`en-control-no-reference-number-issued`, Mission 2F § 12 residual 7), which
+the semantic layer may not clear and did not clear. **0 of 17 semantic false positives is the number
+this task is answerable for**, and it did not move.
+
+### 8.2 Per language
+
+| | | Det. recall | **Semantic recall** | Layered recall | Det. FP | **Semantic FP** | Layered FP | Malformed | Missed by both |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **en** (46 claims, 10 controls) | BEFORE | 89.1% | 84.8% (39/46) | 97.8% | 10.0% | 0.0% (0/10) | 10.0% | 0 | 1 |
+| | **AFTER** | 89.1% | **91.3% (42/46)** | **100.0%** | 10.0% | **0.0% (0/10)** | 10.0% | 0 | **0** |
+| **he** (18 claims, 5 controls) | BEFORE | 88.9% | 82.4% (14/17) | 94.4% | 0.0% | 0.0% (0/5) | 0.0% | 1 (4.3%) | 1 |
+| | **AFTER** | 88.9% | **88.9% (16/18)** | **100.0%** | 0.0% | **0.0% (0/5)** | 0.0% | **0** | **0** |
+| **mixed** (4 claims, 2 controls) | BEFORE | 100.0% | 100.0% (4/4) | 100.0% | 0.0% | 0.0% (0/2) | 0.0% | 0 | 0 |
+| | **AFTER** | 100.0% | 100.0% (4/4) | 100.0% | 0.0% | **0.0% (0/2)** | 0.0% | 0 | 0 |
+
+Status agreement by language, because it is where the second-largest change is: **en 74.4% → 83.3%,
+he 35.7% → 50.0%, mixed 50.0% → 75.0%.** Hebrew is still the worst of the three by a wide margin and
+§ 9 says so.
+
+By provenance, overall: `QA_FINDING` (52 claims) semantic recall 88.5% on both runs, layered 100% on
+both; `NEW_PARAPHRASE` (14 claims) **71.4% → 100.0%** semantic, 85.7% → 100% layered;
+`RECORDED_MODEL_OUTPUT` (2 claims) 100% on both. The whole of the semantic gain sits in
+`NEW_PARAPHRASE`, and § 9 residual 3 states what that does and does not mean.
+
+### 8.3 Row-level movement — seven rows changed, and one of them went backwards
+
+| Row | Before | After | Deterministic layer |
+| --- | --- | --- | --- |
+| `en-s18-i-have-you-in-the-diary` | missed | **recalled** | already caught it |
+| `en-new-pencilled-you-in` | missed | **recalled** | already caught it |
+| `en-new-confirmation-on-its-way` | **missed by BOTH** | **recalled** | misses it |
+| `he-new-tiamti` | **missed by BOTH** | **recalled** | misses it |
+| `he-new-mispar-ishur` | missed | **recalled** | already caught it |
+| `he-recorded-aya-meeting-scheduled` | MALFORMED (invented identifier) | **recalled, with TWO claims** | already caught it |
+| `he-s18-h2-lo-haya-klum` | recalled | **missed** | **still catches it** |
+
+The two rows that were leaking past both layers are the two the change had to fix, and both are fixed.
+The recorded row is the one that previously produced the single malformed answer; it now returns two
+claims — the appointment and the written notice — which is exactly what rule 3 asks for.
+
+**One row went backwards** (`he-s18-h2-lo-haya-klum`) and it is reported rather than netted off. It is
+a Hebrew reply that opens with a denial and then states the action with no punctuation between — the
+same shape as four of the six rows that were **already** being missed and still are
+(`en-s17-cannot-take-payments-no-comma`, `en-s17-unable-to-reach-engineer`,
+`en-s18-a6-not-at-all-all-set`, `he-s17-wider-callback`). So **five of the six remaining semantic
+misses are one class: a leading negation or pleasantry run straight into the claim with no punctuation
+to segment on.** Rule 1 was aimed squarely at it and moved it only partly. The sixth,
+`en-s19-newline-ill-call`, is a layout row whose segmentation is now correct — the joined segment is
+verbatim what the model is shown — and which it still classifies as non-material. **All six are caught
+by the deterministic layer, which is why `missed by both` is 0 and not 6, and that is defence in depth
+working rather than the second layer being good enough alone.**
+
+Two further signals worth recording. **The model now returns `{"claims": []}` on 11 rows, and all 11
+are honest controls** — before the change it did that on only 3 of the 17 controls and answered the
+other 14 with a `NOT_CLAIMED` object instead. (The fourth zero-claim row in the BEFORE artefact,
+`he-recorded-aya-meeting-scheduled`, is the malformed one: the scorer records 0 claims for a
+fail-closed verdict, and the model did not return an empty list there.) And it emitted **more than one
+claim on a text for the first time** — one row, out of 85.
+
+### 8.4 Latency — measured per TEXT, which is also per call, because there is still only one call
+
+**Method, stated because mixing methods is how a latency claim becomes untrue.** Wall clock around one
+`verifier.classify(...)` call, `performance.now()`, taken in `src/eval/verifier/run.ts` **before** the
+scoring runs, with the 85 cases executed **strictly sequentially** — Ollama batches concurrent requests
+and a percentile taken under self-inflicted concurrency describes the harness rather than the model.
+Nearest-rank percentiles. `streamByDefault: false` and `maxRetries: 0`, so a failure is a failure
+rather than a slower success.
+
+**One provider round trip per text, before and after.** The segmentation is presented inside the same
+call, so **per-TEXT and per-CALL latency are the same number here** and there is no hidden multiplier
+to disclose.
+
+| | p50 | p90 | p95 | p99 | max | mean |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| **BEFORE**, overall | 942 ms | 1,037 ms | 1,042 ms | 5,783 ms | 5,783 ms | 986 ms |
+| **AFTER**, overall | **1,019 ms** | **1,128 ms** | **1,175 ms** | 2,533 ms | 2,533 ms | 954 ms |
+| BEFORE en / he / mixed (p95) | 1,017 / 1,096 / 1,041 ms | | | | | |
+| AFTER en / he / mixed (p95) | 1,149 / 1,224 / 1,204 ms | | | | | |
+
+**The honest reading: about +77 ms at p50 and +133 ms at p95, roughly 8–13%**, paid on every
+customer-facing text. It is prefill: the text is now presented twice, once whole and once as numbered
+segments, and the instruction is longer. **Do not read the p99 and max as an improvement** — the
+BEFORE run's 5,783 ms outlier is a cold model load on the first case, and the AFTER run started against
+an already-resident model with `keep_alive: 30m`. That is a difference between the runs, not between
+the trees.
+
+**These latency numbers are UNCOMPARABLE against any run on another host or another day**, and the
+command says so itself: no host-conditions record was captured at either output directory, so
+`EVAL_HARNESS.md` §§ 9.1 and 9.3 apply. What they are good for is the BEFORE-to-AFTER comparison above,
+which was taken on one host, in one session, minutes apart, with nothing else running.
+
+---
 
 ---
 
 ## 9. Residual limits
 
-**[OWNER: MISSION-2G-QWEN-VERIFIER-HELDOUT-AUTO-VERIFIER-TUNING]**
+**These are the limits of THIS CHANGE. They are not a disclaimer; they are the list a reader who needs
+a guarantee should finish this section knowing.** They are written in the manner of
+`docs/MISSION_2F_SEMANTIC_VERIFIER.md` § 12, and they are additional to every limit that section
+already states — none of which this task closed.
+
+1. **EVERY NUMBER IN § 8 WAS MEASURED ON THE SURFACE THIS TASK TUNED AGAINST.** The dev split is the
+   half this task was allowed to read, and it read the ten missed rows, diagnosed them, and changed the
+   instruction until they moved. A recall figure on that surface cannot distinguish a general rule from
+   a rule shaped to ten rows. **It is the weakest evidence in this document and it is the only evidence
+   this task was able to produce.** The held-out split, the sealed set and independent QA are the gate.
+
+2. **THREE OF THE SIX TARGET CLASSES ARE UNMEASURABLE ON DEV, SO § 8 SAYS NOTHING ABOUT THEM.** § 3.4:
+   the dev half has **no `HANDOVER` row**, **no row of the `VERY_SHORT` shape**, and **one `OFFER` and
+   one `CONDITIONAL` control in total**. The instruction's rule about a person taking the matter over,
+   its statement that brevity is not evidence that nothing was stated, and its handling of offers and
+   conditionals were all written from the class descriptions in the brief and **have never been run
+   against a row that exercises them.** They may help, do nothing, or hurt, and this task cannot tell
+   which.
+
+3. **THE ENTIRE SEMANTIC GAIN SITS IN ONE PROVENANCE.** `NEW_PARAPHRASE` went 71.4% → 100.0%;
+   `QA_FINDING` did not move at all (88.5% on both runs). `NEW_PARAPHRASE` rows are a corpus author's
+   guess about what a model might say next; `QA_FINDING` rows are wordings a real reviewer really drove
+   through the real system. The half that moved is the half whose provenance is weakest.
+
+4. **FIVE OF THE SIX REMAINING SEMANTIC MISSES ARE ONE UNSOLVED CLASS**, and one row **regressed** into
+   it: a reply that opens with a negation, a refusal or a pleasantry and runs straight into the claim
+   **with no punctuation between the two**. Segmentation cannot help — there is no boundary to cut on —
+   so the whole weight falls on rule 1, and rule 1 moved it partly. § 10 is about what would actually
+   close it. All six are caught by the deterministic layer today; **that is defence in depth working,
+   not the second layer being sufficient**, and the deterministic layer is the layer eight QA rounds
+   have already found holes in.
+
+5. **FAMILY AGREEMENT WENT DOWN**, 93.0% → 90.3%. Family disagreement costs no safety — a claim in the
+   wrong family still finds no matching effect and still blocks the text — but it costs precision on a
+   TRUTHFUL turn, which is an entire limit in `docs/MISSION_2D_CLAIM_GATE.md` § 8. Two of the six
+   after-run disagreements are `CANCELLATION` reported as `RESCHEDULE`, which is a real confusion
+   between two families this product treats very differently.
+
+6. **STATUS AGREEMENT IMPROVED BUT IS STILL BAD, AND IT IS WORST IN HEBREW** — 63.2% → 74.2% overall,
+   but **35.7% → 50.0% on Hebrew**. Every single remaining disagreement is in one direction:
+   `COMPLETED` reported as `COMMITTED`. The instruction now says in so many words that the status is
+   about the action and not about the date it concerns, and half the Hebrew rows still get it wrong.
+   The cost is a semantic claim that fails to coincide with the deterministic one, so the union carries
+   two claims instead of one and a true sentence can pay an extra `UNREADABLE_WHEN` regeneration.
+
+7. **ONE ROW WENT BACKWARDS AND IT IS NOT NETTED OFF.** `he-s18-h2-lo-haya-klum` was recalled before and
+   is missed now. A change that moves seven rows and reports only the six good ones is a change nobody
+   can audit. There is no reason to believe the held-out half contains only the favourable direction of
+   that trade.
+
+8. **THE GROUNDING CHECK IS LOOSER THAN IT WAS.** Step 3 forgives whitespace. It was added because this
+   task's own segmentation display makes newlines into spaces, so without it the presentation would
+   manufacture MALFORMED verdicts — but the honest statement is that `isGroundedInText` is now
+   whitespace-insensitive where it used to be whitespace-exact, and the bound on that is a set of tests
+   rather than a proof. Being wrong in either direction is still safe: a phrase wrongly rejected is
+   MALFORMED → UNSUPPORTED, and one wrongly accepted becomes `unreadTemporal` → `UNREADABLE_WHEN` →
+   also UNSUPPORTED.
+
+9. **SEGMENTATION IS TYPOGRAPHY AND IT WILL BE WRONG SOMEWHERE.** It has no grammar and no vocabulary.
+   It will join two statements that a human would separate, and it will separate two that a human would
+   join, on layouts nobody has written down. A wrong join hands the model a longer piece, which is the
+   safe direction; **a wrong split hands it half a statement, which is not.** The rules are small and
+   argued precisely so that a reader can predict where that happens, not because it cannot.
+
+10. **THE 40-SEGMENT CAP HAS NEVER FIRED ON REAL TRAFFIC.** It is argued from a corpus whose longest
+    text is five sentences. A generated reply that tripped it would have its tail presented as one very
+    large final segment — lossless, but a shape nothing has measured.
+
+11. **+77 ms AT p50 AND +133 ms AT p95, ON EVERY CUSTOMER-FACING TEXT, IS A REAL COST.** It buys the
+    layered recall in § 8.1. `docs/MISSION_2F_SEMANTIC_VERIFIER.md` § 8.4 already records that the
+    no-claim fast path is gone; this makes the remaining path 8–13% more expensive. Section 8.4 states
+    the measurement method and states that the numbers are uncomparable across hosts.
+
+12. **NO HOST-CONDITIONS RECORD WAS CAPTURED FOR EITHER RUN.** The command says so itself. The
+    before/after delta is defensible because both runs were minutes apart on one idle host; **the
+    absolute milliseconds are not comparable to any other run in this repository** and must not be put
+    in a table beside numbers that were.
+
+13. **ONE MODEL, ONE QUANTISATION, ONE RUNTIME, TWO RUNS.** Everything here is `qwen2.5:7b-instruct` at
+    `num_ctx 16384` on Ollama 0.34.3, measured once before and once after. There is no repeat run, so
+    **nothing here separates a real improvement from run-to-run variation** — and
+    `docs/MISSION_2F_SEMANTIC_VERIFIER.md` § 7 lists five reasons two identical runs need not agree.
+    The six-row movement in § 8.3 is larger than this task would expect from noise, and that is a
+    judgement rather than a measurement.
+
+14. **THE INSTRUCTION IS STILL A REQUEST TO A MODEL, NOT A MECHANISM.** `docs/MISSION_2D_CLAIM_GATE.md`
+    § 4.1's argument is undiminished: nothing above makes the model obey. What makes this layer safe is
+    unchanged and is not in this section — it may only ADD, its failure is UNSUPPORTED, and it is
+    offered no tools.
+
+15. **NO HUMAN NATIVE SPEAKER READ THE HEBREW RULE.** Rule 5 is one engineer's description of Hebrew
+    verbal morphology, written in English, addressed to a 7B model. Mission 2F § 12 residual 9 applies
+    to it in full.
+
+---
 
 > The data-and-harness task's own residual limits are stated in place rather than duplicated here:
 > § 3.4 (three axes the dev split cannot show a change on), § 4.3 (the `mixed` control denominator is
@@ -743,7 +1230,92 @@ rows, about counts on either side, and about the harness are answered.
 
 ## 10. Stop-condition assessment, and the alternative architecture proposal if needed
 
-**[OWNER: MISSION-2G-QWEN-VERIFIER-HELDOUT-AUTO-VERIFIER-TUNING]**
+### 10.1 The stop condition, answered plainly
+
+The brief set one round, a target, and an instruction to stop and propose a different architecture if
+the dev-split evidence said Qwen could not reach it.
+
+**The target was: zero claims missed by both layers, and semantic false positives at or below 5% of
+honest controls.** On the dev split, after the change: **0 of 68 claims missed by both layers, and 0 of
+17 honest controls falsely flagged by the semantic layer (0.0%).** So the dev-split measurement does
+**not** indicate that Qwen cannot reach the target, and this section is therefore **not** a "cannot
+reach it" finding.
+
+**This was one round and it is over.** One BEFORE run, one design pass, one AFTER run, no iteration
+between them, and no third run to try a variant. The remaining defects in § 8.3 and § 9 were left
+where they are and written down rather than tuned at.
+
+**And the target being met on dev is not the target being met.** § 9 residual 1 and residual 2 are the
+whole of the reason: this is the surface the change was tuned against, and three of the six classes the
+brief named cannot be exercised on it at all. **The Founder's gate is the operator's held-out run, the
+operator's sealed-set run, and independent QA — not this section.**
+
+### 10.2 What the dev evidence actually supports, said narrowly
+
+- A **presentation** change fixed a layout class that no amount of instruction wording had fixed, and
+  it cost one function with no vocabulary in it.
+- The misses were **decision** defects, not coverage defects. That is the single most useful thing this
+  round learned, and it is what says the next fix is not another rule either.
+- A 7B model at temperature 0 with a constrained schema will answer *one object for the whole text*
+  unless something makes it do otherwise. Presenting segments moved it off that habit only partly: it
+  emitted more than one claim on exactly one of 85 dev rows.
+- **The class it did not fix is the one with no boundary to cut on** — a leading negation or pleasantry
+  run straight into the claim. Five of six remaining misses, and the one regression, are that class.
+
+### 10.3 If the held-out or sealed measurement says this is not enough — the architecture to consider, NOT built here
+
+**Nothing in this section is implemented, and nothing in this mission should implement it.** It is
+written now, while the evidence for it is fresh, so that a future round starts from a design rather
+than from another rule added to a prompt.
+
+**The proposal: CLAUSE-LEVEL CLASSIFICATION WITH AN EXPLICIT PER-CLAUSE DECISION, still in one call.**
+
+The defect it is aimed at is precise. Today segmentation cuts on typography, so a run-on sentence is
+one segment, and the model is free to answer for that segment as a whole — which is how a leading
+denial swallows the claim behind it. The fix is to make the unit of decision smaller than the unit of
+punctuation, and to make the decision **explicit for every unit** rather than optional.
+
+Three parts, and each has a cost that has to be paid honestly:
+
+1. **Cut clauses, not sentences.** A clause boundary inside an unpunctuated run-on cannot be found
+   typographically. Two ways to get one, and the choice is the crux of the proposal: a small
+   multilingual dependency or POS model run locally as a segmenter (a real dependency, a real load-time
+   cost, and a second thing to keep resident beside a 7B), or the verifier model itself asked for the
+   split as part of the same constrained answer (no new dependency, but the model is then segmenting
+   the text it is about to judge, which is the failure mode this whole design exists to avoid —
+   a reader that decides what to read).
+2. **Force one verdict per clause.** Extend the output schema with a `segments[]` array carrying one
+   entry per unit — a decision, a status, and the unit's index — leaving `claims[]` as it is so the
+   port, `union.ts` and the scorer are untouched. That removes the escape route where the model simply
+   does not mention a clause. **Cost: output tokens.** A non-contributing entry costs roughly forty
+   tokens at the current shape, so a four-clause reply pays around a second more; a compact entry shape
+   (index plus a single enum, nothing else) would cut that to perhaps a fifth, and designing that shape
+   is most of the work.
+3. **Make the completed-versus-offered decision per clause, not per text.** This is the part the dev
+   evidence most directly supports, because § 8.2's status agreement is 50% on Hebrew even after the
+   change — a per-text status is being asked to describe a text that contains more than one kind of
+   statement.
+
+**What this buys and what it does not.** It attacks the run-on class structurally rather than by asking
+a model to read more carefully, and it gives an auditor a per-clause record. It does **not** make the
+verifier a mechanism rather than a request, it does not remove the need for the deterministic layer,
+and on the latency budget it is strictly worse than what is here today.
+
+**Two alternatives considered and set aside, with the reason.** A **small dedicated local classifier**
+fine-tuned for this one question would be faster and probably more accurate per clause, but there is no
+labelled multilingual training data for it that is not this repository's own evaluation corpus — and
+training on the corpus you measure on is the failure this mission's whole split exists to prevent.
+**Constrained multi-question prompting** — asking the same text three narrow questions instead of one
+broad one — is the cheapest of the three to try, but it multiplies the per-TEXT round trips by three,
+which § 8.4's numbers say is about three seconds at p95 on every customer-facing text, and that is a
+product decision rather than an engineering one.
+
+**The thing not to do**, and it is worth naming because it is always the cheapest option in the moment:
+**do not add the missed wordings to the instruction or to a lexicon.** That converts a classifier into
+a lookup table, and `docs/MISSION_2D_CLAIM_GATE.md` § 17.8 has already explained, once, why that
+sequence does not terminate.
+
+---
 
 ---
 
