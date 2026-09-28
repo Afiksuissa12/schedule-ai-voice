@@ -1328,6 +1328,9 @@ created**, including `m2b/aya-expanse-schema-tools:v1`.
 | 7 | `npm run context:prove` | RESULT: **PASS — 9/9 proofs** | 9/9 | **identical** |
 | 8 | Hebrew scheduling parity: `localeParity`, `hebrewGrammar`, `localeLexicon`, `localeRefusalBreadth`, `scriptNormalization`, `tests/e2e/hebrewDigitClockTime` | **6 files passed, 294 tests passed**, exit 0 | unchanged | **identical** |
 | 9 | Claim-gate adversarial: `tests/claimGate/**`, `tests/agent/claimGate*.test.ts`, `tests/e2e/claimGate*.test.ts` | **8 files passed, 181 tests passed**, exit 0 | unchanged | **identical — the § 9.2 prompt change is upstream of the turn loop and disturbed none of it** |
+| 10 | `npm run llm:mapcheck` — **not on the required list, run because § 18.3 touches the mapper** | **PASS, 84 checks, 0 failures** | PASS, 84 checks (§ 12) | **identical count.** It **caught a real regression first** — see § 19.1 |
+| 11 | `npm run eval:corpus` — pure, no model, no network | `Corpus 1.2.0 (schema 1.2.0) - VALID`, **26 scenarios, 81 turns**, 3 gates, `Harness 1.2.0, rubric 1.2.0, corpus 1.2.0` | same | **identical — the corpus and rubric were not touched** |
+| 12 | `npm run context:render` — pure; the end-to-end proof of § 9.2 | Renders `Their local clock right now reads **Wednesday 4 March at 10:00**.` and `Callback, **Friday 6 March at 11:00** their time (PENDING).` | previously carried `2026` in both | **the year is gone from the real assembled context, not just from a unit test** |
 
 **The +21 is one new file and nothing else.** `tests/eval/localOriginCandidates.test.ts` — the
 local-tag distinction, the Modelfile's contents, and § 18.3's two rendering changes.
@@ -1341,6 +1344,7 @@ Four assertions in three files. **Nothing was disabled, skipped or deleted.**
 | `tests/agent/prompt.test.ts`:187 | `'Wednesday 4 March 2026 at 10:00'` → `'Wednesday 4 March at 10:00'`, **plus a new `not.toContain('2026')`** | It asserted the old disclosure and would otherwise assert a prompt this system no longer sends. The added negative makes restoring the year fail here rather than only in a benchmark. |
 | `tests/agent/openAiLive.test.ts`:64, :118 | Two hand-written turn-context stand-ins, year dropped | Same reason. This file is `describe.skip` without `OPENAI_API_KEY` — it is the suite's one skipped file — so this is not what keeps the run green; it is so a live run tests the shipping prompt. |
 | `tests/llm/ollamaAyaToolShape.test.ts`:450 | `toolCallHealth` equality now includes `refusalReasons: ['names "directly-answer", which was not offered this turn']` | **A mechanical consequence of § 18.3**, named here as the brief requires. The assertion is `toEqual` on the whole object, so the additive field broke it. It was **tightened rather than loosened** — the same string the next line already asserts on the CLI channel, so the two cannot drift. The other two `toolCallHealth` equalities in that file (`malformed: 0`) were untouched and still pass, which is the proof that the field is omitted when empty and a clean turn's metrics are byte-identical to before. |
+| `src/llm/cli/mappingSelfCheck.ts` — **three** `checks.equal` assertions, § 6 and § 14 | Same additive field, same treatment: each now pins its `refusalReasons`. | **`llm:mapcheck` is not on the nine-step required list, and running it anyway is what caught this.** The full suite was green while `llm:mapcheck` was at **81 passed / 3 failed** — three whole-object equalities the additive field broke, in a pure CLI that `npm run test` does not invoke. All three were **tightened**, not relaxed: two now assert the reason the file already asserted on the `refusals` channel, and the third (`"schedule_followup" carried no arguments object; supplying one would be inventing it`) had **no** refusal assertion before and is pinned here for the first time. Back to **84 checks, 0 failures** — the § 12 figure. |
 
 **No test in a file this task does not own needed changing.** `tests/claimGate/**`,
 `tests/agent/claimGate*.test.ts`, `tests/invariants/**`, `tests/e2e/**` and `tests/qa/**` all pass
@@ -1378,6 +1382,7 @@ and untouched; both pass.
 | `src/eval/runner/metricsCapturingProvider.ts` | Concatenates `refusalReasons` across a turn's provider calls, in the same order the counts are summed. § 18.3 |
 | `src/ports/llm.ts` | **additive only**, and OUTSIDE this task's declared ownership — named in § 18.3: optional `LlmToolCallHealth.refusalReasons`. |
 | `src/llm/ollama/mapping.ts` | **additive only**, same note: populates `refusalReasons`, omitted when empty. |
+| `src/llm/cli/mappingSelfCheck.ts` | Three `checks.equal` assertions pin the new field. § 19.1 |
 | `tests/eval/localOriginCandidates.test.ts` | **new.** 21 tests. § 18.2, § 18.3 |
 | `tests/agent/prompt.test.ts`, `tests/agent/openAiLive.test.ts`, `tests/llm/ollamaAyaToolShape.test.ts` | The four changed assertions of § 19.1 |
 | `docs/MISSION_2D_AYA_ROOT_CAUSE.md` | § 9.1's correction, § 9.1a, § 9.1b, § 9.2 rewritten, § 9.3 settled, § 14–§ 20 new, and the corrections carried into § 0, § 11 and § 11.1 |

@@ -1199,6 +1199,20 @@ before and after must be byte-identical:
 ollama show aya-expanse:8b --template | sha256sum   # same before and after the create
 ```
 
+> **LINE ENDINGS — check this on Windows.** This repository has no `.gitattributes`, so a checkout
+> on Windows may give the Modelfile **CRLF** endings. The `TEMPLATE """..."""` body is copied into
+> the model's manifest **verbatim**, so CRLF inside it puts `\r\n` into every prompt the model
+> receives, where the stock template has `\n`. That is a small fidelity difference, but it is a
+> difference in the *prompt bytes* in an experiment whose entire subject is prompt bytes — so
+> normalise before creating, and check:
+>
+> ```bash
+> file src/eval/models/modelfiles/aya-expanse-8b-schema-tools.Modelfile   # want "ASCII text", not "with CRLF line terminators"
+> ```
+>
+> If it reports CRLF, convert it (`dos2unix`, or `git config core.autocrlf input` and re-checkout)
+> **before** `ollama create`, and re-run § 9.8.2's template check afterwards.
+
 ### 9.8.2 VERIFY THE TEMPLATE BEFORE SPENDING A BENCHMARK ON IT
 
 **Do this first. It takes one command and it is the one assumption the Modelfile could not check

@@ -231,10 +231,16 @@ main(async () => {
   {
     const unoffered = mapFixture(FIXTURE_TEXTUAL_TOOL_CALL_UNOFFERED);
     checks.equal('a tool that was never offered yields NO tool call', unoffered.toolCalls, []);
+    // `refusalReasons` is MISSION 2D-R, additive: the same strings as the
+    // top-level `refusals` below, carried inside `metrics` so a transcript can
+    // render a refusal per turn. Asserted rather than loosened, so the two
+    // channels cannot drift. See src/ports/llm.ts and
+    // docs/MISSION_2D_AYA_ROOT_CAUSE.md § 18.3.
     checks.equal('it is counted as malformed', unoffered.metrics?.toolCallHealth, {
       native: 0,
       recoveredFromText: 0,
       malformed: 1,
+      refusalReasons: ['names "send_contract_and_charge_card", which was not offered this turn'],
     });
     checks.ok(
       'the attempt stays visible in the assistant text',
@@ -250,6 +256,9 @@ main(async () => {
       native: 0,
       recoveredFromText: 0,
       malformed: 1,
+      // This one had no `refusals` assertion of its own before, so the reason is
+      // now pinned here for the first time.
+      refusalReasons: ['"schedule_followup" carried no arguments object; supplying one would be inventing it'],
     });
 
     const prose = mapFixture(FIXTURE_PROSE_MENTIONING_A_TOOL);
@@ -609,6 +618,7 @@ main(async () => {
       native: 0,
       recoveredFromText: 0,
       malformed: 1,
+      refusalReasons: ['names "directly-answer", which was not offered this turn'],
     });
     checks.equal('the refusal says why', fenced.refusals, [
       'names "directly-answer", which was not offered this turn',
