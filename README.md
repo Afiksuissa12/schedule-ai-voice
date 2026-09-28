@@ -314,7 +314,7 @@ all runs the whole test suite and both demos.
 | `npm run eval:models` | **yes** | Inventory + **measured** resident VRAM |
 | `npm run eval:run` | **yes** | The benchmark. Hours. Resumable — run it detached |
 | `npm run eval:report` | no | → `results.json`, `COMPARISON.md`, `transcripts/` |
-| `npm run eval:verifier` | **yes** | **Mission 2F.** The REAL semantic claim verifier against a chosen local model, over the labelled English/Hebrew/mixed claim corpus. Reports per-language **recall**, **false-positive rate**, **malformed-output rate** and **latency percentiles** → `$EVAL_OUT_DIR/verifier/`. Requires `EVAL_OUT_DIR`; **refuses** to write into `eval-output/` or `eval-output-fair-20260927/`. `EVAL_HARNESS.md` § 11 |
+| `npm run eval:verifier` | **yes** | **Mission 2F, extended by 2G.** The REAL semantic claim verifier against a chosen local model, over the labelled English/Hebrew/mixed claim corpus (263 rows, split `dev` / `heldout`). Reports per-language **recall**, **false-positive rate**, **malformed-output rate** and **latency percentiles**, and each of the first two **three times over — deterministic, semantic-only and layered union** — plus a **missed-by-both-layers** count → `$EVAL_OUT_DIR/verifier/<model>.<split>.json`. `--split <dev\|heldout\|all>` and `--corpus-file <path>` both REFUSE rather than guess. Requires `EVAL_OUT_DIR`; **refuses** to write into `eval-output/` or `eval-output-fair-20260927/`. `EVAL_HARNESS.md` §§ 11 and 11.3a; `docs/MISSION_2G_VERIFIER_ROUND.md` § 5 |
 
 **No new vitest tests exist for any of this**, and that is a constraint rather
 than a choice: `vitest.config.ts` collects `tests/**` only, and the missions that

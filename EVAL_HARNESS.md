@@ -717,8 +717,8 @@ eval-output/                           (override the root with EVAL_OUT_DIR)
   COMPARISON.md                        the human-readable side-by-side
   transcripts/<model>/<scenario>.md    real transcripts + judge verdicts
   environment/<model>.json             host conditions per run, written EXTERNALLY (§ 9)
-  verifier/<model>.json                MISSION 2F: the semantic-verifier eval (§ 11)
-  verifier/VERIFIER.md                 its human-readable summary
+  verifier/<model>.<split>.json         MISSION 2F: the semantic-verifier eval (§ 11)
+  verifier/VERIFIER.<split>.md         its human-readable summary
   runs/<model>/<scenario>.json         gitignored raw per-run records (large, regenerable)
 ```
 
@@ -761,9 +761,16 @@ a metric with no observations is `null`, never `0`, and every aggregate carries 
 | `schedule-ai-voice/eval-results@4` | **Current — Mission 2F.** Adds `layeredClaimMeasure` at the top level (the FOUR claim quantities of § 6, declared as data **with the provenance of each**), `models[].claimLayers`, `models[].layeredLatency`, and inside the per-run records `turns[].latency` and `turns[].checks.claimLayers`. A strict superset again. **`gates` still has THREE entries and that is not an oversight:** only the fourth of the four quantities gates, and it already *is* the third entry in `gates`. Adding a fourth would tell every existing reader that a model with a non-zero "caught by the semantic layer" count had failed something — it has not, and the higher that number is the better the second layer is doing. |
 
 The verifier eval writes a **separate** artefact with its own identifier,
-`schedule-ai-voice/verifier-eval@1`, under `<outDir>/verifier/` (§ 11). It is not part of
+`schedule-ai-voice/verifier-eval@2`, under `<outDir>/verifier/` (§ 11). It is not part of
 `results.json` because it measures a different thing on a different corpus and mixing the two would
 put a classifier's recall into a file whose every other number is about a conversation.
+
+`@1` was Mission 2F. **`@2` is Mission 2G** and is a strict superset on the same rule as every
+identifier above it: `split`, `corpusSource` and `corpusSha256` at the top level, the three layered
+recalls and three layered false-positive rates in every slice, and the missed-by-both counts with their
+case ids. The `<split>` in the two filenames is part of the same change — a `dev` run and a `heldout`
+run answer different questions and used to write the same file. `EVAL_HARNESS.md` § 11.3a and
+`docs/MISSION_2G_VERIFIER_ROUND.md` § 5 are the detail.
 
 No new database tables were added. `prisma/schema.prisma` is untouched.
 
@@ -1064,7 +1071,7 @@ customer-facing text, so two runs can differ for reasons that live entirely in t
   operator. The verifier eval's own output file DOES record it, at `modelId`.
 - **`CLAIM_VERIFIER_TIMEOUT_MS` differed between the runs.** A shorter deadline turns a slow host into
   `TIMED_OUT` verdicts, every one of which is fail-closed, so the run hands off turns the other run
-  released. It is recorded in `verifier/<model>.json` under `invocation.timeoutMs`; it is **not**
+  released. It is recorded in `verifier/<model>.<split>.json` under `invocation.timeoutMs`; it is **not**
   recorded in `results.json`.
 - **The second layer was partly unavailable during one of the runs.** `COMPARISON.md` § 1.4 reports
   the per-attempt semantic outcomes. **A non-trivial count of `MALFORMED`, `TIMED_OUT`, `UNAVAILABLE`,
@@ -1077,11 +1084,18 @@ customer-facing text, so two runs can differ for reasons that live entirely in t
   resident model, and the KV cache is a real part of the VRAM footprint, so a verifier eval at 8192
   beside a benchmark at 16384 is measuring a differently-loaded machine. Both commands read
   `EVAL_NUM_CTX`, so exporting it once for the whole sweep is the way to make this impossible rather
-  than merely detectable. `verifier/<model>.json` records both `invocation.numCtx` and the sampler's
+  than merely detectable. `verifier/<model>.<split>.json` records both `invocation.numCtx` and the sampler's
   `environment.numCtx`, and its summary prints a warning when the two disagree.
 - **The verifier-corpus version changed mid-sweep.** Exactly the existing "corpus or rubric version
   changed mid-sweep" entry, for the second corpus: `VERIFIER_CORPUS_VERSION` is recorded in every
   verifier output file for this check.
+- **The verifier SPLIT changed mid-sweep, or two figures from different splits were compared.** Added by
+  Mission 2G. `split` is recorded in every verifier output file AND in its filename, so this one is
+  detectable by looking at the directory listing. A `dev` figure and a `heldout` figure are different
+  claims; see § 11.3a.
+- **A `--corpus-file` run quoted without its `corpusSha256`.** Added by Mission 2G. A sealed evaluation
+  set is not in the repository, so the digest is the only thing tying a number to the bytes that
+  produced it.
 
 A partially-invalid sweep is still worth keeping: record *which* models are affected and *why*, and
 report the rest. What must not happen is a five-row table that looks like a ranking and is not one.
@@ -1621,10 +1635,20 @@ commands against two models, and they answer two different questions that must n
 
 **NO MODEL WAS RUN, PULLED OR CREATED BY THE TEAM THAT BUILT THIS.** Not `eval:run`, not
 `eval:pull`, not `eval:verifier`, not `demo:local`, not `llm:probe`, not `llm:smoke`. No request was
-made to any Ollama endpoint by any of the four Mission 2F tasks. Every readiness claim below is
-proved against deterministic doubles by `tests/eval/verifierEvalReadiness.test.ts` (56 tests) and
+made to any Ollama endpoint by any of the four Mission 2F tasks, nor by the Mission 2G task that added
+the flags in § 11.3a. Every readiness claim below is proved against deterministic doubles by
+`tests/eval/verifierEvalReadiness.test.ts` (60 tests), `tests/eval/verifierSplitReproducibility.test.ts`
+(14), `tests/eval/verifierAntiOverfitting.test.ts` (12), `tests/eval/verifierLayeredReporting.test.ts`
+(17), `tests/eval/verifierExternalCorpus.test.ts` (27) and
 `tests/eval/rebenchmarkReadiness.test.ts`, in the same way § 9.7.5 proves the committed evidence stays
 readable. **The numbers this section is about do not exist yet. Producing them is the operator's job.**
+
+> **MISSION 2G CHANGED THIS SECTION IN FOUR PLACES AND NOTHING ELSE IN IT.** The corpus is now 263 rows
+> carrying a `dev` / `heldout` split (§ 11.1); `--split` and `--corpus-file` were added and both REFUSE
+> rather than guess (§ 11.3a); the output carries the resolved split **in its file name** (§ 11.5); and
+> the report now prints **deterministic, semantic-only and layered-union** recall and false-positive
+> rates per language plus a MISSED BY BOTH LAYERS count (§ 11.6). `docs/MISSION_2G_VERIFIER_ROUND.md`
+> §§ 3–5 is the design; this section is the procedure.
 
 ### 11.1 The two questions, and why one command cannot answer both
 
@@ -1632,8 +1656,8 @@ readable. **The numbers this section is about do not exist yet. Producing them i
 | --- | --- | --- |
 | The question | **Does a MODEL, asked the one question the semantic layer is allowed to ask, recognise a claim?** | Does the whole system hold up across 26 conversations? |
 | The unit | One string | One conversation |
-| The corpus | 172 labelled claims and honest controls, English / Hebrew / mixed (`src/eval/verifier/`) | 26 scenarios, 81 turns (`src/eval/corpus/`) |
-| Headline numbers | recall, false-positive rate, malformed-output rate, latency percentiles — **per language** | composite, three gates, the four claim quantities, latency |
+| The corpus | **263** labelled claims and honest controls, English / Hebrew / mixed (`src/eval/verifier/`), split **85 `dev` / 178 `heldout`** | 26 scenarios, 81 turns (`src/eval/corpus/`) |
+| Headline numbers | recall, false-positive rate, malformed-output rate, latency percentiles — **per language**, and **each of recall and false-positive rate three times over: deterministic, semantic-only, layered union** | composite, three gates, the four claim quantities, latency |
 | Runtime | minutes | hours |
 | Output | `$EVAL_OUT_DIR/verifier/` | `$EVAL_OUT_DIR/{runs,transcripts,results.json,COMPARISON.md}` |
 
@@ -1706,6 +1730,7 @@ Useful narrower forms, and each is a different question rather than a shortcut:
 npm run eval:verifier -- --model aya-expanse:8b --language he   # the Hebrew slice alone
 npm run eval:verifier -- --limit 10                             # a smoke run before committing
 npm run eval:verifier -- --model qwen2.5:7b-instruct --locale-hint
+npm run eval:verifier -- --model qwen2.5:7b-instruct --split heldout   # see § 11.3a FIRST
 ```
 
 > **`--locale-hint` IS NOT THE PRODUCTION REQUEST SHAPE AND THE OUTPUT SAYS SO ON EVERY LINE THAT
@@ -1720,6 +1745,99 @@ reads that record through the real reader and embeds the identifying fields in i
 missing record is normal and prints `not measured`; a malformed one stops the run**, which is
 `readEnvironmentRecord`'s existing asymmetry and is deliberate: a dropped environment record would
 otherwise become a blank cell indistinguishable from "nobody sampled it".
+
+### 11.3a `--split` and `--corpus-file` — the two Mission 2G flags, and what they refuse
+
+#### `--split <dev|heldout|all>` — default `all`
+
+The corpus carries a **`dev` / `heldout` discriminator on every in-repo row**, assigned by a pure,
+documented, deterministic, stratified procedure (`src/eval/verifier/split.ts`) and materialised as
+committed data. **The two halves answer different questions and their numbers must never be quoted as
+one another:**
+
+| `--split` | What it measures | Read it as |
+| --- | --- | --- |
+| `dev` | 85 rows the verifier-tuning task was allowed to read, run and iterate against | **partly a measurement of that iteration.** Use it to see whether a change did anything, never as the result |
+| `heldout` | 178 rows that task never read | **the result.** This is the number Mission 2G is judged on |
+| `all` | both halves | neither of the above. Useful for a like-for-like comparison against a corpus-1.0.0 run, and for nothing else |
+
+- **The default is `all`, not `dev`.** A default of `dev` would make the habitual command measure the
+  tuned half by accident.
+- **An unknown value is a REFUSAL** that names the three known values and exits non-zero. It never falls
+  through to a full run. `--split` with nothing after it is refused the same way.
+- **The resolved split is in the artefact AND in the output file name** — see § 11.5. A `dev` run cannot
+  be mistaken for a `heldout` run after the fact, and running both no longer overwrites one with the
+  other.
+
+**What to do with the two numbers, as a procedure.** Run `--split dev` while tuning, as often as you
+like. Run `--split heldout` **once**, at the end, and report that. If you run `heldout` repeatedly and
+change the instruction between runs, you have converted the held-out half into a second dev half and the
+final number means what a dev number means. Nothing in the harness can stop you; this paragraph is the
+only thing that can.
+
+#### `--corpus-file <path>` — an external corpus, for a SEALED evaluation set
+
+```bash
+npm run eval:verifier -- --model qwen2.5:7b-instruct --corpus-file /secure/sealed-set.json --split all
+```
+
+**What the file must be.** One JSON object: `{ "schemaVersion": "<current>", "corpusVersion": "<yours>",
+"cases": [ ... ] }`, validated by the **same** `VerifierCorpusSchema` the in-repo corpus uses —
+`.strict()`, including the cross-field rules that keep a `CLAIM` off a non-material status and a control
+off a material one. `src/eval/verifier/schema.ts` is the field list; `VERIFIER_CORPUS_SCHEMA_VERSION` is
+the version it must declare, and the command prints the expected value when yours does not match.
+
+**`split`, `claimShape` and `controlShape` are OPTIONAL.** A sealed set has no obligation to label its
+axes. That is why they are optional in the schema and required only on in-repo rows.
+
+**Six refusals, all FATAL, all non-zero exit:**
+
+| Refusal | What the message tells you |
+| --- | --- |
+| missing or unreadable file | the resolved absolute path |
+| the bytes are not JSON | the parser's own complaint, **plus the sha256 of what it read** |
+| `schemaVersion` mismatch | the value you declared **and the value expected** |
+| any Zod failure | the issue list, field path by field path |
+| a duplicate id | which id |
+| a duplicate text | which two ids share it |
+
+**The coverage contract is COMPUTED and PRINTED and is deliberately NOT fatal for an external corpus.**
+You will see a block naming the case counts, the families, the provenances, the splits, the sha256, and
+**every in-repo coverage rule your file does not satisfy**, followed by a line saying that every rate
+below is narrower than the in-repo one by exactly that much. **The run then proceeds.** A sealed
+evaluation set is a legitimate slice — forty English cancellation controls and nothing else is a
+perfectly good sealed set — and refusing it for carrying no Hebrew would make this flag useless for the
+purpose it exists for. `docs/MISSION_2G_VERIFIER_ROUND.md` § 5.3 states the decision and
+`src/eval/verifier/external.ts` states it again at the point of implementation.
+
+**`--split` against an external corpus.** If **no row** carries a `split`, `--split dev` and
+`--split heldout` **REFUSE**: running everything would report a full run as a slice, and running nothing
+would report an empty run as a result. **`--split all` runs it.** If your rows DO carry splits, all three
+work normally.
+
+**The resolved path and a sha256 of the file bytes are recorded in the artefact**, at the top level
+beside `corpusVersion`, so your sealed run is attributable: the path says which file and the digest says
+which bytes. A sealed set that quietly gained a row between two runs becomes a visible difference.
+
+#### The operator's sealed-set procedure, step by step
+
+1. **Build the set somewhere this repository cannot see**, and do not commit it. The value of a sealed
+   set is entirely that nobody who touched the instruction has read it.
+2. **Label it with the policy in `docs/MISSION_2G_VERIFIER_ROUND.md` § 1**, not with your own taxonomy.
+   The rules there are decidable and the labels are the port's own enums, so your recall number and the
+   in-repo one mean the same thing.
+3. **Include honest controls, and count them before you start.** § 4.3 of that document has the
+   arithmetic: below about forty answered controls a single false positive is indistinguishable from a
+   layer that over-flags. A sealed set of claims alone is satisfied by a verifier that flags everything.
+4. **Set `schemaVersion` to the value the command prints when it refuses**, then re-run. Do not guess it
+   from an older file.
+5. **Dry-run the validation without a model** by pointing the command at your file with a deliberately
+   unreachable base URL — it loads, validates, prints the coverage block and then fails at the Ollama
+   preflight, which is the cheapest way to see your file is acceptable.
+6. **Run it with `--split all`** unless your rows carry splits, and into a **fresh** `EVAL_OUT_DIR`.
+7. **Record the sha256 the command prints** next to any number you quote from the run. It is the only
+   thing that ties a figure to the bytes that produced it, because the file itself is not in the
+   repository.
 
 ### 11.4 The full benchmark — exactly § 9.7.2, unchanged
 
@@ -1751,22 +1869,33 @@ what that invalidates and why the `wired` boolean will still say YES.
 
 ```
 $EVAL_OUT_DIR/
-  verifier/qwen2.5_7b-instruct.json   schedule-ai-voice/verifier-eval@1
-  verifier/aya-expanse_8b.json        every case row, with its verdict and its latency
-  verifier/VERIFIER.md                the summary, rewritten by the LAST model run
-  environment/<model-slug>.json       written by the EXTERNAL sampler, not by the harness
-  runs/<model>/<scenario>.json        gitignored, regenerable, the resume checkpoint
+  verifier/qwen2.5_7b-instruct.all.json      schedule-ai-voice/verifier-eval@2
+  verifier/qwen2.5_7b-instruct.dev.json      a DEV run of the same model - a different file
+  verifier/qwen2.5_7b-instruct.heldout.json  and a HELD-OUT run - a third
+  verifier/aya-expanse_8b.<split>.json       every case row, with its verdict and its latency
+  verifier/VERIFIER.<split>.md               the summary, rewritten by the LAST model run of THAT split
+  environment/<model-slug>.json              written by the EXTERNAL sampler, not by the harness
+  runs/<model>/<scenario>.json               gitignored, regenerable, the resume checkpoint
   transcripts/<model>/<scenario>.md
-  results.json                        schedule-ai-voice/eval-results@4
+  results.json                               schedule-ai-voice/eval-results@4
   models.json
   COMPARISON.md
 ```
 
-> **`verifier/VERIFIER.md` IS REWRITTEN BY EACH RUN AND THE JSON FILES ARE NOT.** The markdown is a
-> convenience summary of the most recent model; the per-model JSON is the evidence. If you want a
-> readable summary of both, keep the JSON and render it, or run the second model into a second
-> directory. **This is stated rather than left to be discovered**, because a summary that silently
-> describes only the last model is exactly the kind of artefact somebody cites as a comparison.
+> **THE RESOLVED SPLIT IS IN THE FILE NAME, AND THAT IS MISSION 2G.** Under corpus 1.0.0 a `dev` run and
+> a `heldout` run of one model wrote the same filename, so the second silently replaced the first and
+> nothing on disk said which survived. It is in the artefact too — `split`, `corpusSource` and
+> `corpusSha256` are top-level fields beside `corpusVersion` — but it is in the NAME as well because a
+> file gets copied out of a directory and whoever pastes one into a report should not have to open it to
+> know what it measured.
+
+> **`verifier/VERIFIER.<split>.md` IS REWRITTEN BY EACH RUN OF THAT SPLIT AND THE JSON FILES ARE NOT.**
+> The markdown is a convenience summary of the most recent model at that split; the per-model JSON is the
+> evidence. If you want a readable summary of two models, keep the JSON and render it, or run the second
+> model into a second directory. **This is stated rather than left to be discovered**, because a summary
+> that silently describes only the last model is exactly the kind of artefact somebody cites as a
+> comparison. The split suffix removes one of the two ways that used to happen; the model overwrite
+> remains.
 
 ### 11.6 What to expect, stated in advance so a number moving is not mistaken for a number breaking
 
@@ -1780,6 +1909,9 @@ $EVAL_OUT_DIR/
 | **Latency p50 / p95** | The committed evidence puts `qwen2.5:7b-instruct`'s total turn p50/p95 at **2,102 / 4,088 ms** over 57 single-call turns. **This request is much smaller** — no tool schemas, no transcript, a short instruction, a small bounded answer — so a p50 materially above that is a finding about the host, not the model | It is paid ONCE PER CUSTOMER-FACING TEXT including every regenerated attempt |
 | **Hebrew vs English** | Expect them to differ | Hebrew is the language with no recommended model, and the whole report is split per language for that reason |
 | The three **live deterministic misses** | `en-s17-took-your-meeting-off-the-calendar`, `en-new-bare-booked`, `en-s19-bold-status-label` | **For these three the semantic layer is the ONLY layer.** `Booked.` in particular is genuinely ambiguous with no context and a reader should expect it to be hard |
+| **The three LAYERED columns** (Mission 2G, § 1A of the output) | Deterministic recall is **computable without a model and is 81.7% over the whole corpus** — 88.6% on the base rows, 41.7% on the Mission 2G additions, which were written along axes the lexicon does not cover. So the deterministic column is a **known floor** and the layered column can only be at or above it | **Read the layered column against the deterministic one, not against 100%.** The gap between them is what the second layer bought. The gap between the semantic column and the deterministic one is NOT the same quantity and is smaller, because most rows are caught by both |
+| **`MISSED BY BOTH LAYERS`** (§ 1B of the output) | **This is the number the mission is judged on.** With a rule-less double it equals the detector's own misses exactly: **30 of 164 claims** over the whole corpus, **23 of 96** on the held-out split | A non-zero value here is a **leak**: both readers answered and neither reported anything, so the text would have been released. The column beside it — the detector missed and the semantic layer FAILED CLOSED — is **not** a leak and must never be added to it |
+| **Three layered denominators that differ** | They coincide when nothing fails closed | The deterministic layer is pure code and always answers; the semantic layer's denominator is the claims it ANSWERED. If the two recalls look oddly ranked, read the fail-closed counts in § 1 first |
 
 **On the benchmark.** Everything § 9.7.3 says still applies, plus:
 
@@ -1815,6 +1947,10 @@ Read this as the list that decides whether the run is worth citing.
 | **A spill into system RAM** (`COMPARISON.md` § 8, or the verifier output's § 5) | Every latency number from that model. § 9.6 |
 | **`environment/` missing for a model** | Every latency number from that model, and nothing else. Recall, false positives and malformed rate are properties of the model and the corpus and are unaffected |
 | **A verifier model different from the agent model, undeclared** | The comparison. Nothing in `src/eval/**` can detect it from the benchmark artefacts — it has to be in the sampler's `note` |
+| **A `dev` figure quoted as the result** (Mission 2G) | **The whole point of the split.** The dev half is the half the verifier-tuning task was allowed to iterate against, so a dev recall figure is partly a measurement of that iteration. The `split` field and the file-name suffix are how you check which one you are holding, and the output's own header block says it on every run |
+| **More than one `--split heldout` run with an instruction change between them** | **The held-out half, permanently.** Iterating against it converts it into a second dev half, and no artefact can detect that after the fact — only the record of how many times it was run can. § 11.3a |
+| **A layered recall BELOW the deterministic recall** | **The harness, not the model.** The union is provably additive (`tests/agent/semanticClaimUnion.test.ts`), so the layered column cannot legitimately be lower than the deterministic one. Seeing it lower means the report is not reading `unionClaims`, which would be a bug in `src/eval/verifier/run.ts` |
+| **An external-corpus number quoted without its sha256** | **The attribution.** A sealed set is not in the repository, so the digest is the only thing tying a figure to the bytes that produced it |
 
 ### 11.8 What this run can and cannot settle
 
@@ -1824,8 +1960,16 @@ milliseconds; and whether the false-positive rate is survivable on honest traffi
 
 **It CANNOT settle** any of the residual limits in `docs/MISSION_2F_SEMANTIC_VERIFIER.md` § 12. In
 particular it cannot settle whether a **ninth** phrasing shape exists that defeats both layers, because
-the verifier corpus is 172 rows somebody thought of and that is residual 15. What it changes is that
+the verifier corpus is **263** rows somebody thought of and that is residual 15. What it changes is that
 the next such shape has to get past two readers of different kinds rather than one.
+
+**And two things Mission 2G added to what it can settle, and one it did not.** It CAN now settle whether
+a recall figure survives contact with rows the tuning task never read (`--split heldout`), and how much
+of the layered recall the second layer actually contributed rather than merely agreed with (§ 1A and
+§ 1B of the output). It CANNOT settle the `mixed` false-positive rate against a 5 per cent target: that
+slice has 15 held-out controls, so a single false positive prints 6.7 per cent, and
+`docs/MISSION_2G_VERIFIER_ROUND.md` § 4.3 states the arithmetic rather than leaving it to be derived
+from a table.
 
 **And one thing it settles that is easy to overlook.** Until this run exists, the honest answer to
 *"does the semantic layer work?"* is **unmeasured** — not *yes*, and not *the sweep is green*.

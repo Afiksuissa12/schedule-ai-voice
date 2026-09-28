@@ -44,10 +44,14 @@ import {
 } from '../../src/ports/claimVerifier.js';
 import { DEFAULT_VERIFIER_NUM_CTX, parseVerifierArgs } from '../../src/eval/verifier/args.js';
 import {
+  BASE_VERIFIER_CASES,
+  HELDOUT_VERIFIER_CASES,
   VERIFIER_CORPUS_VERSION,
   casesForLanguage,
   loadVerifierCorpus,
+  unmetHeldoutCoverage,
   unmetVerifierCoverage,
+  unmetVerifierInRepoFields,
   verifierCoverage,
 } from '../../src/eval/verifier/corpus.js';
 import {
@@ -112,22 +116,79 @@ describe('the labelled verifier corpus loads with its contract satisfied', () =>
     expect(corpus.cases.length).toBeGreaterThan(0);
   });
 
-  it('counts 172 cases - 112 English, 47 Hebrew, 13 mixed - the numbers the docs quote', () => {
+  it('counts 263 cases - 152 English, 78 Hebrew, 33 mixed - the numbers the docs quote', () => {
     // `docs/MISSION_2F_SEMANTIC_VERIFIER.md` § 12.3 residual 15 quotes the total,
     // and this is the assertion that keeps it honest as the corpus grows. A count
     // in a document that nothing re-derives is a count that goes stale - which is
     // exactly why `tests/invariants/architectureCounts.test.ts` exists.
+    //
+    // MISSION 2G MOVED EVERY ONE OF THESE NUMBERS. 172 -> 263: 91 new HELD-OUT
+    // rows in `src/eval/verifier/heldout/`. The 172 base rows are unchanged in
+    // count - one of them changed KIND (see `docs/MISSION_2G_VERIFIER_ROUND.md`
+    // § 2) and none was added or removed.
     const coverage = verifierCoverage(loadVerifierCorpus().cases);
-    expect(coverage.byLanguage.en.claims + coverage.byLanguage.en.controls).toBe(112);
-    expect(coverage.byLanguage.he.claims + coverage.byLanguage.he.controls).toBe(47);
-    expect(coverage.byLanguage.mixed.claims + coverage.byLanguage.mixed.controls).toBe(13);
-    expect(loadVerifierCorpus().cases).toHaveLength(172);
+    expect(coverage.byLanguage.en.claims + coverage.byLanguage.en.controls).toBe(152);
+    expect(coverage.byLanguage.he.claims + coverage.byLanguage.he.controls).toBe(78);
+    expect(coverage.byLanguage.mixed.claims + coverage.byLanguage.mixed.controls).toBe(33);
+    expect(loadVerifierCorpus().cases).toHaveLength(263);
+    expect(BASE_VERIFIER_CASES).toHaveLength(172);
+    expect(HELDOUT_VERIFIER_CASES).toHaveLength(91);
+  });
+
+  it('carries the SPLIT COUNTS the mission document and the mailbox quote', () => {
+    // MISSION 2G. These four numbers are in `docs/MISSION_2G_VERIFIER_ROUND.md`
+    // § 3.4 and were sent to the verifier-tuning task as the dev-split counts, so
+    // they are re-derived here rather than trusted. The two floors are the
+    // mission's own: the dev split must retain at least 60 CLAIM rows and at least
+    // 14 HONEST_CONTROL rows, and the held-out split must carry at least 50
+    // HONEST_CONTROL rows for the 5% false-positive target to have a denominator
+    // that can express it.
+    const cases = loadVerifierCorpus().cases;
+    const dev = cases.filter((c) => c.split === 'dev');
+    const heldout = cases.filter((c) => c.split === 'heldout');
+    expect(dev).toHaveLength(85);
+    expect(heldout).toHaveLength(178);
+    expect(dev.filter((c) => c.kind === 'CLAIM')).toHaveLength(68);
+    expect(dev.filter((c) => c.kind === 'HONEST_CONTROL')).toHaveLength(17);
+    expect(heldout.filter((c) => c.kind === 'CLAIM')).toHaveLength(96);
+    expect(heldout.filter((c) => c.kind === 'HONEST_CONTROL')).toHaveLength(82);
+    expect(dev.filter((c) => c.kind === 'CLAIM').length).toBeGreaterThanOrEqual(60);
+    expect(dev.filter((c) => c.kind === 'HONEST_CONTROL').length).toBeGreaterThanOrEqual(14);
+    expect(heldout.filter((c) => c.kind === 'HONEST_CONTROL').length).toBeGreaterThanOrEqual(50);
+  });
+
+  it('requires a split and a shape axis on EVERY in-repo row, though the schema does not', () => {
+    // The asymmetry `--corpus-file` exists for: optional in Zod so an operator's
+    // SEALED evaluation set validates, required here so this corpus's split is not
+    // a matter of trust. Proved by its own counter-example below so it cannot pass
+    // vacuously.
+    expect(unmetVerifierInRepoFields(loadVerifierCorpus().cases)).toEqual([]);
+    const bare = VerifierCaseSchema.parse({
+      id: 'no-split-no-shape',
+      text: 'A sealed evaluation set need not label its axes.',
+      language: 'en',
+      kind: 'CLAIM',
+      assertsEffect: true,
+      effectFamily: 'MEETING',
+      status: 'COMPLETED',
+      provenance: 'NEW_PARAPHRASE',
+      source: 'a case shaped like an external corpus row',
+    });
+    expect(unmetVerifierInRepoFields([bare])).toHaveLength(2);
   });
 
   it('leaves NO coverage requirement unmet', () => {
     // `loadVerifierCorpus` already throws on this; asserting it separately means
     // the failure message names the missing axis rather than being a load error.
     expect(unmetVerifierCoverage(loadVerifierCorpus().cases)).toEqual([]);
+  });
+
+  it('leaves NO HELD-OUT coverage requirement unmet either', () => {
+    // MISSION 2G. The grids must hold WITHIN the held-out split on its own, and
+    // every (language, family) carrying a held-out CLAIM must also carry a held-out
+    // OFFER, QUESTION and CONDITIONAL - because the final number is measured on
+    // that split alone and a grid satisfied only by dev rows would not constrain it.
+    expect(unmetHeldoutCoverage(loadVerifierCorpus().cases)).toEqual([]);
   });
 
   it('carries CLAIMS and HONEST CONTROLS in all three languages', () => {
@@ -861,12 +922,15 @@ describe('the output schema is writable and the evidence stays untouched', () =>
       runtimeVersion: '0.12.3',
     });
 
-    expect(written.jsonPath).toBe(verifierResultsPath(fresh.path, 'qwen2.5:7b-instruct'));
-    expect(written.markdownPath).toBe(verifierSummaryPath(fresh.path));
+    // MISSION 2G: the path now carries the RESOLVED SPLIT, so a dev run and a
+    // held-out run of the same model cannot write the same filename. `smallReport`
+    // passes no split, so the runner records the `--split` default, `all`.
+    expect(written.jsonPath).toBe(verifierResultsPath(fresh.path, 'qwen2.5:7b-instruct', 'all'));
+    expect(written.markdownPath).toBe(verifierSummaryPath(fresh.path, 'all'));
     expect(existsSync(written.jsonPath)).toBe(true);
     expect(existsSync(written.markdownPath)).toBe(true);
     // The slug is the same one `runs/`, `transcripts/` and `environment/` use.
-    expect(written.jsonPath).toContain('qwen2.5_7b-instruct.json');
+    expect(written.jsonPath).toContain('qwen2.5_7b-instruct.all.json');
     // Round-trips.
     const reread = JSON.parse(readFileSync(written.jsonPath, 'utf8')) as { schema: string };
     expect(reread.schema).toBe(VERIFIER_RESULTS_SCHEMA);
@@ -875,9 +939,25 @@ describe('the output schema is writable and the evidence stays untouched', () =>
   it('gives the two re-benchmark models distinct output paths', () => {
     const fresh = makeTempOutDir('verifier-slugs');
     cleanups.push(fresh.cleanup);
-    const paths = ['qwen2.5:7b-instruct', 'aya-expanse:8b'].map((tag) => verifierResultsPath(fresh.path, tag));
+    const paths = ['qwen2.5:7b-instruct', 'aya-expanse:8b'].map((tag) =>
+      verifierResultsPath(fresh.path, tag, 'all'),
+    );
     expect(new Set(paths).size).toBe(2);
     for (const path of paths) expect(path.startsWith(fresh.path)).toBe(true);
+  });
+
+  it('gives the SAME model on two DIFFERENT splits distinct output paths', () => {
+    // MISSION 2G. Before this, a `--split dev` run and a `--split heldout` run of
+    // one model wrote the same file, so the second silently replaced the first and
+    // nothing on disk said which survived. That is the failure this asserts away.
+    const fresh = makeTempOutDir('verifier-splits');
+    cleanups.push(fresh.cleanup);
+    const paths = ['dev', 'heldout', 'all'].map((split) =>
+      verifierResultsPath(fresh.path, 'qwen2.5:7b-instruct', split),
+    );
+    expect(new Set(paths).size).toBe(3);
+    const summaries = ['dev', 'heldout', 'all'].map((split) => verifierSummaryPath(fresh.path, split));
+    expect(new Set(summaries).size).toBe(3);
   });
 
   it('does NOT change one byte of either committed evidence directory', async () => {

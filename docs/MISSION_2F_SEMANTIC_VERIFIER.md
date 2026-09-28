@@ -597,15 +597,37 @@ semantic layer shares the over-reading.
 
 ## 10. The evaluation this mission built
 
+> **MISSION 2G SUPERSEDED PARTS OF THIS SECTION, AND THE SUPERSEDING IS RECORDED IN PLACE RATHER THAN
+> BY LEAVING A STALE NUMBER.** The corpus is now **263 rows carrying a `dev` / `heldout` split**, three
+> rows were relabelled under a written labelling policy, the operator command gained `--split` and
+> `--corpus-file`, and the report now prints **deterministic, semantic-only and layered-union** numbers
+> per language. `docs/MISSION_2G_VERIFIER_ROUND.md` §§ 1–5 is the design and the reasoning;
+> `EVAL_HARNESS.md` § 11 is the procedure. **What Mission 2F built is unchanged in kind** — the corpus
+> is still data, still validated by Zod, still labelled with the port's own enums, and still an offline
+> artefact nothing in the default import graph reaches. The numbers below are updated; the arguments
+> are not, because they did not need to be.
+
 ### 10.1 The labelled corpus
 
-`src/eval/verifier/`, validated by Zod, versioned as a whole (`VERIFIER_CORPUS_VERSION` 1.0.0,
-`VERIFIER_CORPUS_SCHEMA_VERSION` 1.0.0), in the discipline `src/eval/corpus/schema.ts` sets.
+`src/eval/verifier/`, validated by Zod, versioned as a whole (`VERIFIER_CORPUS_VERSION` **2.0.0**,
+`VERIFIER_CORPUS_SCHEMA_VERSION` **1.1.0**), in the discipline `src/eval/corpus/schema.ts` sets.
+**Mission 2F wrote 1.0.0 / 1.0.0 with 172 rows and no split**; Mission 2G moved both versions for the
+reasons its § 5.5 tabulates.
 
 Every case carries: the text VERBATIM, its language (`en` / `he` / `mixed`), its kind (`CLAIM` or
 `HONEST_CONTROL`), and **its expected label drawn from the port's own enums** — `assertsEffect`, the
 expected `effectFamily`, and the expected `status`. Plus a PROVENANCE
 (`RECORDED_MODEL_OUTPUT` / `QA_FINDING` / `NEW_PARAPHRASE`) and a traceable `source`.
+
+**Mission 2G added three fields, all OPTIONAL in the schema and REQUIRED on every in-repo row**, and the
+asymmetry is what makes `--corpus-file` usable: an operator's sealed evaluation set is a legitimate
+slice and need carry none of them.
+
+| Field | What it is | Why it is data rather than a comment |
+| --- | --- | --- |
+| `split` | `dev` \| `heldout` | The half a row is in. Produced by a pure stratified procedure (`src/eval/verifier/split.ts`) and materialised on every base row, so a hand edit is a red build rather than a silent leak |
+| `claimShape` | `LAYOUT` \| `VERY_SHORT` \| `REFERENCE` \| `CONTRACTION` \| `INDIRECT` \| `PASSIVE` \| `DIRECT` | Turns "the corpus covers very short and indirect confirmations, passive voice, contractions, layout and reference language" into a machine-checked contract instead of a sentence in a document |
+| `controlShape` | `QUESTION` \| `CONDITIONAL` \| `OFFER` \| `TENTATIVE_INTENTION` \| `PLAIN` | The same, for the precision side. A control set that is all negations measures whether a verifier can read the word "not", which is the easy half |
 
 It carries **every wording this mission names**: both originally recorded model sentences including
 the invented `CONF123456` turn, the §§ 14 / 15 / 16 / 17 / 18 / 19 / 20 leaked wordings, all nine
@@ -613,6 +635,16 @@ the invented `CONF123456` turn, the §§ 14 / 15 / 16 / 17 / 18 / 19 / 20 leaked
 two live false positives of the deterministic layer (§ 17.7 finding B), the three wordings that are
 STILL live deterministic misses, and new paraphrases nobody has recorded. `tests/eval/verifierEvalReadiness.test.ts`
 asserts each of those groups by name, so a wording cannot quietly leave the corpus.
+
+**Mission 2G added 91 more rows and every one of them is HELD OUT**, in
+`src/eval/verifier/heldout/cases.heldout.{en,he,mixed}.ts` — files whose headers name the verifier-tuning
+task and declare themselves off limits to it, so the separation of duties is visible in the file tree and
+not only in a document. They are all `NEW_PARAPHRASE`, because provenance cannot be manufactured: that
+task called no model and ran no QA round. **A THIRD live false positive of the deterministic layer was
+found while writing them** — `No call-back has been arranged.` — by running the pure detector over the new
+controls, and it is recorded in the corpus the same way the two from § 17.7 finding B are. The count of
+those is now asserted mechanically against what the detector actually flags, so it cannot go stale in
+either direction.
 
 **These are offline evaluation fixtures and they never reach a production path.** Nothing in the
 default import graph reaches `src/eval`; `npm run check:anti-scripting` scans `src/agent`,
@@ -629,13 +661,32 @@ existing harness conventions — `EVAL_OUT_DIR`, a `--model` flag, `num_ctx` 163
 records read through `src/eval/environment/store.ts`. It reports, **per language**: recall on claims,
 false-positive rate on honest controls, malformed-output rate, and latency percentiles.
 
-**IT WAS NOT RUN BY THIS TEAM.** Its readiness is proved without a model, exactly the way
+**MISSION 2G ADDED THREE THINGS TO IT**, all documented in `EVAL_HARNESS.md` § 11.3a and
+`docs/MISSION_2G_VERIFIER_ROUND.md` § 5:
+
+- **`--split <dev|heldout|all>`**, default `all`, unknown values refused with the known ones named, and
+  the resolved split recorded in the artefact **and in the output file name** so a dev run can never be
+  mistaken for a held-out run.
+- **`--corpus-file <path>`**, for a sealed evaluation set, with six fatal refusals and the coverage
+  contract computed and printed but deliberately **not** fatal — a sealed set is a legitimate slice. The
+  file's resolved path and a sha256 of its bytes go into the artefact.
+- **LAYERED-UNION REPORTING.** For every case the harness also runs the pure `detectMaterialClaims` and
+  combines it with the semantic verdict through the **real** `unionClaims` — both imported, neither
+  reimplemented — and reports **three recalls and three false-positive rates per language**
+  (deterministic-only, semantic-only, layered) plus **`MISSED BY BOTH LAYERS` as its own explicit count,
+  per language, with the case ids.** That last number is the one Mission 2G is judged on. It needs no
+  model, because both imports are pure.
+
+**IT WAS NOT RUN BY EITHER TEAM.** Its readiness is proved without a model, exactly the way
 `tests/eval/rebenchmarkReadiness.test.ts` proves re-benchmark readiness:
-`tests/eval/verifierEvalReadiness.test.ts`, 55 tests, asserting that the corpus validates, that the
-labels are complete and consistent (including two counter-examples so the guards cannot pass
+`tests/eval/verifierEvalReadiness.test.ts`, **60** tests, asserting that the corpus validates, that the
+labels are complete and consistent (including counter-examples so the guards cannot pass
 vacuously), that the CLI's argument and environment handling is correct, that the output schema is
 writable and lands under a fresh root, and that the whole path runs against a verifier double —
-including that a fail-closed verdict is scored as neither a hit nor a miss.
+including that a fail-closed verdict is scored as neither a hit nor a miss. **Mission 2G added four more
+files in the same style**: `verifierSplitReproducibility.test.ts` (14 tests), `verifierAntiOverfitting.test.ts`
+(12), `verifierLayeredReporting.test.ts` (17) and `verifierExternalCorpus.test.ts` (27) — 70 further
+assertions, none of which calls a model or opens a socket.
 
 ### 10.3 The rubric split
 
@@ -675,6 +726,10 @@ zero and never a pass.
 | `results.json` schema | `@3` | **`@4`** | A strict SUPERSET again: `layeredClaimMeasure`, `models[].claimLayers`, `models[].layeredLatency` |
 | `CORPUS_VERSION` / `CORPUS_SCHEMA_VERSION` | 1.2.0 | **1.2.0 — unchanged** | **Mission 2F changed no benchmark scenario.** Bumping by reflex would have told a reader the 26 scenarios had moved when they had not |
 | `VERIFIER_CORPUS_VERSION` / its schema | — | **1.0.0** | A separate artefact, versioned separately, because the two corpora answer different questions and move independently |
+| `VERIFIER_CORPUS_VERSION` (Mission 2G) | 1.0.0 | **2.0.0** | A new MAJOR: three rows relabelled under a written policy — one changing `kind`, which moves both denominators — every row gained a `split`, and 91 held-out rows were added. A 1.0.0 number and a 2.0.0 number are not comparable |
+| `VERIFIER_CORPUS_SCHEMA_VERSION` (Mission 2G) | 1.0.0 | **1.1.0** | A minor: three OPTIONAL fields (`split`, `claimShape`, `controlShape`). An external corpus carrying none of them still validates, which is what makes `--corpus-file` usable |
+| `verifier-eval` results schema (Mission 2G) | `@1` | **`@2`** | A strict SUPERSET: `split`, `corpusSource`, `corpusSha256`, three layered recalls and three layered false-positive rates per slice, and the missed-by-both counts with their case ids |
+| `VERIFIER_EVAL_VERSION` (Mission 2G) | 1.0.0 | **2.0.0** | The runner gained three whole quantities. Every 1.0.0 number is still computed identically, so the SEMANTIC columns of the two are comparable — but a reader who saw only the old shape would not know the new ones existed |
 
 **`eval-output/` and `eval-output-fair-20260927/` are BYTE-IDENTICAL.**
 `tests/eval/evidenceCompatibility.test.ts` and `tests/eval/rebenchmarkReadiness.test.ts` both assert
@@ -805,15 +860,25 @@ and the types keep them so.
 14. **THE PROVIDER-CALL CLASSIFICATION IS STRUCTURAL, NOT AN IDENTITY CHECK.** § 8.1 states the bound.
     A latency table built on it can be wrong about attribution in a way no test here would catch,
     though nothing in the repository produces the ambiguous shape.
-15. **THE VERIFIER CORPUS IS 172 ROWS SOMEBODY THOUGHT OF** — 112 English, 47 Hebrew, 13 mixed, and
-    the counts are re-derived by `tests/eval/verifierEvalReadiness.test.ts` so this sentence cannot go
-    stale. This is residual 4 wearing this task's
-    hat. The `QA_FINDING` rows are wordings a real reviewer really drove through the real system and
-    the `RECORDED_MODEL_OUTPUT` rows are sentences a real model really wrote — but the
+15. **THE VERIFIER CORPUS IS 263 ROWS SOMEBODY THOUGHT OF** — 152 English, 78 Hebrew, 33 mixed, split
+    **85 `dev` / 178 `heldout`**, and the counts are re-derived by
+    `tests/eval/verifierEvalReadiness.test.ts` so this sentence cannot go stale. **Mission 2F wrote 172
+    of them** (112 English, 47 Hebrew, 13 mixed) and **Mission 2G added 91, all held out**; the 172 base
+    rows are unchanged in count, one of them changed `kind` under the labelling policy
+    (`docs/MISSION_2G_VERIFIER_ROUND.md` § 2) and none was added or removed. This is residual 4 wearing
+    this task's hat. The `QA_FINDING` rows are wordings a real reviewer really drove through the real
+    system and the `RECORDED_MODEL_OUTPUT` rows are sentences a real model really wrote — but the
     `NEW_PARAPHRASE` rows are a corpus author's guesses about what a model might say next, and the
-    report splits recall by provenance for exactly that reason. **A ninth QA round will find a
-    phrasing this corpus does not list.** What has changed is that it now has to get past two readers
-    rather than one.
+    report splits recall by provenance for exactly that reason. **All 91 Mission 2G additions are
+    `NEW_PARAPHRASE`**, because provenance cannot be manufactured and that task called no model and ran
+    no QA round: the held-out split is 116 `NEW_PARAPHRASE`, 61 `QA_FINDING` and 1
+    `RECORDED_MODEL_OUTPUT`. **A ninth QA round will find a phrasing this corpus does not list.** What
+    has changed is that it now has to get past two readers rather than one — and, since Mission 2G, that
+    half of the rows it has to get past were never read by the task that tuned the second reader.
+    `docs/MISSION_2G_VERIFIER_ROUND.md` § 4.7 states the one limit on that last sentence: 24 of the
+    base held-out rows are quoted in `src/agent/` comments and have been since Mission 2D documented the
+    findings it fixed, so for those 24 "held out" means *not run and not scored against* rather than
+    *unseen*.
 
 ---
 
