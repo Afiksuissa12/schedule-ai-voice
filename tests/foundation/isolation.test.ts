@@ -13,14 +13,41 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createTestDatabase, type TestDatabase } from '../helpers/testDb.js';
-import { FIXTURE, testProvenanceJson } from '../helpers/fixtures.js';
+import { FIXTURE, testProvenanceJson, type TestFixtures } from '../helpers/fixtures.js';
 
 let first: TestDatabase;
 let second: TestDatabase;
+let firstFixtures: TestFixtures;
+let secondFixtures: TestFixtures;
 
+/**
+ * THE SEED HAPPENS HERE, NOT IN A TEST, AND THAT IS A FIX.
+ *
+ * It used to happen inside `cannot see each other's rows`, which made three of
+ * the five tests in this describe order-dependent - they communicated through the
+ * two shared databases rather than establishing their own preconditions:
+ *
+ *   - `start empty` asserted 0 organizations, so it FAILED if the seeding test
+ *     ran before it ("expected [ { …(5) } ] to have a length of +0 but got 1");
+ *   - `can each hold a row that a globally-unique constraint would otherwise
+ *     reject` and `keeps writes local` both read rows the seeding test had
+ *     written, so they FAILED if they ran before it.
+ *
+ * All three were observed failing under `npm run test -- --sequence.shuffle
+ * --sequence.seed=20260928`; `docs/MISSION_2G_VERIFIER_ROUND.md` § 11 records the
+ * run. The file passed in practice only because vitest runs tests in declaration
+ * order by default, which is a scheduling detail and not a guarantee anyone should
+ * build an assertion on.
+ *
+ * Seeding both databases up front makes every test below independent of every
+ * other, and `start empty` now creates its OWN pair - which is what its name
+ * claims it is testing anyway.
+ */
 beforeAll(async () => {
   first = await createTestDatabase({ label: 'isolation-first' });
   second = await createTestDatabase({ label: 'isolation-second' });
+  firstFixtures = await first.seedFixtures();
+  secondFixtures = await second.seedFixtures();
 });
 
 afterAll(async () => {
@@ -37,14 +64,20 @@ describe('two harnesses are two databases', () => {
   });
 
   it('start empty, regardless of what any other suite has written', async () => {
-    expect(await first.db.organizations.list()).toHaveLength(0);
-    expect(await second.db.organizations.list()).toHaveLength(0);
+    // Its own pair, created inside the test, so "start empty" means what it says
+    // and cannot be falsified by anything another test in this file wrote.
+    const freshA = await createTestDatabase({ label: 'isolation-fresh-a' });
+    const freshB = await createTestDatabase({ label: 'isolation-fresh-b' });
+    try {
+      expect(await freshA.db.organizations.list()).toHaveLength(0);
+      expect(await freshB.db.organizations.list()).toHaveLength(0);
+    } finally {
+      await freshA.cleanup();
+      await freshB.cleanup();
+    }
   });
 
   it('cannot see each other\'s rows', async () => {
-    const firstFixtures = await first.seedFixtures();
-    const secondFixtures = await second.seedFixtures();
-
     expect(await first.db.organizations.list()).toHaveLength(1);
     expect(await second.db.organizations.list()).toHaveLength(1);
 
@@ -127,8 +160,21 @@ describe('cleanup', () => {
         await bare.cleanup();
       }
     } finally {
-      if (savedDatabaseUrl !== undefined) process.env['DATABASE_URL'] = savedDatabaseUrl;
-      if (savedApiKey !== undefined) process.env['OPENAI_API_KEY'] = savedApiKey;
+      // RESTORE MEANS RESTORE, INCLUDING RESTORING "ABSENT".
+      //
+      // This used to only re-assign when the saved value was defined, which is
+      // not a restore: if the variable was absent when this test started, the
+      // `delete` above was left in place for every test that ran afterwards in
+      // this worker. It happened to be harmless because `createTestDatabase`
+      // injects its own datasource URL and nothing here calls a model - but it is
+      // exactly the shape of cross-test state leak that makes a suite order-
+      // dependent, and a later test that DID read either variable would have
+      // inherited it. Deleting on the absent path keeps the process as it was
+      // found either way.
+      if (savedDatabaseUrl === undefined) delete process.env['DATABASE_URL'];
+      else process.env['DATABASE_URL'] = savedDatabaseUrl;
+      if (savedApiKey === undefined) delete process.env['OPENAI_API_KEY'];
+      else process.env['OPENAI_API_KEY'] = savedApiKey;
     }
   });
 });

@@ -9,6 +9,23 @@
  * again". The unique constraint is the referee, so two concurrent writers can
  * never both take the same slot and one can never silently overwrite the other.
  *
+ * HOW LONG "TRY AGAIN" LASTS, AND WHY IT IS NOT A COUNT
+ * ---------------------------------------------------------------------------
+ * It used to be a fixed budget of 8 attempts, and that was a real defect rather
+ * than a tuning choice: the number of retries a writer needs is a function of how
+ * many writers are contending, not a constant. With N writers racing one
+ * correlationId, the last one to win needs N attempts, so any fixed budget below
+ * N turns contention into a thrown `AuditWriteError` - i.e. a dropped audit event,
+ * which is the one failure this module exists to prevent. It surfaced as an
+ * INTERMITTENT full-suite failure ("after 8 attempts") whose frequency depended on
+ * host load; `docs/MISSION_2G_VERIFIER_ROUND.md` § 11 records the reproduction.
+ *
+ * The bound is now the PROGRESS INVARIANT stated inline in `record`: a lost race
+ * necessarily advances the chain, so retrying is only correct while the chain is
+ * advancing, and that condition is self-limiting because a chain can only advance
+ * once per committed event. Raising a constant would have been the wrong fix; the
+ * constant that remains is a liveness backstop and says so.
+ *
  * FAILURE POLICY
  * ---------------------------------------------------------------------------
  * Audit writes never fail silently. Every failure path here throws
@@ -24,8 +41,15 @@ import { AuditWriteError, describeError } from '../shared/errors.js';
 import { stringifyJson } from '../shared/json.js';
 import type { AuditEvent, AuditEventInput, AuditRecorder, AuditSubjectType } from './types.js';
 
-/** How many times to retry when another writer takes our sequence slot. */
-const MAX_SEQUENCE_ALLOCATION_ATTEMPTS = 8;
+/**
+ * A LIVENESS BACKSTOP, NOT A CONTENTION BUDGET. Read the note on `record`.
+ *
+ * The operative bound on retrying is "the chain must have advanced", which is
+ * self-limiting. This constant exists only so that an unforeseen error class
+ * cannot turn the loop into a hang; reaching it means the progress invariant
+ * below is broken, which is a bug and is reported as one.
+ */
+const SEQUENCE_ALLOCATION_LIVENESS_CAP = 256;
 
 export interface CreateAuditRecorderOptions {
   /** Supplies `occurredAt` when the caller does not. Defaults to `SystemClock`. */
@@ -66,9 +90,11 @@ export class PrismaAuditRecorder implements AuditRecorder {
     }
 
     let lastError: unknown;
+    let previousMax = -1;
 
-    for (let attempt = 1; attempt <= MAX_SEQUENCE_ALLOCATION_ATTEMPTS; attempt += 1) {
-      const sequence = (await this.currentMaxSequence(event.correlationId)) + 1;
+    for (let attempt = 1; attempt <= SEQUENCE_ALLOCATION_LIVENESS_CAP; attempt += 1) {
+      const observedMax = await this.currentMaxSequence(event.correlationId);
+      const sequence = observedMax + 1;
 
       try {
         const row = await this.db.auditEvent.create({
@@ -90,20 +116,55 @@ export class PrismaAuditRecorder implements AuditRecorder {
         return toAuditEvent(row);
       } catch (error) {
         lastError = error;
-        // Someone else took this sequence slot: re-read the max and try again.
-        if (isUniqueConstraintViolation(error)) {
-          continue;
+
+        if (!isUniqueConstraintViolation(error)) {
+          throw new AuditWriteError(
+            `Failed to record audit event ${event.type} for correlation ${event.correlationId}: ${describeError(error)}`,
+            { cause: error, details: { type: event.type, correlationId: event.correlationId, sequence } },
+          );
         }
-        throw new AuditWriteError(
-          `Failed to record audit event ${event.type} for correlation ${event.correlationId}: ${describeError(error)}`,
-          { cause: error, details: { type: event.type, correlationId: event.correlationId, sequence } },
-        );
+
+        // WE LOST A RACE, AND THAT MEANS THE CHAIN MOVED.
+        //
+        // `@@unique([correlationId, sequence])` is the ONLY unique constraint on
+        // this table, so a violation can only mean another writer committed the
+        // slot we just tried. Therefore the chain's max is now at least the
+        // sequence we attempted - strictly greater than the max we read. That is
+        // the progress invariant, and it is what bounds this loop: the chain can
+        // only advance as many times as there are events to commit, so a writer
+        // retries at most once per writer ahead of it and then wins.
+        //
+        // If the max did NOT advance, the premise is false: something is failing
+        // that is not a lost sequence race, and retrying would spin. Report it
+        // instead of looping, and say which of the two it was.
+        if (attempt > 1 && observedMax <= previousMax) {
+          throw new AuditWriteError(
+            `Audit sequence allocation for correlation ${event.correlationId} is not making progress: a unique ` +
+              `constraint rejected sequence ${sequence} but the chain's highest sequence stayed at ${observedMax}. ` +
+              'A lost race always advances the chain, so this is not contention.',
+            {
+              cause: error,
+              details: {
+                type: event.type,
+                correlationId: event.correlationId,
+                sequence,
+                observedMax,
+                attempt,
+              },
+            },
+          );
+        }
+        previousMax = observedMax;
       }
     }
 
+    // Unreachable while the progress invariant above holds: each iteration that
+    // continues requires the chain to have grown by at least one, so reaching the
+    // cap would mean this correlationId took 256 events while one writer waited.
     throw new AuditWriteError(
-      `Failed to allocate an audit sequence for correlation ${event.correlationId} after ` +
-        `${MAX_SEQUENCE_ALLOCATION_ATTEMPTS} attempts`,
+      `Audit sequence allocation for correlation ${event.correlationId} hit the ${SEQUENCE_ALLOCATION_LIVENESS_CAP}-` +
+        'iteration liveness backstop. The chain advanced on every attempt, which should have let this writer win; ' +
+        'treat this as a bug in the allocator rather than as contention.',
       { cause: lastError, details: { type: event.type, correlationId: event.correlationId } },
     );
   }

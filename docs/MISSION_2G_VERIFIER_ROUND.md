@@ -1334,14 +1334,596 @@ sequence does not terminate.
 
 ---
 
----
+## 11. The intermittent-test investigation
 
-## 11. The intermittent test: investigation and root cause
+**Owner:** `MISSION-2G-QWEN-VERIFIER-HELDOUT-AUTO-SUITE-STABILITY-REGRESSION`.
+**No model was called at any point in this section.** No `eval:run`, no `eval:verifier`,
+no `demo:local`, no `llm:probe`, no `llm:smoke`, no request to any Ollama endpoint. Every
+number below comes from `vitest`, `tsc`, and the repository's own QA CLIs running against
+real SQLite and `ScriptedLlmProvider`.
 
-**[OWNER: MISSION-2G-QWEN-VERIFIER-HELDOUT-SUITE-STABILITY-REGRESSION]**
+### 11.1 What was reported, and what it turned out to be
 
----
+The operator saw **one** intermittent failure of `npm run test` on the Mission 2F tree —
+1 failed of 2380 — and a clean rerun of 2378 passed / 2 skipped. **The failing test's name
+was not captured.** The Founder's instruction was to root-cause it and fix the cause rather
+than raise a timeout.
 
+It was reproduced red, by name, and it is **three independent defects**, not one. **None of the
+three fixes is a timeout change.** One of them is a genuine bug in application code that could
+drop an audit event in production.
+
+| # | Defect | Where | Class |
+|---|---|---|---|
+| 1 | The per-`correlationId` audit sequence allocator retried a lost race with a **fixed budget of 8 attempts**, but the number of retries a writer needs scales with the number of concurrent writers. Contention was therefore converted into a thrown `AuditWriteError` — a **dropped audit event**. | `src/audit/recorder.ts` (**application code**) | retry/backoff budget smaller than the contention the caller creates |
+| 2 | Four `it` blocks each walked a `for` loop over 7–20 full end-to-end control cases under vitest's **default 30 000 ms `testTimeout`**, multiplying a contention-sensitive per-case cost by the case count while sharing one budget. | `tests/e2e/claimGate.test.ts`, `tests/e2e/claimGateFailClosed.test.ts`, `tests/e2e/claimGateTemporalPhrase.test.ts` (test structure) | one budget covering N independent cases |
+| 3 | Six tests in two files established no preconditions of their own: they read rows, or asserted emptiness, that depended on a **sibling test in the same file having run first**. Green today only because vitest runs tests in declaration order by default. | `tests/foundation/isolation.test.ts`, `tests/foundation/schemaRoundTrip.test.ts` (test structure) | declaration-order dependence within a file |
+
+Defect 1 is the best match for the operator's report: it fails as exactly **one** test, it is
+nondeterministic, and it passes on rerun. Defect 2 produces the same signature but tends to
+take several tests at once when it goes. **Defect 3 is latent, not the reported failure** — it
+cannot fire under the default runner order and so cannot have caused an intermittent failure of
+plain `npm run test`; it was found because the Founder's brief named that hazard class
+explicitly and I went looking for it with `--sequence.shuffle`. It is reported and fixed here
+as a hazard hardened, not as the defect closed.
+
+### 11.2 Exactly what was run
+
+Every command below was run on **my own worktree**
+(`.worktrees/MISSION-2G-QWEN-VERIFIER-HELDOUT-AUTO-SUITE-STABILITY-REGRESSION`), sequentially,
+on a host with 32 CPUs and 15.8 GB RAM. `load.mjs N S` is a scratch generator that spawns `N`
+busy-loop child processes for `S` seconds; it does no I/O and touches no network.
+
+| ID | Command | Result |
+|---|---|---|
+| A | `npm run test` (baseline, default settings, **unfixed**) | 81 passed / 1 skipped (82 files); **2378 passed / 2 skipped (2380)**; 428.54 s |
+| B | `npm run test -- --maxWorkers=32 --minWorkers=32` (**unfixed**) | 81 passed / 1 skipped (82); 2378 passed / 2 skipped (2380); 447.10 s |
+| C | `npm run test -- tests/e2e/claimGate.test.ts` (one file, idle, **unfixed**) | 121 passed; 132.70 s |
+| C2 | `npx vitest run tests/agent/spokenDateFormat.test.ts` (idle) | 6 passed; 5.70 s |
+| D | `node load.mjs 48 420` + `npx vitest run tests/e2e/claimGate.test.ts -t "precision controls"` | 4 passed; CPU load alone did **not** reproduce |
+| E | `node load.mjs 28 900` + `npm run test -- --maxWorkers=32 --minWorkers=32` | ran to the end of `claimGate.test.ts`; durations recorded below |
+| **F** | `node load.mjs 28 1500` + `npm run test -- --maxWorkers=6 --minWorkers=1`, with a concurrent second `vitest` on the three heaviest claim-gate files | **RED: 5 failed / 76 passed / 1 skipped (82 files); 7 failed / 2371 passed / 2 skipped (2380); 919.47 s** |
+| G | `node load.mjs 56 200` + `npx vitest run tests/foundation/auditChain.test.ts`, **4 consecutive runs, unfixed** | **4 of 4 FAILED** with `Failed to allocate an audit sequence for correlation corr-concurrent-wide after 8 attempts` |
+| G2 | the same file, 3 consecutive runs, **idle host, unfixed** | 3 of 3 passed — confirming the failure is load-dependent, not deterministic |
+| H | `node load.mjs 56 240` + `npx vitest run tests/foundation/auditChain.test.ts`, **5 consecutive runs, FIXED** | **5 of 5 passed**, 15 of 15 tests each |
+| I | `node load.mjs 28 2000` + `npm run test -- --maxWorkers=6 --minWorkers=1`, **FIXED tree** | **0 failures**; 81 passed / 1 skipped (82); 2449 passed / 2 skipped (2451); 579.54 s |
+| J | scratch benchmark: 20 SQLite template copies + `fsync` each, on the 9p repo mount vs the container's local overlay `/tmp`, serial and then 16-way concurrent | serial: 9p 14.8 ms/db vs local 21.4 ms/db. 16-way: 9p ~75 ms/db vs local ~27.5 ms/db |
+
+### 11.3 The red run, F, in full
+
+This is the reproduction. Note that `claimGate.test.ts` reports **121 tests** in this run,
+which is the pre-split count — F ran against the **unfixed** tree.
+
+```
+❯ tests/e2e/claimGateFailClosed.test.ts (44 tests | 1 failed) 282205ms
+  × nothing on the real path lets the verifier approve, execute or create anything >
+    and no verifier verdict can ever produce a domain row, for any variant  34087ms
+    → Test timed out in 30000ms.
+
+❯ tests/foundation/auditChain.test.ts (14 tests | 1 failed) 31912ms
+  × sequence numbering > never reuses a sequence number under concurrent writes  6830ms
+    → Failed to allocate an audit sequence for correlation corr-concurrent after 8 attempts
+
+❯ tests/e2e/claimGate.test.ts (121 tests | 3 failed) 740527ms
+  × ... and QA-4 precision controls are released in ONE provider call    31578ms → Test timed out in 30000ms.
+  × ... and the § 19 precision controls are released in ONE provider call 31329ms → Test timed out in 30000ms.
+  × ... and the § 21 precision controls are released in ONE provider call 31150ms → Test timed out in 30000ms.
+
+❯ tests/invariants/determinism.test.ts (2 tests | 1 failed)
+  × determinism > classifies every scenario identically on a second run  600041ms → Test timed out in 600000ms.
+
+❯ tests/invariants/sweep.test.ts (2 tests | 1 failed)
+  × the invariant sweep > holds every invariant across the whole generated matrix  900019ms → Test timed out in 900000ms.
+
+Test Files  5 failed | 76 passed | 1 skipped (82)
+     Tests  7 failed | 2371 passed | 2 skipped (2380)
+```
+
+The last two are **artefacts of the deliberately extreme load in F and are not claimed as
+defects**; see § 11.7. The first five are the two real defects.
+
+### 11.4 Defect 1 — root cause, mechanically
+
+`src/audit/recorder.ts` allocated `sequence` optimistically: read `max(sequence)` for the
+`correlationId`, insert `max + 1`, and on the unique-constraint violation try again — bounded
+by `MAX_SEQUENCE_ALLOCATION_ATTEMPTS = 8`.
+
+`@@unique([correlationId, sequence])` (`prisma/schema.prisma:570`) is the only unique
+constraint on that table, so the referee is correct and no two writers can ever take the same
+slot. **The budget was the bug.** The number of retries a writer needs is not a constant — it
+is a function of how many writers are contending:
+
+> In the fully-contended interleaving, all N writers read the same `max` and all attempt the
+> same slot. One commits; N−1 collide. The survivors re-read and collide again. The **last**
+> writer to win therefore needs **N** attempts.
+
+`tests/foundation/auditChain.test.ts` fires **12** concurrent `record()` calls at one
+`correlationId`. 12 > 8, so the allocator was *structurally unable* to finish whenever the
+interleaving got close to fully contended — and whether it did depended on host load, which
+is exactly why the failure was intermittent. On an idle host each `findFirst` + `create`
+round-trip staggers the writers enough that nobody needs more than a few attempts; under load
+the reads bunch up, collisions per round rise, and some writer exhausts 8 and throws.
+
+**What raced with what:** writer *k*'s `currentMaxSequence()` read raced against writers
+*1…k−1*'s `create()` commits on the same `(correlationId, sequence)` index. **What leaked from
+where:** nothing — this is not a state leak, it is a bounded retry whose bound was smaller
+than the contention the caller itself creates.
+
+The consequence in production is worse than a flaky test. `record()` throwing means an audit
+event is **dropped**, and this module's own docstring states the policy it was violating:
+*"An action the system cannot explain is an action it should not claim to have taken."*
+
+### 11.5 Defect 1 — the fix, and the proof
+
+**The fix replaces the count with a progress invariant.** A lost race *necessarily* advances
+the chain: the slot we just tried is now occupied, so the chain's maximum is now at least the
+sequence we attempted, i.e. strictly greater than the maximum we read. Therefore:
+
+* retrying is correct **only while the chain is advancing**, and
+* that condition is **self-limiting**, because a chain advances at most once per committed
+  event — so a writer retries at most once per writer ahead of it and then wins.
+
+A unique violation with *no* advance means the premise is false — something is failing that is
+not a lost sequence race — so that is now reported as a distinct, clearly-worded error instead
+of being retried into a spin. `MAX_SEQUENCE_ALLOCATION_ATTEMPTS = 8` is gone. What remains is
+`SEQUENCE_ALLOCATION_LIVENESS_CAP = 256`, documented in the source as a liveness backstop that
+is unreachable while the invariant holds, not as a contention budget.
+
+**This is not "raise the number".** Raising 8 to 20 would have failed again at 21 writers;
+the operative bound is now a predicate, not a constant.
+
+**Proof, under identical conditions** (`node load.mjs 56` + `npx vitest run tests/foundation/auditChain.test.ts`):
+
+| | before the fix | after the fix |
+|---|---|---|
+| runs | 4 | 5 |
+| result | **4 of 4 FAILED** (`...after 8 attempts`) | **5 of 5 passed**, 15/15 tests |
+
+**A regression test proves it structurally, not by deadline.**
+`tests/foundation/auditChain.test.ts` gains
+*"allocates a gapless chain for far more concurrent writers than any fixed retry budget"*,
+which drives **24** concurrent writers — three times the old budget — and asserts the chain is
+gapless `1..24`, has 24 rows, and has 24 distinct summaries (so no write was silently replaced).
+Because 24 > 8, **the defect cannot be closed by enlarging a constant**: anyone who reinstates
+a fixed budget fails this test deterministically rather than one run in twenty. The original
+12-writer test is untouched.
+
+### 11.6 Defect 2 — root cause and fix
+
+Four `it` blocks walked a `for` loop over a list of end-to-end control cases. Every iteration
+calls `run(...)`, which builds a **complete** slice harness — its own SQLite file copied from
+the template, its own Prisma client, its own seeded world — and then runs a full
+`handleTurn`. All four inherited vitest's **default 30 000 ms `testTimeout`**
+(`vitest.config.ts:24`); none declared its own.
+
+A single `run()` costs **~0.4 s idle** and **~1.5 s under full-suite load** — a ~3.5×
+inflation, because `tests/invariants/sweep.test.ts` (879 scenarios, `concurrency: 4`) and
+`tests/invariants/determinism.test.ts` (two more full sweeps) are saturating the same box at
+the time. A batched `it` **multiplies** that inflation by its case count. Measured on the
+identical test:
+
+| test (default 30 000 ms budget) | cases | alone (C/C2) | 32 forks (B) | loaded (E) | headroom at E |
+|---|---|---|---|---|---|
+| `§ 19 precision controls` | 17 | **7 300 ms** | 21 892 ms | **28 372 ms** | **1.06×** |
+| `§ 21 precision controls` | 20 | 9 431 ms | 14 422 ms | **28 302 ms** | **1.06×** |
+| `exemplar a model sees stamped OK (§ 9.1a)` | 1 | **913 ms** | 7 815 ms | **28 390 ms** | **1.06×** |
+| `no verifier verdict ... for any variant` | 6 | — | 10 767 ms | 22 016 ms | 1.36× |
+| `QA-4 precision controls` | 10 | 5 430 ms | 6 151 ms | 16 265 ms | 1.84× |
+| `every honest INTENTION in the same register` | 9 | — | 6 443 ms | 11 198 ms | 2.68× |
+| `names NO day and NO hour` | 3 | — | 2 923 ms | 10 333 ms | 2.90× |
+| `five precision controls` | 7 | 4 088 ms | 4 640 ms | 8 999 ms | 3.33× |
+
+Three tests at 1.06× headroom is the defect. The same `§ 19` test varies **7 300 ms → 28 372 ms**
+— a 3.9× swing — purely as a function of what else the suite happens to be doing, against a
+fixed ceiling.
+
+**The fix is one vitest case per control**, which is the idiom **this very file already used**
+for its blocked cases (`CANCELLATION_IDIOM_LEAKS` and `SPLIT_FRAME_LEAKS` are both
+`for (const leak of …) it(…)`). The batched control loops were the inconsistent ones. Each
+control now:
+
+* carries **its own** 30 000 ms budget against a ~1.5 s cost — headroom 1.06× → ~20×;
+* **names itself** when it fails, instead of a 17-case blob reporting one line. This matters
+  directly: the failure the Founder asked about was observed *without* its test name;
+* holds **one** Prisma client and SQLite file at a time instead of 17 (the file-level
+  `afterEach` releases harnesses, so a batched `it` held them all open at once) — which is the
+  right direction on a memory-constrained host.
+
+**No assertion was changed, weakened, skipped, `.skip`-ed, `.todo`-ed, retry-wrapped, or given
+a longer timeout.** Every control still runs the same expectations against its own fresh
+harness, and the full control text is still the message on every `expect`. The case lists were
+hoisted to module scope unchanged; `CONTROLS.indexOf(control)` became the loop index, which is
+the same value for these lists (every entry is distinct).
+
+The suite goes from **2 380 to 2 451 tests, +71**, and that number reconciles exactly against
+the per-file counts rather than being asserted:
+
+| file | before | after | delta | why |
+|---|---|---|---|---|
+| `tests/e2e/claimGate.test.ts` | 121 | 183 | **+62** | seven loops split: +6, +8, +9, +3, +16, +1, +19 |
+| `tests/e2e/claimGateFailClosed.test.ts` | 44 | 50 | **+6** | +5 from the verdict split, +1 new population guard |
+| `tests/e2e/claimGateTemporalPhrase.test.ts` | 29 | 31 | **+2** | three wordings split |
+| `tests/foundation/auditChain.test.ts` | 14 | 15 | **+1** | the new 24-writer regression test (§ 11.5) |
+| | | | **+71** | and 2 451 − 2 380 = 71 |
+
+Defect 3's fix (§ 11.6b) changes **no** test counts — `isolation.test.ts` stays at 6 tests and
+`schemaRoundTrip.test.ts` at 29; those tests were restructured, not added to.
+
+`tests/e2e/claimGateFailClosed.test.ts` also gains
+*"and the variant list really does cover every failure kind plus both CLASSIFIED shapes"* —
+a guard the split needs, because with one `it` per verdict a variant silently dropped from the
+list would no longer shrink a visible loop, it would just stop being a test.
+
+### 11.6b Defect 3 — declaration-order dependence, found with `--sequence.shuffle`
+
+`npm run test -- --sequence.shuffle --sequence.seed=20260928` on the otherwise-green tree went
+**red: 2 files failed, 5 failed / 2 444 passed / 2 skipped (2 451)**. A sixth surfaced on other
+seeds. Every one is the same shape — a test that reads state a *sibling test in the same file*
+wrote, or asserts an emptiness that a sibling later destroys:
+
+| file | test | how it failed when shuffled |
+|---|---|---|
+| `isolation.test.ts` | `start empty, regardless of what any other suite has written` | `expected [ { …(5) } ] to have a length of +0 but got 1` — the seeding test ran first |
+| `isolation.test.ts` | `can each hold a row that a globally-unique constraint would otherwise reject` | ran before the seed, so both user lookups were null |
+| `isolation.test.ts` | `keeps writes local: a meeting in one is invisible in the other` | ran before the seed, so `organizations.list()[0]!` was undefined |
+| `schemaRoundTrip.test.ts` | `FutureAction > round-trips with its retry and lease bookkeeping` | collided on `future-round-trip-1`, a key the *next* test had already taken |
+| `schemaRoundTrip.test.ts` | `FutureAction > enforces a unique idempotency key` | passed *vacuously* or failed, depending on whether the row it relies on existed yet |
+| `schemaRoundTrip.test.ts` | `Meeting > is retrievable by idempotency key, and the key is unique` | `expected null not to be null` — the row was created by the previous test |
+| `schemaRoundTrip.test.ts` | `Meeting > finds overlapping meetings and ignores cancelled ones` | `expected [] to include 'meeting-round-trip-1'` — same cause |
+
+Both files predate this task. `schemaRoundTrip.test.ts` I had **not touched at all** before this
+fix, and my only prior edit to `isolation.test.ts` was the environment-variable restore in a
+different `describe` — so this is pre-existing, not something the § 11.6 split introduced.
+
+**The fix is that every test now establishes its own preconditions.**
+
+* `isolation.test.ts`: the two shared databases are **seeded in `beforeAll`**, so no test depends
+  on another having seeded, and `start empty` creates its **own** fresh pair inside the test —
+  which is what its name claims it is testing anyway, and is a stronger assertion than "still
+  empty at this point in the file".
+* `schemaRoundTrip.test.ts`: the three tests that borrowed `meeting-round-trip-1` or
+  `future-round-trip-1` now **write the row they then read back**, under their own distinct keys
+  (`meeting-idempotency-key-guard`, `meeting-overlap-guard`, `future-unique-key-guard`). This is
+  also strictly stronger: the two uniqueness tests now prove the constraint over two rows they
+  created themselves rather than inferring it from a sibling's leftover state.
+
+**Proof:** both files across **16 different shuffle seeds** (1, 2, 3, 5, 8, 13, 55, 101, 314,
+777, 2718, 4242, 31337, 99999, 123456, 20260928) — **0 of 16 seeds fail**, against 5 of 12
+before the last of the three fixes went in. Three whole-suite shuffled runs are recorded in § 12.
+
+### 11.7 Hazards found and hardened, and hazards ruled out by measurement
+
+Everything in the Founder's list was checked. Reporting the negatives as well as the positives,
+because a claim of "no hazards" is only worth what the search behind it was:
+
+**Ruled out by inspection or measurement — no change made:**
+
+* **Assertions on real elapsed time or a real `Date`.** None in the suite. The only
+  `performance.now()` uses are `tests/claimGate/claimGateLatency.ts` and
+  `tests/invariants/sweep.ts`, and both only *report*. `claimGateLatency.test.ts` states in its
+  own header why it asserts on the harness's inputs rather than on any latency, and the
+  companion `sweep.ts` `elapsedMs` is never asserted. The closest things to a timing assertion
+  in the whole suite are `expect(result.latencyMs).toBeGreaterThanOrEqual(0)`
+  (`tests/eval/verifierEvalReadiness.test.ts:763`), which is a sign check, and two
+  `'ELAPSED_FROM_NOW'` comparisons, which are parse-kind enums. **No wall-clock threshold
+  assertion exists.**
+* **A test racing a real `setTimeout` against an assertion.** The one real-timer deadline is
+  `LlmSemanticClaimVerifier.withDeadline`, and its test (`semanticClaimVerifier.test.ts:213`)
+  races the 25 ms deadline against a provider that *never settles* — so the deadline always
+  wins and there is no race to lose. `DueActionRunner.start()`'s polling loop is never driven
+  with real timers by any test; the retry/backoff tests pass explicit `nowUtc` strings
+  (`at(300)`, `at(900)`, …) and are fully deterministic. `OllamaClient`'s
+  `delay(retryBackoffMs * 2 ** (attempt-1))` is never exercised by the suite.
+* **A shared SQLite file.** `tests/helpers/testDb.ts` names every database
+  `<label>-<pid>-<uuid8>.db`, so two files and two workers cannot collide. The schema template
+  is built under a unique name and `renameSync`d into place, with a `copyFileSync` fallback for
+  a lost rename race.
+* **A shared temp directory.** `tests/eval/support/fixtures.ts` uses `mkdtempSync` under the
+  OS temp directory, deliberately and with a comment saying why.
+* **A module-level singleton.** Every piece of module-level mutable state in `src/` is a pure
+  memoization cache keyed by an immutable input (`FORM_TOKENS`, `FORM_INDEX`, `COPULA_CLITICS`,
+  `FRAME_GAP_ALLOWANCES`, `SUPPRESSION_REACHES`, `TEMPORAL_INDEXES`, `SCHEDULING_TOKENS`,
+  `INDEX_CACHE`). The cached value is a function of the key, so these can affect *timing* —
+  which is the documented cold-start cost — but can never change an outcome.
+* **A process-level mock.** `tests/invariants/networkTrap.ts` patches `fetch`, `http.request`,
+  `https.request` and `net.connect`, and restores all four in a `finally`, so a throwing body
+  cannot leave the process patched.
+* **Declaration-order dependence in the e2e files specifically.** The `harnesses[]` + `afterEach`
+  pattern used throughout them is order-independent: each test pushes its own harnesses and the
+  hook drains them. (The two *foundation* files were **not** order-independent — that is defect 3,
+  § 11.6b.)
+* **The 9p filesystem.** `/workspace` is a 9p/drvfs mount of the Windows `C:\` drive and
+  `testDb.ts` puts every test database on it, which looked like an obvious amplifier. **It was
+  measured and the simple form of the hypothesis was rejected:** serially, 9p was *faster* than
+  the container's local overlay (14.8 ms vs 21.4 ms per database), because WSL2 caches
+  aggressively. Under 16-way concurrency 9p is ~2.7× slower (≈75 ms vs ≈27.5 ms per database),
+  so it is a real contributor — but at 17 cases × 75 ms ≈ 1.3 s it is nowhere near sufficient
+  to explain a 28 s test on its own. The dominant cost is the Prisma client and seeded world per
+  harness, not the file copy. Test databases were therefore **left on 9p**: moving them would be
+  a large change to shared test infrastructure justified by a 2.7× factor on a minority of the
+  cost, and it is not what made the suite red.
+* **CPU contention alone.** Explicitly falsified as the mechanism: 48 busy-loop processes took
+  `§ 19` only from 7 300 ms to 14 194 ms (run D), while the loaded full suite took it to
+  28 372 ms. The contended resource is the aggregate SQLite/Prisma work of many forks plus the
+  sweep, not the CPU.
+
+**Found and hardened:**
+
+* **Declaration-order dependence in the two foundation files** — defect 3, § 11.6b. Six tests,
+  now self-sufficient, proven across 16 shuffle seeds.
+* `tests/foundation/isolation.test.ts` deleted `DATABASE_URL` and `OPENAI_API_KEY` and restored
+  them with `if (saved !== undefined)`, which is not a restore: if either variable was *absent*
+  when the test started, the `delete` was left in place for every later test in that worker.
+  It was harmless in fact — `createTestDatabase` injects its own datasource URL and nothing in
+  the suite reads `OPENAI_API_KEY` except the live test that is skipped without it — but it is
+  exactly the shape of leak that makes a suite order-dependent. Now deletes on the absent path.
+
+**Raised to another task, not edited:** `vitest.config.ts` carries the comment *"we keep a
+modest cap to stay friendly on small CI boxes"* but **sets no `maxForks`**, so on this 32-CPU
+host vitest runs up to 32 forks while the sweep is also running — the config documents a cap
+that does not exist. I have **not** changed it, because `vitest.config.ts` does not match my
+write allowlist (which names `vite.config.*`). It was raised to
+`MISSION-2G-QWEN-VERIFIER-HELDOUT-COORD` through the coordination mailbox with the measurements,
+for integration or independent QA to decide. **My fixes do not depend on it**: run I shows the
+fixed tree green under the load that broke the unfixed one, with the worst default-budget test
+at 8 955 ms.
+
+### 11.8 What remains unproven
+
+Stated plainly, because the value of §§ 11.4–11.6 depends on being honest about the edges.
+
+1. **I cannot prove that defect 1 or defect 2 is *the* failure the operator saw**, because the
+   failing test's name was never captured. What I can say is: both were reproduced red by name
+   on this tree; both produce the reported signature (a small number of failures out of 2380,
+   green on rerun); both are load-dependent; and defect 1 matches it most closely because it
+   fails as exactly one test. If the operator's failure was something else again, this
+   investigation did not find it.
+2. **The reproduction needed load beyond what `npm run test` generates by itself.** Runs A and
+   B — the unfixed tree at default settings and at 32 forks — were both **green**. Run F needed
+   28 busy-loop processes plus a concurrent second vitest process. So the honest statement is
+   that the suite's headroom was measured to be as thin as **1.06×** and that a modest
+   additional load crosses it, not that `npm run test` alone fails reliably.
+3. **Runs F and I are not byte-identical conditions.** F also carried a concurrent second
+   vitest process. § 12 records a harsher replication on the fixed tree that reinstates it.
+4. **The sweep and determinism timeouts in F are not closed and are not claimed as defects.**
+   `the invariant sweep` has a 900 000 ms budget and took 397 783 ms naturally (2.26×
+   headroom), 568 287 ms on the fixed tree under attack (1.58×). `determinism > classifies
+   every scenario identically` has 600 000 ms and took 223 013 ms naturally (2.69×), 362 418 ms
+   under attack (1.66×). Both are the suite's critical path — the sweep alone is 398 s of a
+   428 s run — so they are the tests most exposed to a genuinely slower or busier host, and
+   neither was changed. They failed in F only because the load was deliberately extreme, and
+   they would fail together and loudly rather than as "1 of 2380". **Reducing their exposure
+   would mean bounding suite concurrency, which is the `vitest.config.ts` question above.**
+5. **No claim is made about the operator's host.** Every measurement here is from this
+   container: 32 CPUs, 15.8 GB RAM, repo on a 9p mount. The operator's host is described as
+   memory-constrained and is not this one.
 ## 12. Regression and validation evidence
 
-**[OWNER: MISSION-2G-QWEN-VERIFIER-HELDOUT-SUITE-STABILITY-REGRESSION]**
+**Owner:** `MISSION-2G-QWEN-VERIFIER-HELDOUT-AUTO-SUITE-STABILITY-REGRESSION`.
+
+### 12.0 WHICH TREE THESE NUMBERS ARE FROM — READ THIS FIRST
+
+> **Every number in this section was measured on MY OWN WORKTREE,**
+> `.worktrees/MISSION-2G-QWEN-VERIFIER-HELDOUT-AUTO-SUITE-STABILITY-REGRESSION`, **which does
+> NOT carry the work of the two sibling Mission 2G tasks**
+> (`AUTO-VERIFIER-TUNING`, which owns `src/agent/claimGate/semantic/`, and
+> `AUTO-SPLIT-CORPUS-HARNESS`, which owns `src/eval/verifier/`).
+>
+> **These are NOT final-tree numbers and must not be quoted as such.**
+>
+> **The Founder's requirement of three consecutive clean full-suite runs ON THE FINAL TREE is
+> NOT satisfied by this section and cannot be satisfied by this task.** It must be
+> re-satisfied by integration and by independent QA after all three Mission 2G tasks are
+> merged, on the merged tree, with the numbers recorded there. I was not given the integrated
+> tree before finishing; if it is handed to me I will re-run the whole battery on it and report
+> both sets side by side.
+
+Host for every measurement: 32 CPUs, 15.8 GB RAM, Linux 6.6 (WSL2), Node v22.14.0,
+vitest 3.2.7, repository on a 9p/drvfs mount of the Windows `C:\` drive.
+
+**No model was called by anything in this section.** No `eval:run`, no `eval:verifier`, no
+`demo:local`, no `llm:probe`, no `llm:smoke`, no request to any Ollama endpoint. The suite uses
+`ScriptedLlmProvider` and real SQLite throughout, and `INV-10` independently proves 0 outbound
+network attempts across the whole sweep (§ 12.6).
+
+Every command below was run **for real and sequentially**, one heavy command at a time, from a
+single driver script, on the **final state of my tree** (i.e. after all three fixes in § 11).
+Nothing ran concurrently with anything else.
+
+### 12.1 The commands, their exit codes, and their numbers
+
+| # | Command | Exit | Wall | Result |
+|---|---|---|---|---|
+| 1 | `npm run typecheck` | **0** | 7 s | no diagnostics |
+| 2 | `npm run build` | **0** | 10 s | `tsc -p tsconfig.json` emitted to `dist/`, no diagnostics |
+| 3 | `npm run test` (run 1 of 3) | **0** | 423 s | 81 passed / 1 skipped (82 files); **2 449 passed / 2 skipped (2 451)**; reported duration 420.87 s |
+| 4 | `npm run test` (run 2 of 3) | **0** | 376 s | 81 passed / 1 skipped (82 files); **2 449 passed / 2 skipped (2 451)**; reported duration 374.62 s |
+| 5 | `npm run test` (run 3 of 3) | **0** | 440 s | 81 passed / 1 skipped (82 files); **2 449 passed / 2 skipped (2 451)**; reported duration 438.53 s |
+| 6 | `npm run qa:sweep` | **0** | 294 s | all **1 171** scenarios, concurrency 4. `VIOLATIONS: None. Every applicable invariant held for every scenario.` 17 invariants tabulated, **0 failed** on every one. Outcomes: 677 PERSISTED, 464 REJECTED |
+| 7 | `npm run qa:sweep -- --determinism` | **0** | 544 s | `INV-09 DETERMINISM — PASS: a second full run produced byte-identical classifications for every scenario id.` 1 171 scenarios run twice |
+| 8 | `npm run check:anti-scripting` | **0** | 1 s | `RESULT: PASS - no canned dialogue found on the customer-facing path.` |
+| 9 | `npm run context:prove` | **0** | 23 s | `RESULT: PASS - 9/9 proofs.` |
+| 10 | Hebrew scheduling parity tests (§ 12.4) | **0** | 10 s | 8 files, **399 passed (399)** — see § 12.4 |
+| 11 | Claim-gate and verifier adversarial tests (§ 12.5) | **0** | 81 s | 13 files, **498 passed (498)** — see § 12.5 |
+| 12 | Independent leak check (§ 12.6) | **0** | 269 s | 4 files, **156 passed (156)** — see § 12.6 |
+| 13 | `npm run test -- --sequence.shuffle --sequence.seed=20260928` | **0** | 407 s | 81 passed / 1 skipped (82); **2 449 passed / 2 skipped (2 451)**; 404.38 s |
+| 14 | `npm run test -- --sequence.shuffle --sequence.seed=1` | **0** | 398 s | 81 passed / 1 skipped (82); **2 449 passed / 2 skipped (2 451)**; 395.93 s |
+| 15 | `npm run test -- --sequence.shuffle --sequence.seed=31337` | **0** | 409 s | 81 passed / 1 skipped (82); **2 449 passed / 2 skipped (2 451)**; 407.10 s |
+
+### 12.2 The three consecutive full-suite runs, reported separately
+
+As the Founder asked, all three are reported individually rather than as a summary — **on my
+own tree, not the final tree** (§ 12.0).
+
+| run | command | exit | wall | test files | tests | reported duration |
+|---|---|---|---|---|---|---|
+| **1 of 3** | `npm run test` | **0** | 423 s | 81 passed / 1 skipped (82) | **2 449 passed / 2 skipped (2 451)** | 420.87 s |
+| **2 of 3** | `npm run test` | **0** | 376 s | 81 passed / 1 skipped (82) | **2 449 passed / 2 skipped (2 451)** | 374.62 s |
+| **3 of 3** | `npm run test` | **0** | 440 s | 81 passed / 1 skipped (82) | **2 449 passed / 2 skipped (2 451)** | 438.53 s |
+
+The one skipped file and two skipped tests are `tests/agent/openAiLive.test.ts`, which skips
+itself when `OPENAI_API_KEY` is absent. It was absent — **no model was called.** That is the
+same 1-file / 2-test skip the operator's own clean rerun reported, so the numbers are directly
+comparable.
+
+Three further whole-suite runs with **file and test order shuffled** (`--sequence.shuffle`), which
+is how defect 3 was found (§ 11.6b) and is the evidence that it is closed:
+
+| seed | exit | wall | tests | reported duration |
+|---|---|---|---|---|
+| `20260928` | **0** | 407 s | **2 449 passed / 2 skipped (2 451)** | 404.38 s |
+| `1` | **0** | 398 s | **2 449 passed / 2 skipped (2 451)** | 395.93 s |
+| `31337` | **0** | 409 s | **2 449 passed / 2 skipped (2 451)** | 407.10 s |
+
+Seed `20260928` is the seed that went **red with 5 failures in 2 files** before the § 11.6b fix.
+
+The baseline before any of this task's changes was **81 passed / 1 skipped (82 files), 2 378
+passed / 2 skipped (2 380), 428.54 s**. The suite gains **+71 tests** (§ 11.6) at essentially
+**no wall-clock cost**, because the critical path is `tests/invariants/sweep.test.ts`, which is
+one file and unchanged.
+
+### 12.3 Tests deliberately changed, and why
+
+Named individually, as required. **No test was weakened, skipped, `.skip`-ed, `.todo`-ed,
+deleted, retry-wrapped, or given a longer timeout, and no timeout value anywhere in the
+repository was changed.** Verified mechanically over the diff:
+
+* no `.skip`, `.todo`, `.only`, `.fails` or `.concurrent` was added — zero matches;
+* the only diff lines matching `timeout` are **prose inside comments**;
+* `expect(` counts per file went 215→215, 110→115, 29→29, 42→45, 18→18, 29→29 — **nothing
+  removed**, and the two increases are the two new tests.
+
+| File | What changed | Why |
+|---|---|---|
+| `src/audit/recorder.ts` | `MAX_SEQUENCE_ALLOCATION_ATTEMPTS = 8` replaced by a **progress invariant** plus a documented 256-iteration liveness backstop; a non-advancing unique violation now raises a distinct, clearly-worded error | **Defect 1**, § 11.4–11.5. Application-code bug: a fixed retry budget smaller than the contention the caller creates, which dropped audit events |
+| `tests/e2e/claimGate.test.ts` | seven batched control loops → one `it` per control (+62 tests); case lists hoisted to module scope unchanged | **Defect 2**, § 11.6. Restores headroom from 1.06× and makes a failure name its control |
+| `tests/e2e/claimGateFailClosed.test.ts` | the six-verdict loop → one `it` per verdict (+5); **new** test `and the variant list really does cover every failure kind plus both CLASSIFIED shapes` (+1) | **Defect 2**, plus the population guard the split needs so a dropped variant fails loudly instead of silently ceasing to be a test |
+| `tests/e2e/claimGateTemporalPhrase.test.ts` | the three-wording loop → one `it` per wording (+2) | **Defect 2** |
+| `tests/foundation/auditChain.test.ts` | **new** test `allocates a gapless chain for far more concurrent writers than any fixed retry budget` (+1), driving 24 concurrent writers | Regression test for defect 1. 24 is 3× the old budget of 8, so the defect **cannot** be closed by enlarging a constant. The original 12-writer test is untouched |
+| `tests/foundation/isolation.test.ts` | seeding moved into `beforeAll`; `start empty` now creates its own fresh database pair; environment variables now restored on the *absent* path too | **Defect 3**, § 11.6b, plus the `process.env` restore hazard in § 11.7 |
+| `tests/foundation/schemaRoundTrip.test.ts` | three tests that borrowed a sibling's row now write the row they read back, under their own distinct keys | **Defect 3**, § 11.6b |
+
+Files I was forbidden to touch and **did not touch**: `src/agent/claimGate/semantic/` (the
+verifier instruction and schema — `AUTO-VERIFIER-TUNING`) and `src/eval/verifier/` (the corpus,
+the split assignment and the held-out cases — `AUTO-SPLIT-CORPUS-HARNESS`). **I did not open,
+print or grep the held-out corpus cases.** I also did **not** change `vitest.config.ts`; see
+§ 11.7 for the cap it documents but does not set, which was raised to the coordinator instead.
+
+### 12.4 The Hebrew scheduling parity tests, by file
+
+| file | tests | time |
+|---|---|---|
+| `tests/scheduling/localeParity.test.ts` | 84 | 829 ms |
+| `tests/scheduling/scriptNormalization.test.ts` | 84 | 10 ms |
+| `tests/scheduling/localeDateAndTime.test.ts` | 63 | 175 ms |
+| `tests/scheduling/localeRefusalBreadth.test.ts` | 59 | 44 ms |
+| `tests/scheduling/localeTimezoneBoundaries.test.ts` | 42 | 687 ms |
+| `tests/scheduling/localeLexicon.test.ts` | 33 | 25 ms |
+| `tests/scheduling/hebrewGrammar.test.ts` | 29 | 58 ms |
+| `tests/e2e/hebrewDigitClockTime.test.ts` | 5 | 2 457 ms |
+| **8 files** | **399 passed (399)** | exit **0** |
+
+`localeParity.test.ts` is the parity matrix proper — `Hebrew and English translations resolve to
+the SAME instant`, `the day a translated pair names is the same day in the contact zone`, and
+`pairs that are deliberately NOT identical`. The sweep checks the same property independently as
+`INV-16-hebrew-and-english-parity` (108 checked / 108 passed / 0 failed, § 12.6).
+
+### 12.5 The claim-gate and verifier adversarial tests, by file
+
+| file | tests | time |
+|---|---|---|
+| `tests/e2e/claimGate.test.ts` | 183 | 72 972 ms |
+| `tests/claimGate/layeredClaimCorpus.test.ts` | 63 | 1 028 ms |
+| `tests/e2e/claimGateFailClosed.test.ts` | 50 | 35 438 ms |
+| `tests/agent/claimGateSemanticPipeline.test.ts` | 50 | 41 ms |
+| `tests/agent/claimGateVerifier.test.ts` | 32 | 39 ms |
+| `tests/e2e/claimGateTemporalPhrase.test.ts` | 31 | 30 758 ms |
+| `tests/agent/semanticClaimVerifier.test.ts` | 23 | 33 ms |
+| `tests/e2e/adversarial.test.ts` | 16 | 15 323 ms |
+| `tests/e2e/claimGateExhaustion.test.ts` | 15 | 16 006 ms |
+| `tests/claimGate/claimGateNonVacuity.test.ts` | 12 | 1 499 ms |
+| `tests/agent/claimVerifierComposition.test.ts` | 11 | 95 ms |
+| `tests/invariants/verifierAuthorityBoundary.test.ts` | 8 | 41 ms |
+| `tests/claimGate/claimGateLatency.test.ts` | 4 | 74 ms |
+| **13 files** | **498 passed (498)** | exit **0** |
+
+`tests/e2e/adversarial.test.ts` is the adversarial-contact suite; `claimGateFailClosed.test.ts`
+carries the verifier fail-closed and no-authority properties; `verifierAuthorityBoundary.test.ts`
+walks the transitive import closure of `src/agent/claimGate/semantic/` and fails if it ever
+reaches anything that can cause an effect. `claimGate.test.ts` runs **183** tests here against
+121 before this task, and does it in **72 972 ms** against the **132 700 ms** the 121-test version
+took when run alone — the § 11.6 split made the file both larger and faster, because it no longer
+holds seventeen Prisma clients open at once.
+
+### 12.6 The independent leak check, by file and by sweep invariant
+
+The independent oracle — `tests/invariants/claimOracle.ts`, which imports **nothing at all** and
+therefore cannot have been supplied by the gate it judges:
+
+| file | tests | time |
+|---|---|---|
+| `tests/invariants/claimOracleCatchesPastFindings.test.ts` | 118 | 29 ms |
+| `tests/invariants/claimOracleLayered.test.ts` | 27 | 7 ms |
+| `tests/invariants/claimOracleBoundary.test.ts` | 9 | 2 074 ms |
+| `tests/invariants/sweep.test.ts` (carries INV-18 and INV-19) | 2 | 262 245 ms |
+| **4 files** | **156 passed (156)** | exit **0** |
+
+`claimOracleBoundary.test.ts` is the one that makes the other three mean anything: it walks the
+transitive import closure of the oracle and fails if it ever reaches `src/agent/claimGate`, so an
+assertion built on the oracle is not evidence the gate supplied about itself.
+`claimOracleCatchesPastFindings.test.ts` drives all five historical leak findings through INV-18
+with `detectMaterialClaims` stubbed to return nothing, and every one fails — a positive control
+against a vacuous pass.
+
+And the two named invariants, from the `npm run qa:sweep` report (step 6), quoted by their
+actual invariant ids:
+
+```
+PASS / FAIL PER INVARIANT
+  INV-18-released-text-asserts-no-absent-effect                4928  4928  0  0
+  INV-19-every-customer-facing-text-passed-both-claim-layers    2322  2322  0  0
+
+  TEXTS RELEASED WITHOUT PASSING BOTH LAYERS : 0   (must be 0, INV-19)
+
+VIOLATIONS
+  None. Every applicable invariant held for every scenario.
+
+INV-10: PASS - 0 outbound attempts via fetch, http, https or net while the sweep ran.
+```
+
+(columns are checked / passed / failed / not-applicable)
+
+### 12.7 The stability evidence that is not a plain suite run
+
+These are the runs that produced § 11's findings. They are recorded here because "the suite is
+green" is a weaker claim than "the suite is green, and here is what it took to make it red".
+
+| What | Tree | Result |
+|---|---|---|
+| Contention attack: 28 busy-loop processes + `--maxWorkers=6` + a concurrent second vitest on the three heaviest claim-gate files | **unfixed** | **RED — 5 files failed, 7 failed / 2 371 passed / 2 skipped (2 380)**, 919.47 s. Four 30 000 ms timeouts plus `Failed to allocate an audit sequence … after 8 attempts` |
+| The **same** attack, same shape | **fixed** | **GREEN — 0 failures.** Main: 81 passed / 1 skipped (82), 2 449 passed / 2 skipped (2 451), 646.73 s, exit 0. Sidecar: 3 passed, 264 passed, exit 0. Worst default-budget test **10 487 ms** vs the 31 329 ms timeout before |
+| Attack without the concurrent sidecar (28 processes + `--maxWorkers=6`) | **fixed** | **GREEN — 0 failures**, 2 449 passed / 2 skipped (2 451), 579.54 s. Worst default-budget test **8 955 ms** (headroom 1.06× → 3.35×) |
+| `tests/foundation/auditChain.test.ts` under 56 busy-loop processes, 4 consecutive runs | **unfixed** | **4 of 4 FAILED** |
+| The same, 5 consecutive runs | **fixed** | **5 of 5 passed**, 15/15 tests each |
+| `isolation.test.ts` + `schemaRoundTrip.test.ts` across 16 shuffle seeds | **fixed** | **0 of 16 seeds fail** (5 of 12 failed before the last fix) |
+
+### 12.8 What this section does and does not establish
+
+**Does:** every command the Founder named was run for real and sequentially on the final state
+of my tree; all of them exited 0; three consecutive full-suite runs on my tree were clean and
+are reported separately; every pre-existing test still passes; the three defects of § 11 are
+fixed with no timeout raised and no assertion weakened; and the fixes hold under a deliberate
+contention attack that makes the unfixed tree red.
+
+**Does not:**
+
+1. **It does not satisfy the final-tree three-run requirement.** See § 12.0. That belongs to
+   integration and independent QA, on the merged tree, after all three Mission 2G tasks land.
+2. It does not prove the suite can never flake again. § 11.8 states the residual exposure with
+   numbers: `the invariant sweep` (900 000 ms budget, 397 783 ms naturally, 633 288 ms under
+   attack) and `determinism > classifies every scenario identically` (600 000 ms budget,
+   223 013 ms naturally, 418 719 ms under attack) are the suite's critical path and the tests
+   most exposed to a slower or busier host. Neither was changed. Reducing that exposure means
+   bounding suite concurrency — the `vitest.config.ts` question raised to the coordinator.
+3. It does not measure the operator's host, which is described as memory-constrained and is not
+   this one.

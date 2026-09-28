@@ -122,6 +122,50 @@ async function spokenAgentText(harness: SliceHarness, conversationId: string): P
   return rows.filter((row) => row.role === 'AGENT' && row.toolName === null).map((row) => row.text ?? '');
 }
 
+/**
+ * A truthful sentence that must survive the gate untouched, in ONE provider call.
+ *
+ * ONE VITEST CASE PER CONTROL, AND WHY THAT IS NOT COSMETIC
+ * ---------------------------------------------------------------------------
+ * These lists used to be walked by a `for` loop INSIDE a single `it`, and that is
+ * a suite-stability defect rather than a style preference. Every iteration builds
+ * a complete slice harness - its own SQLite file copied from the template, its own
+ * Prisma client, its own seeded world - and then runs a full agent turn. One
+ * iteration costs ~0.4 s on an idle host and ~1.5 s when the rest of the suite is
+ * running, because `tests/invariants/sweep.test.ts` and
+ * `tests/invariants/determinism.test.ts` are saturating the same box at the time.
+ * A batched `it` MULTIPLIES that contention-sensitive cost by the number of
+ * controls while still living under ONE `testTimeout`, so the § 19 block (17
+ * controls) measured 7.3 s alone and 28.4 s inside a loaded full suite - 94 % of
+ * the 30 000 ms budget, i.e. 1.06x headroom. See `docs/MISSION_2G_VERIFIER_ROUND.md`
+ * § 11 for the measurements.
+ *
+ * Splitting changes NO assertion: every control still runs the same four
+ * expectations against its own fresh harness. What changes is that each control
+ * carries its own budget against a ~1.5 s cost instead of sharing one with
+ * sixteen siblings, and that a failure names the individual control instead of a
+ * seventeen-case blob - which is the other half of the problem, because the
+ * failure the Founder asked about was observed WITHOUT its test name.
+ *
+ * It also lowers peak memory, which matters on a memory-constrained host: the
+ * file-level `afterEach` releases harnesses, so a batched `it` held all 17 Prisma
+ * clients and SQLite files open at once. One per test now.
+ */
+interface PrecisionControl {
+  readonly text: string;
+  readonly utterance: string;
+  readonly hebrew: boolean;
+}
+
+/**
+ * A short, stable, single-line test name for a control whose text may contain
+ * newlines, CRLFs and invisible characters. The full text is still the message on
+ * every `expect` below, so a failure quotes it verbatim.
+ */
+function controlLabel(control: PrecisionControl): string {
+  return JSON.stringify(control.text);
+}
+
 const bookTomorrowAtThree = (contactId: string): ScriptedStep => ({
   assistantText: 'Let me get that in the diary.',
   toolCalls: [
@@ -1153,6 +1197,18 @@ const NO_PUNCTUATION_FILLER_LEAKS: readonly {
   },
 ];
 
+const NO_PUNCTUATION_PRECISION_CONTROLS: readonly string[] = [
+  'הפגישה לא נקבעה עדיין.',
+  'עדיין לא נקבע כלום.',
+  'אין פגישה ביומן.',
+  'לא קבעתי כלום עדיין.',
+  'אין לי אפשרות לשלוח אימייל.',
+  // And the two the sibling task asked to be paired with the leaks, which are the
+  // honest negation BEHIND the very filler that leaked.
+  'אין בעיה הפגישה לא נקבעה עדיין.',
+  "Don't worry nothing is booked yet.",
+];
+
 describe('an unsupported claim behind a no-punctuation reassurance filler', () => {
   const HONEST = 'עדיין לא קבעתי כלום. באיזו שעה נוח לך?';
 
@@ -1238,26 +1294,15 @@ describe('an unsupported claim behind a no-punctuation reassurance filler', () =
     expect(harness.llm.callCount).toBe(2);
   });
 
-  it('and the five precision controls the finding names are released in ONE provider call', async () => {
-    // The five sentences QA confirmed were clean before the fix and listed as
-    // regression risks. Scripted with NO second entry, so a regeneration fails
-    // the run outright rather than quietly consuming an attempt - which is the
-    // only way to prove the gate did not merely recover.
-    const CONTROLS = [
-      'הפגישה לא נקבעה עדיין.',
-      'עדיין לא נקבע כלום.',
-      'אין פגישה ביומן.',
-      'לא קבעתי כלום עדיין.',
-      'אין לי אפשרות לשלוח אימייל.',
-      // And the two the sibling task asked to be paired with the leaks, which are
-      // the honest negation BEHIND the very filler that leaked.
-      'אין בעיה הפגישה לא נקבעה עדיין.',
-      "Don't worry nothing is booked yet.",
-    ];
-
-    for (const control of CONTROLS) {
+  // The five sentences QA confirmed were clean before the fix and listed as
+  // regression risks, plus the two the sibling task asked to be paired with the
+  // leaks. Each is scripted with NO second entry, so a regeneration fails the run
+  // outright rather than quietly consuming an attempt - which is the only way to
+  // prove the gate did not merely recover.
+  for (const [index, control] of NO_PUNCTUATION_PRECISION_CONTROLS.entries()) {
+    it(`and the precision control the finding names is released in ONE provider call: ${JSON.stringify(control)}`, async () => {
       const ran = await run(
-        `gate-no-punctuation-control-${CONTROLS.indexOf(control)}`,
+        `gate-no-punctuation-control-${index}`,
         [{ assistantText: control }],
         'מה המצב עם הפגישה?',
         { world: JERUSALEM },
@@ -1266,8 +1311,8 @@ describe('an unsupported claim behind a no-punctuation reassurance filler', () =
       expect(ran.turn.claimGate.releases.at(-1)?.outcome, control).toBe('NO_MATERIAL_CLAIM');
       expect(await persistedAgentText(ran), control).toEqual([control]);
       expect(ran.harness.llm.callCount, control).toBe(1);
-    }
-  });
+    });
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -1308,6 +1353,22 @@ const CANCELLATION_IDIOM_LEAKS: readonly { readonly label: string; readonly text
   { label: 'behind a no-punctuation filler, so both mechanisms have to hold at once', text: "Don't worry that meeting is off the calendar now." },
 ];
 
+const CANCELLATION_HONEST_INTENTIONS: readonly string[] = [
+  'Let me take that off the calendar for you.',
+  'I will take it out of the diary.',
+  'I can take that off the calendar in a moment.',
+  'I need to take it off the calendar first.',
+  'Let me get that removed from the diary.',
+  // And the negations, which a cancellation lexicon can break in the other
+  // direction: these are the truthful answers to "did you cancel it?".
+  'I have not taken it off the calendar.',
+  'Nothing has been taken off the calendar.',
+  // Two sentences that use the same verbs about something that is not a booking at
+  // all. A bare `i took` or `i removed` would fire on both.
+  'I took a note of that for you.',
+  'I removed the duplicate from my own list.',
+];
+
 describe('a cancellation asserted in an idiom the lexicon had no word for', () => {
   const HONEST = 'Nothing has changed in the diary. Would you like me to cancel it?';
 
@@ -1332,39 +1393,23 @@ describe('a cancellation asserted in an idiom the lexicon had no word for', () =
     });
   }
 
-  it('and every honest INTENTION in the same register passes through in ONE provider call', async () => {
-    // THE PRECISION HALF, and the reason only the PAST TENSE was added. `take` is
-    // not a completion form, so no intention can match one of these however it is
-    // phrased - which is a stronger guarantee than relying on `frameBlockers` to
-    // hold each one off individually. Scripted with no second entry, so a
-    // regeneration fails the run outright.
-    const HONEST_INTENTIONS = [
-      'Let me take that off the calendar for you.',
-      'I will take it out of the diary.',
-      'I can take that off the calendar in a moment.',
-      'I need to take it off the calendar first.',
-      'Let me get that removed from the diary.',
-      // And the negations, which a cancellation lexicon can break in the other
-      // direction: these are the truthful answers to "did you cancel it?".
-      'I have not taken it off the calendar.',
-      'Nothing has been taken off the calendar.',
-      // Two sentences that use the same verbs about something that is not a
-      // booking at all. A bare `i took` or `i removed` would fire on both.
-      'I took a note of that for you.',
-      'I removed the duplicate from my own list.',
-    ];
-
-    for (const text of HONEST_INTENTIONS) {
+  // THE PRECISION HALF, and the reason only the PAST TENSE was added. `take` is not
+  // a completion form, so no intention can match one of these however it is phrased
+  // - which is a stronger guarantee than relying on `frameBlockers` to hold each one
+  // off individually. Each is scripted with no second entry, so a regeneration fails
+  // the run outright.
+  for (const [index, text] of CANCELLATION_HONEST_INTENTIONS.entries()) {
+    it(`and the honest INTENTION in the same register passes through in ONE provider call: ${JSON.stringify(text)}`, async () => {
       const ran = await run(
-        `gate-cancellation-honest-${HONEST_INTENTIONS.indexOf(text)}`,
+        `gate-cancellation-honest-${index}`,
         [{ assistantText: text }],
         'Can you cancel it?',
       );
       expect(ran.turn.assistantText, text).toBe(text);
       expect(ran.turn.claimGate.releases.at(-1)?.outcome, text).toBe('NO_MATERIAL_CLAIM');
       expect(ran.harness.llm.callCount, text).toBe(1);
-    }
-  });
+    });
+  }
 
   it('but an object with a DETERMINER in front of it is STILL MISSED, and that is recorded not fixed', async () => {
     // ASSERTED AS A MISS, in the register `DOCUMENTED_MISSES` uses: if this ever
@@ -1561,6 +1606,44 @@ const ALL_CARRIER_FILLER_LEAKS: readonly {
   },
 ];
 
+/**
+ * THE CONSTRAINT THE FINDING NAMED BEFORE IT NAMED A DIRECTION. The naive way to
+ * close the QA-4 leaks is to delete `at`, `all`, `else`, `more`, `כלום` and `יותר`
+ * from `suppressionCarriers`, and that turns every sentence here into a blocked
+ * truthful answer to "is my meeting booked?" - which is the failure mode that gets
+ * a gate switched off.
+ *
+ * EACH IS SCRIPTED WITH NO SECOND ENTRY, so a regeneration fails the run outright
+ * rather than quietly consuming an attempt. That is the only way to show the gate
+ * did not merely recover.
+ */
+const ALL_CARRIER_PRECISION_CONTROLS: readonly PrecisionControl[] = [
+  { text: 'Nothing at all has been booked yet.', utterance: 'Is my meeting booked?', hebrew: false },
+  { text: 'Nothing at all is booked yet.', utterance: 'Is my meeting booked?', hebrew: false },
+  {
+    text: 'I cannot see anything at all in the diary for you.',
+    utterance: 'Can you see my meeting?',
+    hebrew: false,
+  },
+  { text: 'Nothing else has been confirmed.', utterance: 'Anything else confirmed?', hebrew: false },
+  { text: "I don't have your meeting booked.", utterance: 'Is my meeting booked?', hebrew: false },
+  { text: 'Nothing in the diary is booked.', utterance: 'Is anything in the diary?', hebrew: false },
+  { text: 'None of your meetings are booked.', utterance: 'Are my meetings booked?', hebrew: false },
+  { text: 'לא צריך כלום הפגישה לא נקבעה עדיין.', utterance: 'הפגישה נקבעה?', hebrew: true },
+  { text: 'לא צריך כלום עדיין לא קבעתי כלום.', utterance: 'הפגישה נקבעה?', hebrew: true },
+  // And the honest wording the finding paired with the leaks, which stays in this
+  // list because it is the § 17 constraint and the § 18 fix must not have quietly
+  // broken it.
+  { text: 'אין בעיה הפגישה לא נקבעה עדיין.', utterance: 'הפגישה נקבעה?', hebrew: true },
+];
+
+const ALL_CARRIER_HONEST_INTENTIONS: readonly string[] = [
+  'Let me get your meeting booked for Thursday.',
+  "We haven't been able to get your meeting booked yet.",
+  'I need to get your callback booked first.',
+  'Once your meeting is booked I will let you know.',
+];
+
 describe('an unsupported claim behind an all-carrier reassurance filler', () => {
   const HONEST_EN = 'Nothing is booked yet. What time works for you?';
   const HONEST_HE = 'עדיין לא קבעתי כלום. באיזו שעה נוח לך?';
@@ -1644,39 +1727,10 @@ describe('an unsupported claim behind an all-carrier reassurance filler', () => 
     expect(harness.llm.callCount).toBe(2);
   });
 
-  it('and QA-4 precision controls are released in ONE provider call', async () => {
-    // THE CONSTRAINT THE FINDING NAMED BEFORE IT NAMED A DIRECTION. The naive way
-    // to close the leaks above is to delete `at`, `all`, `else`, `more`, `כלום`
-    // and `יותר` from `suppressionCarriers`, and that turns every sentence below
-    // into a blocked truthful answer to "is my meeting booked?" - which is the
-    // failure mode that gets a gate switched off.
-    //
-    // SCRIPTED WITH NO SECOND ENTRY, so a regeneration fails the run outright
-    // rather than quietly consuming an attempt. That is the only way to show the
-    // gate did not merely recover.
-    const CONTROLS: readonly { readonly text: string; readonly utterance: string; readonly hebrew: boolean }[] = [
-      { text: 'Nothing at all has been booked yet.', utterance: 'Is my meeting booked?', hebrew: false },
-      { text: 'Nothing at all is booked yet.', utterance: 'Is my meeting booked?', hebrew: false },
-      {
-        text: 'I cannot see anything at all in the diary for you.',
-        utterance: 'Can you see my meeting?',
-        hebrew: false,
-      },
-      { text: 'Nothing else has been confirmed.', utterance: 'Anything else confirmed?', hebrew: false },
-      { text: "I don't have your meeting booked.", utterance: 'Is my meeting booked?', hebrew: false },
-      { text: 'Nothing in the diary is booked.', utterance: 'Is anything in the diary?', hebrew: false },
-      { text: 'None of your meetings are booked.', utterance: 'Are my meetings booked?', hebrew: false },
-      { text: 'לא צריך כלום הפגישה לא נקבעה עדיין.', utterance: 'הפגישה נקבעה?', hebrew: true },
-      { text: 'לא צריך כלום עדיין לא קבעתי כלום.', utterance: 'הפגישה נקבעה?', hebrew: true },
-      // And the honest wording the finding paired with the leaks, which stays in
-      // this list because it is the § 17 constraint and the § 18 fix must not
-      // have quietly broken it.
-      { text: 'אין בעיה הפגישה לא נקבעה עדיין.', utterance: 'הפגישה נקבעה?', hebrew: true },
-    ];
-
-    for (const control of CONTROLS) {
+  for (const [index, control] of ALL_CARRIER_PRECISION_CONTROLS.entries()) {
+    it(`and the QA-4 precision control is released in ONE provider call: ${controlLabel(control)}`, async () => {
       const ran = await run(
-        `gate-all-carrier-control-${CONTROLS.indexOf(control)}`,
+        `gate-all-carrier-control-${index}`,
         [{ assistantText: control.text }],
         control.utterance,
         control.hebrew ? { world: JERUSALEM } : {},
@@ -1685,25 +1739,18 @@ describe('an unsupported claim behind an all-carrier reassurance filler', () => 
       expect(ran.turn.claimGate.releases.at(-1)?.outcome, control.text).toBe('NO_MATERIAL_CLAIM');
       expect(await persistedAgentText(ran), control.text).toEqual([control.text]);
       expect(ran.harness.llm.callCount, control.text).toBe(1);
-    }
-  });
+    });
+  }
 
-  it('and the honest INTENTIONS that name the object are released in ONE provider call too', async () => {
-    // The other precision axis the § 18 scan touches: a VERB between the negator
-    // and the noun phrase makes that phrase an OBJECT rather than a new subject.
-    // These differ from `Not at all meeting booked for Thursday at 2pm.` only in
-    // that a verb stands there, so if the scan ever stops distinguishing the two
-    // this fails on the honest wording rather than on the false one.
-    const CONTROLS = [
-      'Let me get your meeting booked for Thursday.',
-      "We haven't been able to get your meeting booked yet.",
-      'I need to get your callback booked first.',
-      'Once your meeting is booked I will let you know.',
-    ];
-
-    for (const control of CONTROLS) {
+  // The other precision axis the § 18 scan touches: a VERB between the negator and
+  // the noun phrase makes that phrase an OBJECT rather than a new subject. These
+  // differ from `Not at all meeting booked for Thursday at 2pm.` only in that a verb
+  // stands there, so if the scan ever stops distinguishing the two this fails on the
+  // honest wording rather than on the false one.
+  for (const [index, control] of ALL_CARRIER_HONEST_INTENTIONS.entries()) {
+    it(`and the honest INTENTION that names the object is released in ONE provider call too: ${JSON.stringify(control)}`, async () => {
       const ran = await run(
-        `gate-all-carrier-intention-${CONTROLS.indexOf(control)}`,
+        `gate-all-carrier-intention-${index}`,
         [{ assistantText: control }],
         'Where are we with the booking?',
       );
@@ -1711,8 +1758,8 @@ describe('an unsupported claim behind an all-carrier reassurance filler', () => 
       expect(ran.turn.claimGate.releases.at(-1)?.outcome, control).toBe('NO_MATERIAL_CLAIM');
       expect(await persistedAgentText(ran), control).toEqual([control]);
       expect(ran.harness.llm.callCount, control).toBe(1);
-    }
-  });
+    });
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -1823,6 +1870,35 @@ const SPLIT_FRAME_LEAKS: readonly {
     reason: 'NO_MATCHING_EFFECT',
     utterance: 'Thanks for sorting that.',
   },
+];
+
+/**
+ * THE CONSTRAINT THE FINDING NAMED BEFORE IT NAMED A DIRECTION: whatever crosses a
+ * cut for DETECTION must not also cross it for SUPPRESSION. Every sentence here is
+ * a truthful one with a terminator inside it, and each is the wording a model is
+ * SUPPOSED to produce when nothing is booked.
+ *
+ * EACH IS SCRIPTED WITH NO SECOND ENTRY, so a regeneration fails the run outright
+ * rather than quietly consuming an attempt.
+ */
+const SPLIT_FRAME_PRECISION_CONTROLS: readonly PrecisionControl[] = [
+  { text: 'Nothing is\nbooked yet.', utterance: 'Is my meeting booked?', hebrew: false },
+  { text: 'Nothing is\r\nbooked yet.', utterance: 'Is my meeting booked?', hebrew: false },
+  { text: 'Nothing has been\nbooked yet.', utterance: 'Is my meeting booked?', hebrew: false },
+  { text: 'Your meeting is not\nbooked yet.', utterance: 'Is my meeting booked?', hebrew: false },
+  { text: 'Is your meeting\nbooked?', utterance: 'Where are we?', hebrew: false },
+  { text: 'Shall I get that\nbooked for you?', utterance: 'Can you book it?', hebrew: false },
+  { text: 'Let me get your meeting\nbooked for Thursday.', utterance: 'Can you book it?', hebrew: false },
+  { text: 'Nothing is arranged yet.\nWhat time would suit you?', utterance: 'Is it arranged?', hebrew: false },
+  { text: '- nothing is booked yet\n- what time would suit you?', utterance: 'Where are we?', hebrew: false },
+  { text: 'There is nothing you need to do, your meeting is not booked yet.', utterance: 'Where are we?', hebrew: false },
+  { text: 'Let me have your meeting booked.', utterance: 'Can you book it?', hebrew: false },
+  { text: 'Nothing\nis\nbooked yet.', utterance: 'Is my meeting booked?', hebrew: false },
+  { text: '1. nothing is booked yet\n2. what time would suit you?', utterance: 'Where are we?', hebrew: false },
+  { text: 'Let me get\nyour meeting\nbooked for Thursday.', utterance: 'Can you book it?', hebrew: false },
+  { text: '**Nothing** is booked yet.', utterance: 'Is my meeting booked?', hebrew: false },
+  { text: 'הפגישה\nלא נקבעה עדיין.', utterance: 'הפגישה נקבעה?', hebrew: true },
+  { text: 'עוד לא קבעתי כלום.\nמה השעה שמתאימה לך?', utterance: 'הפגישה נקבעה?', hebrew: true },
 ];
 
 describe('an unsupported claim with a sentence terminator inside the frame', () => {
@@ -1938,37 +2014,10 @@ describe('an unsupported claim with a sentence terminator inside the frame', () 
     expect(harness.llm.callCount).toBe(2);
   });
 
-  it('and the § 19 precision controls are released in ONE provider call', async () => {
-    // THE CONSTRAINT THE FINDING NAMED BEFORE IT NAMED A DIRECTION: whatever crosses
-    // a cut for DETECTION must not also cross it for SUPPRESSION. Every sentence
-    // below is a truthful one with a terminator inside it, and each is the wording a
-    // model is SUPPOSED to produce when nothing is booked.
-    //
-    // SCRIPTED WITH NO SECOND ENTRY, so a regeneration fails the run outright rather
-    // than quietly consuming an attempt.
-    const CONTROLS: readonly { readonly text: string; readonly utterance: string; readonly hebrew: boolean }[] = [
-      { text: 'Nothing is\nbooked yet.', utterance: 'Is my meeting booked?', hebrew: false },
-      { text: 'Nothing is\r\nbooked yet.', utterance: 'Is my meeting booked?', hebrew: false },
-      { text: 'Nothing has been\nbooked yet.', utterance: 'Is my meeting booked?', hebrew: false },
-      { text: 'Your meeting is not\nbooked yet.', utterance: 'Is my meeting booked?', hebrew: false },
-      { text: 'Is your meeting\nbooked?', utterance: 'Where are we?', hebrew: false },
-      { text: 'Shall I get that\nbooked for you?', utterance: 'Can you book it?', hebrew: false },
-      { text: 'Let me get your meeting\nbooked for Thursday.', utterance: 'Can you book it?', hebrew: false },
-      { text: 'Nothing is arranged yet.\nWhat time would suit you?', utterance: 'Is it arranged?', hebrew: false },
-      { text: '- nothing is booked yet\n- what time would suit you?', utterance: 'Where are we?', hebrew: false },
-      { text: 'There is nothing you need to do, your meeting is not booked yet.', utterance: 'Where are we?', hebrew: false },
-      { text: 'Let me have your meeting booked.', utterance: 'Can you book it?', hebrew: false },
-      { text: 'Nothing\nis\nbooked yet.', utterance: 'Is my meeting booked?', hebrew: false },
-      { text: '1. nothing is booked yet\n2. what time would suit you?', utterance: 'Where are we?', hebrew: false },
-      { text: 'Let me get\nyour meeting\nbooked for Thursday.', utterance: 'Can you book it?', hebrew: false },
-      { text: '**Nothing** is booked yet.', utterance: 'Is my meeting booked?', hebrew: false },
-      { text: 'הפגישה\nלא נקבעה עדיין.', utterance: 'הפגישה נקבעה?', hebrew: true },
-      { text: 'עוד לא קבעתי כלום.\nמה השעה שמתאימה לך?', utterance: 'הפגישה נקבעה?', hebrew: true },
-    ];
-
-    for (const control of CONTROLS) {
+  for (const [index, control] of SPLIT_FRAME_PRECISION_CONTROLS.entries()) {
+    it(`and the § 19 precision control is released in ONE provider call: ${controlLabel(control)}`, async () => {
       const ran = await run(
-        `gate-split-frame-control-${CONTROLS.indexOf(control)}`,
+        `gate-split-frame-control-${index}`,
         [{ assistantText: control.text }],
         control.utterance,
         control.hebrew ? { world: JERUSALEM } : {},
@@ -1977,8 +2026,8 @@ describe('an unsupported claim with a sentence terminator inside the frame', () 
       expect(ran.turn.claimGate.releases.at(-1)?.outcome, control.text).toBe('NO_MATERIAL_CLAIM');
       expect(await persistedAgentText(ran), control.text).toEqual([control.text]);
       expect(ran.harness.llm.callCount, control.text).toBe(1);
-    }
-  });
+    });
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -2295,6 +2344,44 @@ const CLITIC_LEAKS: readonly {
   },
 ];
 
+/**
+ * THE CONSTRAINT THE FINDING NAMED BEFORE IT NAMED A DIRECTION. These are the
+ * fourteen honest controls independent QA re-verified, verbatim, plus the
+ * apostrophe wordings the new reading could plausibly over-read. Every one is a
+ * sentence the prompt clauses ASK the model to produce.
+ *
+ * EACH IS SCRIPTED WITH NO SECOND ENTRY, so a regeneration fails the run outright
+ * rather than quietly consuming an attempt.
+ */
+const CLITIC_AB_CONTROLS: readonly PrecisionControl[] = [
+  { text: 'Your meeting is booked for Thursday at 2pm.', utterance: 'Thanks for sorting that.', hebrew: false },
+  { text: 'ביטלתי את הפגישה שלך.', utterance: 'תודה שביטלת.', hebrew: true },
+];
+
+const CLITIC_PRECISION_CONTROLS: readonly PrecisionControl[] = [
+  { text: 'Nothing is booked yet.', utterance: 'Is my meeting booked?', hebrew: false },
+  { text: 'Nothing at all has been booked yet.', utterance: 'Is my meeting booked?', hebrew: false },
+  { text: 'I have not booked anything.', utterance: 'Is my meeting booked?', hebrew: false },
+  { text: 'Let me get that booked for you.', utterance: 'Can you book it?', hebrew: false },
+  { text: 'I cannot give you a confirmation number for that.', utterance: 'What is my reference?', hebrew: false },
+  { text: 'Would you like me to get that booked for Thursday?', utterance: 'Can you book it?', hebrew: false },
+  { text: "Your meeting isn't booked yet.", utterance: 'Is my meeting booked?', hebrew: false },
+  { text: "I haven't put anything in the diary yet.", utterance: 'Is my meeting booked?', hebrew: false },
+  { text: 'Let me get you in the diary for Thursday.', utterance: 'Can you book it?', hebrew: false },
+  { text: 'I will take it out of the diary.', utterance: 'Please cancel it.', hebrew: false },
+  { text: 'הפגישה לא נקבעה עדיין.', utterance: 'הפגישה נקבעה?', hebrew: true },
+  { text: 'אין פגישה ביומן.', utterance: 'הפגישה נקבעה?', hebrew: true },
+  { text: 'לא קבעתי כלום עדיין.', utterance: 'הפגישה נקבעה?', hebrew: true },
+  { text: 'אני יכול לקבוע לך פגישה למחר.', utterance: 'אפשר לקבוע פגישה?', hebrew: true },
+  // ---- and the apostrophe wordings the new reading has to NOT over-read ----
+  { text: "Your meeting's not booked yet.", utterance: 'Is my meeting booked?', hebrew: false },
+  { text: "Nothing's booked yet.", utterance: 'Is my meeting booked?', hebrew: false },
+  { text: "Let's get that booked for you.", utterance: 'Can you book it?', hebrew: false },
+  { text: "Here's what I can do - let me check the diary for Thursday.", utterance: 'Where are we?', hebrew: false },
+  { text: "Your meeting's booked for Thursday?", utterance: 'Where are we?', hebrew: false },
+  { text: "That's not something I can do without a time from you.", utterance: 'Can you book it?', hebrew: false },
+];
+
 describe('an unsupported claim whose copula is contracted onto a noun, or whose number was never declared', () => {
   const HONEST_EN = 'Nothing is arranged yet. What time would suit you?';
   const HONEST_HE = 'עדיין לא קבעתי כלום. באיזו שעה נוח לך?';
@@ -2339,21 +2426,16 @@ describe('an unsupported claim whose copula is contracted onto a noun, or whose 
     });
   }
 
-  it('and BOTH A/B controls - the spelled-out copula and the singular verb - are blocked in the same way', async () => {
-    // THE OTHER HALF OF THE A/B, and it is what makes this a tokenisation defect and
-    // a paradigm gap rather than two lexicon misses. Both of these were withheld and
-    // regenerated throughout while A1 and B5 were released and persisted. If a
-    // contracted row ever fails again and these still pass, the gate's verdict
-    // depends on an apostrophe and on a verb ending.
-    const CONTROLS: readonly { readonly text: string; readonly utterance: string; readonly hebrew: boolean }[] = [
-      { text: 'Your meeting is booked for Thursday at 2pm.', utterance: 'Thanks for sorting that.', hebrew: false },
-      { text: 'ביטלתי את הפגישה שלך.', utterance: 'תודה שביטלת.', hebrew: true },
-    ];
-
-    for (const control of CONTROLS) {
+  // THE OTHER HALF OF THE A/B, and it is what makes this a tokenisation defect and a
+  // paradigm gap rather than two lexicon misses. Both of these were withheld and
+  // regenerated throughout while A1 and B5 were released and persisted. If a
+  // contracted row ever fails again and these still pass, the gate's verdict depends
+  // on an apostrophe and on a verb ending.
+  for (const [index, control] of CLITIC_AB_CONTROLS.entries()) {
+    it(`and the A/B control - the spelled-out copula or the singular verb - is blocked in the same way: ${controlLabel(control)}`, async () => {
       const honest = control.hebrew ? HONEST_HE : HONEST_EN;
       const ran = await run(
-        `gate-clitic-control-${CONTROLS.indexOf(control)}`,
+        `gate-clitic-control-${index}`,
         [{ assistantText: control.text }, { assistantText: honest }],
         control.utterance,
         control.hebrew ? { world: JERUSALEM } : {},
@@ -2361,8 +2443,8 @@ describe('an unsupported claim whose copula is contracted onto a noun, or whose 
       expect(ran.turn.claimGate.releases[0]?.outcome, control.text).toBe('CORRECTED_AFTER_REGENERATION');
       expect(ran.turn.assistantText, control.text).toBe(honest);
       expect(await persistedAgentText(ran), control.text).toEqual([honest]);
-    }
-  });
+    });
+  }
 
   it('and a TRUE claim with the contraction still in it is released byte-identical', async () => {
     // THE PRECISION DIRECTION over the LEAKING shape itself. Closing a fail-open
@@ -2401,41 +2483,10 @@ describe('an unsupported claim whose copula is contracted onto a noun, or whose 
     expect(harness.llm.callCount).toBe(2);
   });
 
-  it('and the § 21 precision controls are released in ONE provider call', async () => {
-    // THE CONSTRAINT THE FINDING NAMED BEFORE IT NAMED A DIRECTION. These are the
-    // fourteen honest controls independent QA re-verified, verbatim, plus the
-    // apostrophe wordings the new reading could plausibly over-read. Every one is a
-    // sentence the prompt clauses ASK the model to produce.
-    //
-    // SCRIPTED WITH NO SECOND ENTRY, so a regeneration fails the run outright rather
-    // than quietly consuming an attempt.
-    const CONTROLS: readonly { readonly text: string; readonly utterance: string; readonly hebrew: boolean }[] = [
-      { text: 'Nothing is booked yet.', utterance: 'Is my meeting booked?', hebrew: false },
-      { text: 'Nothing at all has been booked yet.', utterance: 'Is my meeting booked?', hebrew: false },
-      { text: 'I have not booked anything.', utterance: 'Is my meeting booked?', hebrew: false },
-      { text: 'Let me get that booked for you.', utterance: 'Can you book it?', hebrew: false },
-      { text: 'I cannot give you a confirmation number for that.', utterance: 'What is my reference?', hebrew: false },
-      { text: 'Would you like me to get that booked for Thursday?', utterance: 'Can you book it?', hebrew: false },
-      { text: "Your meeting isn't booked yet.", utterance: 'Is my meeting booked?', hebrew: false },
-      { text: "I haven't put anything in the diary yet.", utterance: 'Is my meeting booked?', hebrew: false },
-      { text: 'Let me get you in the diary for Thursday.', utterance: 'Can you book it?', hebrew: false },
-      { text: 'I will take it out of the diary.', utterance: 'Please cancel it.', hebrew: false },
-      { text: 'הפגישה לא נקבעה עדיין.', utterance: 'הפגישה נקבעה?', hebrew: true },
-      { text: 'אין פגישה ביומן.', utterance: 'הפגישה נקבעה?', hebrew: true },
-      { text: 'לא קבעתי כלום עדיין.', utterance: 'הפגישה נקבעה?', hebrew: true },
-      { text: 'אני יכול לקבוע לך פגישה למחר.', utterance: 'אפשר לקבוע פגישה?', hebrew: true },
-      // ---- and the apostrophe wordings the new reading has to NOT over-read ----
-      { text: "Your meeting's not booked yet.", utterance: 'Is my meeting booked?', hebrew: false },
-      { text: "Nothing's booked yet.", utterance: 'Is my meeting booked?', hebrew: false },
-      { text: "Let's get that booked for you.", utterance: 'Can you book it?', hebrew: false },
-      { text: "Here's what I can do - let me check the diary for Thursday.", utterance: 'Where are we?', hebrew: false },
-      { text: "Your meeting's booked for Thursday?", utterance: 'Where are we?', hebrew: false },
-      { text: "That's not something I can do without a time from you.", utterance: 'Can you book it?', hebrew: false },
-    ];
-
-    for (const control of CONTROLS) {
+  for (const [index, control] of CLITIC_PRECISION_CONTROLS.entries()) {
+    it(`and the § 21 precision control is released in ONE provider call: ${controlLabel(control)}`, async () => {
       const ran = await run(
-        `gate-clitic-precision-${CONTROLS.indexOf(control)}`,
+        `gate-clitic-precision-${index}`,
         [{ assistantText: control.text }],
         control.utterance,
         control.hebrew ? { world: JERUSALEM } : {},
@@ -2444,8 +2495,8 @@ describe('an unsupported claim whose copula is contracted onto a noun, or whose 
       expect(ran.turn.claimGate.releases.at(-1)?.outcome, control.text).toBe('NO_MATERIAL_CLAIM');
       expect(await persistedAgentText(ran), control.text).toEqual([control.text]);
       expect(ran.harness.llm.callCount, control.text).toBe(1);
-    }
-  });
+    });
+  }
 });
 
 // ---------------------------------------------------------------------------

@@ -241,12 +241,14 @@ describe('a wrong day or hour in a phrase the readers cannot parse', () => {
     expect(oracleFindings(F20_CONTROL_TRUE_THURSDAY_3PM, REAL)).toEqual([]);
   });
 
-  it('and a truthful reply that names NO day and NO hour still costs no regeneration', async () => {
-    // § 20.6's constraint, end to end. The fix may not be made by turning
-    // `day === null && time === null` into `ok: false`: that regenerates every
-    // truthful reply that does not restate the slot. Three wordings, because one
-    // could pass for a reason peculiar to its family.
-    for (const honest of ['Your meeting is booked.', "You're all set.", 'That is all sorted.']) {
+  // § 20.6's constraint, end to end. The fix may not be made by turning
+  // `day === null && time === null` into `ok: false`: that regenerates every
+  // truthful reply that does not restate the slot. Three wordings, because one could
+  // pass for a reason peculiar to its family - and ONE VITEST CASE EACH, because a
+  // batched `it` multiplies three contention-sensitive harness builds into a single
+  // 30 000 ms budget (see `docs/MISSION_2G_VERIFIER_ROUND.md` § 11).
+  for (const honest of ['Your meeting is booked.', "You're all set.", 'That is all sorted.']) {
+    it(`and a truthful reply that names NO day and NO hour still costs no regeneration: ${JSON.stringify(honest)}`, async () => {
       const harness = await createSliceHarness({ label: `gate-temporal-null-${honest.length}` });
       harnesses.push(harness);
       const conversation = await harness.startConversation();
@@ -261,8 +263,8 @@ describe('a wrong day or hour in a phrase the readers cannot parse', () => {
       expect(turn.assistantText, honest).toBe(honest);
       expect(turn.claimGate.releases.at(-1)?.outcome, honest).toBe('SUPPORTED');
       expect(harness.llm.callCount, honest).toBe(2);
-    }
-  });
+    });
+  }
 });
 
 // ---------------------------------------------------------------------------

@@ -128,6 +128,71 @@ describe('sequence numbering', () => {
     expect(chain).toHaveLength(12);
     expect(chain.map((event) => event.sequence)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
   });
+
+  /**
+   * THE REGRESSION TEST FOR AN INTERMITTENT FAILURE THAT WAS REAL.
+   *
+   * WHAT FAILED, AND HOW IT WAS CAUGHT
+   * -------------------------------------------------------------------------
+   * `never reuses a sequence number under concurrent writes` above fires TWELVE
+   * concurrent `record()` calls at ONE correlationId. It was observed failing
+   * inside a loaded full-suite run with
+   *
+   *     Failed to allocate an audit sequence for correlation corr-concurrent
+   *     after 8 attempts
+   *
+   * and passing on a rerun. `docs/MISSION_2G_VERIFIER_ROUND.md` § 11 records the
+   * exact command and conditions.
+   *
+   * THE ROOT CAUSE, MECHANICALLY
+   * -------------------------------------------------------------------------
+   * Allocation was optimistic - read `max(sequence)`, insert `max + 1`, retry on
+   * the unique-constraint violation - with a FIXED budget of 8 attempts. The
+   * number of retries a writer needs is not a constant: it is a function of how
+   * many writers are contending. In the fully-contended interleaving all N read
+   * the same max and all try the same slot; one commits and N-1 collide; the
+   * survivors re-read and collide again. The LAST writer to win therefore needs N
+   * attempts. With N = 12 and a budget of 8, the allocator provably could not
+   * finish - so the failure was not bad luck, it was a budget smaller than the
+   * contention the caller creates. Whether the interleaving got that bad depended
+   * on host load, which is why it was intermittent.
+   *
+   * WHY THIS TEST USES MORE WRITERS THAN THE ONE ABOVE
+   * -------------------------------------------------------------------------
+   * 24 is three times the old budget of 8, so this test cannot be satisfied by
+   * enlarging that constant - which is the fix this repository must not accept.
+   * It passes only because the allocator's bound is now "keep going while the
+   * chain is demonstrably advancing" rather than a fixed count. If somebody
+   * reinstates a fixed budget, this goes red deterministically rather than one run
+   * in twenty.
+   */
+  it('allocates a gapless chain for far more concurrent writers than any fixed retry budget', async () => {
+    const fixtures = await setup('audit-concurrent-wide');
+    const correlationId = 'corr-concurrent-wide';
+    const writers = 24;
+
+    await Promise.all(
+      Array.from({ length: writers }, (_unused, index) =>
+        harness.db.audit.record({
+          type: 'AGENT_DECISION',
+          organizationId: fixtures.organization.id,
+          correlationId,
+          summary: `wide concurrent ${index}`,
+          detailJson: { index },
+        }),
+      ),
+    );
+
+    const chain = await harness.db.audit.listByCorrelationId(correlationId);
+    expect(chain, 'every writer must land: an audit write may never be dropped').toHaveLength(writers);
+    // Gapless and duplicate-free 1..N. The unique constraint guarantees no
+    // duplicate; this asserts no writer was skipped either.
+    expect(chain.map((event) => event.sequence)).toEqual(
+      Array.from({ length: writers }, (_unused, index) => index + 1),
+    );
+    // And every summary survived, so no write was silently replaced by a retry.
+    expect(new Set(chain.map((event) => event.summary)).size).toBe(writers);
+  });
 });
 
 describe('occurredAt and the injected clock', () => {

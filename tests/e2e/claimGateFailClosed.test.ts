@@ -554,6 +554,30 @@ describe('a claim only the SEMANTIC layer sees is blocked on the real path too',
 // 4. THE VERIFIER CANNOT APPROVE, EXECUTE OR CREATE ANYTHING
 // ---------------------------------------------------------------------------
 
+/**
+ * Every verdict shape a verifier can hand back, including the two that would be
+ * most dangerous if the gate trusted them: a wrongly-clean CLASSIFIED with no
+ * claims, and a maximally confident one that asserts a COMPLETED meeting.
+ */
+const NO_AUTHORITY_VERDICTS: readonly SemanticClaimVerdict[] = [
+  ...SEMANTIC_CLAIM_FAILURE_KINDS.map((kind) => ({ kind, reason: 'r' }) as SemanticClaimVerdict),
+  classifiedWithNoClaims(),
+  {
+    kind: 'CLASSIFIED',
+    claims: [
+      {
+        assertsEffect: true,
+        effectFamily: 'MEETING',
+        status: 'COMPLETED',
+        whenPhrase: null,
+        identifier: null,
+        confidence: 1,
+      },
+    ],
+    modelId: 'maximally-confident-double',
+  },
+];
+
 describe('nothing on the real path lets the verifier approve, execute or create anything', () => {
   it('a verifier that says a FLAGGED text is clean still cannot release it', async () => {
     // Cross-layer proof (b), on the real path. The corpus proves it over 900
@@ -607,33 +631,21 @@ describe('nothing on the real path lets the verifier approve, execute or create 
     expect(counts.meetings + counts.futureActions + counts.calls).toBe(0);
   });
 
-  it('and no verifier verdict can ever produce a domain row, for any variant', async () => {
-    // The Founder rule as one measurement: "it must NEVER execute an action,
-    // approve an action, create state, override validation." Four failures, a
-    // wrongly-clean classification and a maximally confident one that claims
-    // every family - none of them writes anything but the handover Task.
-    const verdicts: readonly SemanticClaimVerdict[] = [
-      ...SEMANTIC_CLAIM_FAILURE_KINDS.map(
-        (kind) => ({ kind, reason: 'r' }) as SemanticClaimVerdict,
-      ),
-      classifiedWithNoClaims(),
-      {
-        kind: 'CLASSIFIED',
-        claims: [
-          {
-            assertsEffect: true,
-            effectFamily: 'MEETING',
-            status: 'COMPLETED',
-            whenPhrase: null,
-            identifier: null,
-            confidence: 1,
-          },
-        ],
-        modelId: 'maximally-confident-double',
-      },
-    ];
-
-    for (const [index, verdict] of verdicts.entries()) {
+  // The Founder rule as one measurement: "it must NEVER execute an action, approve an
+  // action, create state, override validation." Four failures, a wrongly-clean
+  // classification and a maximally confident one that claims every family - none of
+  // them writes anything but the handover Task.
+  //
+  // ONE VITEST CASE PER VERDICT. Each variant builds its own slice harness - SQLite
+  // file, Prisma client, seeded world - and runs a full gated turn with the
+  // regeneration budget exhausted, so one variant costs ~1.8 s under suite load.
+  // Batched into a single `it` the six of them measured 22.0 s against the default
+  // 30 000 ms `testTimeout`; see `docs/MISSION_2G_VERIFIER_ROUND.md` § 11. No
+  // assertion changes - each verdict still gets the same domain-row check.
+  for (const [index, verdict] of NO_AUTHORITY_VERDICTS.entries()) {
+    it(`and no verifier verdict can ever produce a domain row: ${verdict.kind}${
+      verdict.kind === 'CLASSIFIED' && verdict.claims.length > 0 ? ' (maximally confident)' : ''
+    }`, async () => {
       const ran = await runTurn(
         `fc-authority-rows-${index}`,
         FALSE_CLAIM,
@@ -650,7 +662,21 @@ describe('nothing on the real path lets the verifier approve, execute or create 
         },
         `verdict ${index} (${verdict.kind}) wrote a domain row`,
       ).toEqual({ meetings: 0, futureActions: 0, qualificationStates: 0, calls: 0, callOutcomes: 0 });
+    });
+  }
+
+  it('and the variant list really does cover every failure kind plus both CLASSIFIED shapes', () => {
+    // The guard the split needs: with one `it` per verdict, a variant silently
+    // dropped from the list would no longer shrink a visible loop - it would just
+    // stop being a test. This pins the population the loop above enumerates.
+    expect(NO_AUTHORITY_VERDICTS.length).toBe(SEMANTIC_CLAIM_FAILURE_KINDS.length + 2);
+    for (const kind of SEMANTIC_CLAIM_FAILURE_KINDS) {
+      expect(NO_AUTHORITY_VERDICTS.map((verdict) => verdict.kind)).toContain(kind);
     }
+    const classified = NO_AUTHORITY_VERDICTS.filter((verdict) => verdict.kind === 'CLASSIFIED');
+    expect(classified).toHaveLength(2);
+    expect(classified.some((verdict) => verdict.kind === 'CLASSIFIED' && verdict.claims.length === 0)).toBe(true);
+    expect(classified.some((verdict) => verdict.kind === 'CLASSIFIED' && verdict.claims.length > 0)).toBe(true);
   });
 });
 
