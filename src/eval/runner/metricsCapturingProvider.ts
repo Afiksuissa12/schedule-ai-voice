@@ -169,14 +169,22 @@ export function foldTurnMetrics(calls: readonly CapturedCall[]): LlmTurnMetrics 
 
   const maxUtilization = max((m) => m.contextUtilization);
 
-  const health = present.reduce(
-    (acc, m) => ({
-      native: acc.native + (m.toolCallHealth?.native ?? 0),
-      recoveredFromText: acc.recoveredFromText + (m.toolCallHealth?.recoveredFromText ?? 0),
-      malformed: acc.malformed + (m.toolCallHealth?.malformed ?? 0),
-    }),
-    { native: 0, recoveredFromText: 0, malformed: 0 },
-  );
+  // One agent turn can issue SEVERAL provider calls, so the reasons are
+  // concatenated in call order across the turn - the same order the counts are
+  // summed in, which keeps `malformed` and `refusalReasons` describing the same
+  // events. Omitted when empty so a turn that refused nothing is unchanged.
+  const refusalReasons = present.flatMap((m) => m.toolCallHealth?.refusalReasons ?? []);
+  const health = {
+    ...present.reduce(
+      (acc, m) => ({
+        native: acc.native + (m.toolCallHealth?.native ?? 0),
+        recoveredFromText: acc.recoveredFromText + (m.toolCallHealth?.recoveredFromText ?? 0),
+        malformed: acc.malformed + (m.toolCallHealth?.malformed ?? 0),
+      }),
+      { native: 0, recoveredFromText: 0, malformed: 0 },
+    ),
+    ...(refusalReasons.length > 0 ? { refusalReasons } : {}),
+  };
 
   return {
     modelId: first.modelId,

@@ -915,10 +915,18 @@ export function toCompleteTurnResult(input: {
   const toolCalls = nativeCalls.length > 0 ? nativeCalls : (recovery?.toolCalls ?? []);
   const text = recovery ? recovery.remainingText : assembled.text;
 
+  // `refusalReasons` carries the SAME strings as the top-level `refusals`, which
+  // `LocalLlmProvider` strips on the way out. Both, deliberately: `refusals` is
+  // the CLI channel (`llm:smoke`, `llm:mapcheck`) and this one rides inside
+  // `metrics` so the eval runner can render a refusal per turn without the port
+  // growing a second top-level key. Omitted entirely when there were none, so a
+  // clean turn's metrics are byte-identical to before. See ports/llm.ts.
+  const refusalReasons = recovery?.refusals ?? [];
   const health: LlmToolCallHealth = {
     native: nativeCalls.length,
     recoveredFromText: recovery?.recovered ?? 0,
     malformed: recovery?.malformed ?? 0,
+    ...(refusalReasons.length > 0 ? { refusalReasons: [...refusalReasons] } : {}),
   };
 
   return {

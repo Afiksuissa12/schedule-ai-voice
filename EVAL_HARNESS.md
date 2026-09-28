@@ -1126,20 +1126,204 @@ Verified by `tests/eval/evidenceCompatibility.test.ts`:
 
 Two things Mission 2D found, scoped and deliberately not done:
 
-1. **Refusals are not rendered in transcripts.** `src/eval/runner/transcript.ts` renders dispatched
-   calls and the dispatcher's verdict; the provider's `refusals` array reaches `llm:smoke` but never a
-   transcript. This mattered less before, because a refused action list stayed visible in the spoken
-   text. After the aya task's change that text is correctly removed — it is machine protocol, not
-   speech — so **the only remaining trace of a refused action-list element is the malformed counter.**
-   Fixing it means carrying `refusals` through `MetricsCapturingProvider` into `TurnRecord`, which is a
-   second structural change to what a recorded run contains in the same mission as the claim measure,
-   and it was judged the wrong trade. Every refusal reason is populated and unchanged, so the work is
-   cheap when it is taken.
+1. ~~**Refusals are not rendered in transcripts.**~~ **DONE in Mission 2D-R.** `src/eval/runner/transcript.ts`
+   renders dispatched calls and the dispatcher's verdict; the provider's `refusals` array reached
+   `llm:smoke` but never a transcript. This mattered less before, because a refused action list stayed
+   visible in the spoken text. After the aya task's change that text is correctly removed — it is
+   machine protocol, not speech — so **the only remaining trace of a refused action-list element was
+   the malformed counter.**
+
+   The reasons now travel inside `metrics.toolCallHealth.refusalReasons`, an **optional, additive**
+   field, and each turn renders `provider refused N tool-call-shaped span(s) before dispatch` followed
+   by one line per reason. It was put inside `metrics` rather than on `CompleteTurnResult` on purpose:
+   `LocalLlmProvider` deliberately strips the top-level `refusals` key as *"a diagnostic channel for
+   the CLIs, not part of the port"*, and `metrics` is where every other per-turn diagnostic already
+   lives. **It is a diagnostic — nothing branches on it.** A turn that refused nothing produces
+   byte-identical metrics and a byte-identical transcript to before.
+
+   **A second thing landed with it**, from `docs/MISSION_2D_AYA_ROOT_CAUSE.md` § 10: the transcript
+   renderer's argument truncation went from **400 characters to 4,000**
+   (`ARGUMENTS_RENDER_LIMIT`). 400 cost that report two determinate answers — `not-decision-maker` t1
+   and `price-objection-interrupt` t3 both lost their `urgency` value and are recorded INDETERMINATE
+   because of it (§ 5.1 there). 4,000 was chosen against the widest arguments object
+   `TOOL_DEFINITIONS` can legally produce — `update_qualification` with 20 rubric observations — and
+   still bounds a pathological generation. **It does not recover those two rows**, whose bytes were
+   never written; it means the next run records them.
 2. **`detectFabricatedTimestamps` only walks the top level of `argumentsJson`.** That is why aya's
    recorded 3.1% understates its real 12.3% (§ 9.7.3). Making it recurse is a **rubric** change, and
    landing it in the same mission as the provider change would make the two indistinguishable in the
    numbers — nobody could tell which one moved the gate. It should be the next rubric change, and it
    should land alone.
+
+---
+
+## 9.8 THE THREE-WAY TEMPLATE EXPERIMENT — stock qwen2.5, stock aya, and a corrected-template aya
+
+**What this run answers.** `docs/MISSION_2D_AYA_ROOT_CAUSE.md` § 14–§ 17 found, from the operator's own
+`ollama show` capture, that `aya-expanse:8b`'s chat template renders tool parameters as a Python stub
+carrying **only name, type and description** — so every `enum`, every `required` entry, all nested
+structure and all length and range bounds are **dropped before the model sees them**. `qwen2.5:7b-instruct`
+sends the whole JSON Schema. That predicts a specific signature, and the recorded evidence shows it:
+aya's **tool selection is 78.1%** (third of five, ordinary) while its **argument validity is 14.6%** (six
+times worse than the next-worst model). Selection needs the name and description, which its template
+passes; arguments need the enums, which its template destroys.
+
+**That is a hypothesis with one clean test, and this run is it.** Three columns:
+
+| Column | Tag | What it is |
+|---|---|---|
+| control (incumbent) | `qwen2.5:7b-instruct` | The configured default, whose template already sends the full schema. |
+| control (subject) | `aya-expanse:8b` | Stock aya, exactly as the registry ships it. **Do not skip this one** — it is what makes the third column mean anything. |
+| experiment | `m2b/aya-expanse-schema-tools:v1` | **Identical weights** to stock aya, with only the template's schema rendering corrected. |
+
+> **The experiment is NOT a deployment.** Nothing about this run changes a default.
+> `qwen2.5:7b-instruct` at `num_ctx` 16384 remains the configured English default either way
+> (`docs/DECISIONS.md`, `docs/MISSION_2D_AYA_ROOT_CAUSE.md` § 11 item 4).
+
+### 9.8.1 Create the tag — the operator's step, and nothing in the repository does it
+
+**No npm script, test, or CLI in this repository creates, pulls or runs this model.** The task that
+wrote the Modelfile was forbidden to call any model and did not; the tag has never been created or
+benchmarked by anyone. Everything below is unvalidated against a live runtime until you run it.
+
+```bash
+ollama create m2b/aya-expanse-schema-tools:v1 \
+  -f src/eval/models/modelfiles/aya-expanse-8b-schema-tools.Modelfile
+```
+
+**The stock tag is not modified by this.** `FROM aya-expanse:8b` *reads* the stock manifest;
+`ollama create` *writes a new one* under the new name. Confirm it if you like — the stock template
+before and after must be byte-identical:
+
+```bash
+ollama show aya-expanse:8b --template | sha256sum   # same before and after the create
+```
+
+> **LINE ENDINGS — check this on Windows.** This repository has no `.gitattributes`, so a checkout
+> on Windows may give the Modelfile **CRLF** endings. The `TEMPLATE """..."""` body is copied into
+> the model's manifest **verbatim**, so CRLF inside it puts `\r\n` into every prompt the model
+> receives, where the stock template has `\n`. That is a small fidelity difference, but it is a
+> difference in the *prompt bytes* in an experiment whose entire subject is prompt bytes — so
+> normalise before creating, and check:
+>
+> ```bash
+> file src/eval/models/modelfiles/aya-expanse-8b-schema-tools.Modelfile   # want "ASCII text", not "with CRLF line terminators"
+> ```
+>
+> If it reports CRLF, convert it (`dos2unix`, or `git config core.autocrlf input` and re-checkout)
+> **before** `ollama create`, and re-run § 9.8.2's template check afterwards.
+
+### 9.8.2 VERIFY THE TEMPLATE BEFORE SPENDING A BENCHMARK ON IT
+
+**Do this first. It takes one command and it is the one assumption the Modelfile could not check
+itself.** The corrected template renders each tool with `{{ .Function }}`, relying on Ollama marshalling
+a `ToolFunction` to JSON when a template prints it. That is **evidenced** — it is exactly what the stock
+`qwen2.5:7b-instruct` template does on this host and this Ollama, and that model's tool calls work — but
+evidenced by a sibling template is not verified on this tag.
+
+```bash
+ollama show m2b/aya-expanse-schema-tools:v1 --template
+```
+
+**Expect to see**, in the `## Available Tools` block:
+
+```
+{"type": "function", "function": {{ .Function }}}
+```
+
+and **no** `def ... -> List[Dict]`, no `$property.Type`, no `$property.Description`.
+
+**The real check is that a schema constraint reaches the model.** Issue one throwaway turn offering a
+tool with an enum and read the rendered prompt back — if `CONNECTED`, `VOICEMAIL`, `NO_ANSWER`, `BUSY`,
+`DECLINED`, `WRONG_NUMBER` and `FAILED` do not appear anywhere in it, **stop**: the template did not do
+what § 18.1 claims, the experiment has no meaning, and the finding to record is that
+`{{ .Function }}` does not marshal as expected on this Ollama version. Say so and do not spend the run.
+
+### 9.8.3 The protocol
+
+**Exactly § 9.7.2, with one changed step and one changed precondition.** Do not re-derive it; follow
+§ 9.7.2 and substitute:
+
+- **Precondition 2 becomes three tags plus the judges.** `npm run eval:models` must show all three
+  present. The two judges are `qwen2.5:7b-instruct` and `llama3.1:8b-instruct-q4_K_M`, so the llama tag
+  must be on the host even though it is not being benchmarked here.
+
+  `eval:pull` **will not** fetch the local tag and will not try — it prints
+  `LOCAL m2b/aya-expanse-schema-tools:v1 - not in any registry, so NOT pulled.` with the
+  `ollama create` line, and does **not** count it as a failure. `eval:models` reports it absent without
+  failing the inventory, for the same reason: it is opt-in. If you have not created it, create it now
+  (§ 9.8.1); nothing else will.
+
+- **Precondition 4, the fresh directory, is mandatory and is the same rule.** Never
+  `eval-output/` and never `eval-output-fair-20260927/` — both are committed read-only evidence and
+  `tests/eval/evidenceCompatibility.test.ts` and `tests/eval/rebenchmarkReadiness.test.ts` assert they
+  stay byte-identical:
+
+  ```bash
+  export EVAL_OUT_DIR="$PWD/eval-output-2dr-template-$(date +%Y%m%d)"
+  ```
+
+- **Steps 6–10 run three times, not twice**, one model at a time, unloading between each. The local tag
+  **must be named explicitly** — it is deliberately excluded from the default model list so that a host
+  which never created it is unaffected by its existence:
+
+  ```bash
+  npm run eval:run -- --model qwen2.5:7b-instruct            --num-ctx 16384 --force --skip-judge
+  npm run eval:run -- --model aya-expanse:8b                 --num-ctx 16384 --force --skip-judge
+  npm run eval:run -- --model m2b/aya-expanse-schema-tools:v1 --num-ctx 16384 --force --skip-judge
+  ```
+
+- **Then judging, `--force` OMITTED**, once per tag — § 9.4's rule is unchanged and is the step most
+  easily got wrong. Each summary must read `0 run, 26 skipped`:
+
+  ```bash
+  npm run eval:run -- --model qwen2.5:7b-instruct            --num-ctx 16384
+  npm run eval:run -- --model aya-expanse:8b                 --num-ctx 16384
+  npm run eval:run -- --model m2b/aya-expanse-schema-tools:v1 --num-ctx 16384
+  npm run eval:report
+  ```
+
+- **Record the host conditions for all three** with the same `runId` (§ 9.3). Three
+  `environment/<model-slug>.json` files sharing one `runId` is what makes them one comparison. The
+  slugs are `qwen2.5_7b-instruct`, `aya-expanse_8b` and `m2b_aya-expanse-schema-tools_v1`.
+
+- **`npm run eval:models` records the provenance.** `models.json` carries a `localOrigin` block for the
+  local tag — the Modelfile path, the unmodified base tag, and a one-line statement of what deviates —
+  so a result row for a locally-created model can never be mistaken for a published one's.
+
+### 9.8.4 What to read, and what would falsify the hypothesis
+
+Compare **column 3 against column 2**. Same weights, same corpus, same `num_ctx`, same host; the only
+difference is what the model was told about the schemas.
+
+| Dimension | Stock aya recorded | If the template was the cause | If it was not |
+|---|---|---|---|
+| `argumentValidity` | **14.6%** <sub>n=41</sub> | **rises sharply** — the enum and required defects were 10 of the 15 residual refusals | stays near 14.6% |
+| `record_call_outcome.outcome` | free text on **7 of 7** | sends `CONNECTED`/`VOICEMAIL`/… | still prose |
+| `transfer_to_human.urgency` | free text on **3 of 5** | sends `ROUTINE`/`URGENT` | still `NOT_URGENT`, `נמוך`, `לא דחוף` |
+| `toolSelectionAccuracy` | 78.1% <sub>n=54</sub> | **roughly unchanged** — the template always passed names and descriptions | — |
+| malformed (`directly-answer`) | **6** | **falls toward 0** — the Modelfile also stops instructing the model to call it | stays ~6 |
+| **fabricated-timestamp gate** | 2/65 recorded, **8/65 unwrapped** | **NO IMPROVEMENT EXPECTED** | — |
+
+**The last row is the important one and it is not a hedge.** The aya template injects **no date** and
+says nothing about time formats (`MISSION_2D_AYA_ROOT_CAUSE.md` § 9.3, § 16.1). § 7's six newly-visible
+instants are **date arithmetic**, which no template change addresses. A corrected template that left the
+gate failing would be **exactly the predicted result**, not a disappointment — and on the review's
+ranking rule a model that fails either gate still ranks below every model that passes both. **Correcting
+the template is not a route to shipping aya.** It is how we find out whether 14.6% was the model or the
+runtime, which is a question worth one run either way.
+
+Two confounds to keep in view when reading the result:
+
+1. **The Modelfile makes two changes, not one** — the schema rendering, and dropping the instruction to
+   call `directly-answer`. The `malformed` row is attributable to the second, everything else to the
+   first. If you need them separated, the Modelfile documents how to build a variant with only the
+   first.
+2. **`turnContext.ts`, `handlers.ts` and `contextAssembler.ts` changed in the same mission**
+   (`MISSION_2D_AYA_ROOT_CAUSE.md` § 9.2 — the year dropped from the disclosed local time). That
+   affects **every** model in this run equally, including both controls, so it does not confound the
+   three-way comparison — but it does mean **none of these three columns is turn-for-turn comparable
+   with `eval-output-fair-20260927/`.** § 9.7.1's reasoning applies unchanged and with one more entry.
 
 ---
 

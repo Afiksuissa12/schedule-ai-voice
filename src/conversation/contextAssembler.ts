@@ -278,9 +278,35 @@ export class ConversationContextAssembler {
 // Fact derivation. Pure functions, exported so a CLI can exercise them alone.
 // ---------------------------------------------------------------------------
 
-/** "Thursday 5 March 2026 at 15:00" in the contact's own zone. */
+/**
+ * "Thursday 5 March at 15:00" in the contact's own zone.
+ *
+ * NO YEAR, DELIBERATELY, AND THIS IS THE SITE THAT THE aya EVIDENCE ACTUALLY
+ * RAN ON. See docs/MISSION_2D_AYA_ROOT_CAUSE.md § 9.1b.
+ *
+ * `turnContext.ts` discloses the contact's local clock too, but when a
+ * `background` is present it REPLACES that legacy block rather than prefixing
+ * it, and the benchmark runs with the background on
+ * (`src/eval/runner/runModel.ts` passes `contextAssembly`). So the absolute date
+ * that `aya-expanse:8b` actually saw was rendered here - line 185 feeds
+ * `localNow`, and `contextAssembly.ts` speaks it as "Their local clock right now
+ * reads ...". Dropping the year in `turnContext.ts` alone would have left the
+ * exemplar exactly where the evidence found it.
+ *
+ * `day <month name> <year>` is the shape `FABRICATION_PATTERNS` calls
+ * `day-month-name-with-year`; all five patterns require a 4-digit year, so
+ * without one this is no longer a worked example of a format the same context
+ * window forbids.
+ *
+ * THE TRADEOFF, STATED. This also renders the previous conversation's start and
+ * end and the open meetings and callbacks, where a year is real information. It
+ * is accepted: the previous conversation is the LATEST one and open meetings are
+ * near-future, so the year is almost never what disambiguates them, and the
+ * weekday plus day plus month already pins any of them inside a year. Handing a
+ * 7-8B model a resolvable absolute date costs more than that.
+ */
 export function describeLocal(instantUtc: string, timezone: string): string {
-  return DateTime.fromMillis(Date.parse(instantUtc), { zone: timezone }).toFormat("cccc d LLLL yyyy 'at' HH:mm");
+  return DateTime.fromMillis(Date.parse(instantUtc), { zone: timezone }).toFormat("cccc d LLLL 'at' HH:mm");
 }
 
 export function qualificationFacts(state: QualificationState | null): QualificationFacts | null {

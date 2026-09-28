@@ -95,10 +95,28 @@ export function renderTranscript(run: ScenarioRun): string {
           ? `OK - ${outcome.summary ?? ''}`
           : `REFUSED ${outcome.code ?? ''} - ${outcome.reason ?? ''}`
         : '(no outcome recorded)';
-      lines.push(`- \`${call.toolName}\` proposed: \`${truncate(call.argumentsJson, 400)}\``);
+      lines.push(`- \`${call.toolName}\` proposed: \`${truncate(call.argumentsJson, ARGUMENTS_RENDER_LIMIT)}\``);
       lines.push(`  - dispatcher: ${verdict}`);
     }
     if (turn.toolCalls.length > 0) lines.push('');
+
+    // WHAT THE PROVIDER REFUSED BEFORE THE DISPATCHER EVER SAW IT.
+    // docs/MISSION_2D_AYA_ROOT_CAUSE.md § 10 asked for this. The loop above
+    // renders calls that were DISPATCHED; a span the mapper refused never
+    // becomes a call and so never appears there. It used to be visible anyway,
+    // because a refused span stayed in the assistant text - but § 8.2 now
+    // removes an action list from the text whether its calls were accepted or
+    // refused (reading JSON down a phone line being the worse failure), which
+    // left `malformed` as a bare count and the reasons nowhere.
+    //
+    // Rendered from `metrics.toolCallHealth.refusalReasons`, which is a
+    // diagnostic and is never branched on.
+    const refusalReasons = turn.metrics?.toolCallHealth?.refusalReasons ?? [];
+    if (refusalReasons.length > 0) {
+      lines.push(`- provider refused ${refusalReasons.length} tool-call-shaped span(s) before dispatch:`);
+      for (const reason of refusalReasons) lines.push(`  - ${reason}`);
+      lines.push('');
+    }
 
     lines.push(`**Agent:** ${turn.assistantText ?? '_(said nothing)_'}`);
     lines.push('');
@@ -224,6 +242,32 @@ function renderTurnChecks(turn: TurnRecord): string {
 function fmt(value: number | null): string {
   return value === null ? 'n/a' : String(Math.round(value));
 }
+
+/**
+ * How much of a tool call's arguments a transcript shows.
+ *
+ * WAS 400, AND 400 COST A REPORT TWO ANSWERS IT COULD OTHERWISE HAVE HAD.
+ * docs/MISSION_2D_AYA_ROOT_CAUSE.md § 5.1: `not-decision-maker` turn 1 and
+ * `price-objection-interrupt` turn 3 both had their `urgency` value cut off, so
+ * two of forty-four calls in § 5's counterfactual are recorded INDETERMINATE
+ * rather than answered - and § 10 asked for the limit to be reconsidered.
+ *
+ * 4,000 is chosen against the real distribution rather than picked for looking
+ * round. The widest legal arguments object in `TOOL_DEFINITIONS` is
+ * `update_qualification`, whose `observations` array allows 20 rubric
+ * observations each carrying the contact's own words as evidence; a full one of
+ * those runs to a few thousand characters. 4,000 shows every argument object
+ * this corpus can legally produce in full, while still bounding a pathological
+ * generation - a model that emits 200 kB of JSON should still not produce a
+ * 200 kB line in a committed transcript.
+ *
+ * THIS DOES NOT INVALIDATE THE COMMITTED EVIDENCE. `eval-output/` and
+ * `eval-output-fair-20260927/` are unchanged and remain byte-identical to each
+ * other; the two indeterminate rows stay indeterminate, because the bytes were
+ * lost at render time in a run that has already happened and no re-render can
+ * recover them. What this buys is that the OPERATOR'S NEXT RUN records them.
+ */
+const ARGUMENTS_RENDER_LIMIT = 4_000;
 
 function truncate(value: string, max: number): string {
   return value.length <= max ? value : `${value.slice(0, max - 1)}…`;

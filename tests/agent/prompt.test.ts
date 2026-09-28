@@ -184,7 +184,12 @@ describe('buildTurnContext', () => {
     expect(built.text).toContain('contact_123');
     expect(built.text).toContain('America/New_York');
     // 15:00 UTC is 10:00 in New York, and the model is told so in words.
-    expect(built.text).toContain('Wednesday 4 March 2026 at 10:00');
+    // NO YEAR: `day <month name> <year>` is the shape the fabricated-timestamp
+    // gate refuses, and disclosing it handed aya a worked example of it.
+    // docs/MISSION_2D_AYA_ROOT_CAUSE.md § 9. Asserted both ways so that putting
+    // the year back fails here rather than only in a benchmark.
+    expect(built.text).toContain('Wednesday 4 March at 10:00');
+    expect(built.text).not.toContain('2026');
 
     // The dialable number and the email address are NOT disclosed: the model
     // never dials and never sends, so it has no use for either.

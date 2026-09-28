@@ -16,10 +16,58 @@
  * different statements and the Founder Review needs the second one.
  */
 
+/**
+ * Where a tag comes from, because the two are not interchangeable.
+ *
+ * `registry` - pullable from the Ollama registry with `ollama pull`. Every
+ * candidate was one of these until Mission 2D-R.
+ *
+ * `local` - created ON THE HOST BY THE OPERATOR from a Modelfile committed in
+ * this repository. `ollama pull` CANNOT fetch it and asking it to is an error
+ * rather than a slow download, so `eval:pull`, `eval:run` and `eval:models` all
+ * have to tell these apart from a registry model that is merely missing. They
+ * are also OPT-IN: a local tag never joins the default model list, because most
+ * hosts will not have created it and a default run must not fail on a tag the
+ * operator never asked for.
+ */
+export type CandidateOrigin = 'registry' | 'local';
+
 export interface Candidate {
   readonly tag: string;
   /** The hypothesis this model is in the set to test. */
   readonly rationale: string;
+  /** Absent means `registry`, which is what every Mission 2 candidate was. */
+  readonly origin?: CandidateOrigin;
+  /**
+   * For `local` tags only: the repo-relative Modelfile it is created from, and
+   * the stock tag it is built on top of. Recorded into `models.json` so that a
+   * result row for a locally-created model can never be mistaken for a
+   * registry model's, and so the provenance survives in the committed evidence.
+   */
+  readonly localProvenance?: {
+    readonly modelfile: string;
+    readonly baseTag: string;
+    /** What was changed relative to `baseTag`, in one line, for `models.json`. */
+    readonly deviation: string;
+  };
+}
+
+/** Is this tag one the operator has to create by hand rather than pull? */
+export function isLocalOrigin(candidate: Candidate): boolean {
+  return candidate.origin === 'local';
+}
+
+/**
+ * The default model list for `eval:run` and `eval:pull`: registry models only.
+ * A `local` candidate runs when it is named with `--model`, and not otherwise.
+ */
+export function defaultBenchmarkTags(): readonly string[] {
+  return CANDIDATES.filter((candidate) => !isLocalOrigin(candidate)).map((candidate) => candidate.tag);
+}
+
+/** The candidate carrying this tag, if the set knows it. */
+export function findCandidate(tag: string): Candidate | undefined {
+  return CANDIDATES.find((candidate) => candidate.tag === tag);
 }
 
 export const CANDIDATES: readonly Candidate[] = [
@@ -63,6 +111,34 @@ export const CANDIDATES: readonly Candidate[] = [
       'single model can: does a conversation-focused fine-tune measurably improve human-likeness, or is the ' +
       'base model already at the ceiling of what 8B can do here? Note it ships at Q4_0 rather than Q4_K_M, ' +
       'which is a slightly cruder quantization - recorded, and a mild confound worth stating.',
+  },
+  {
+    // LAST IN THE ARRAY ON PURPOSE. `generateReportArtefacts` orders every table
+    // by candidate order and `rebenchmarkReadiness.test.ts` pins
+    // `qwen2.5:7b-instruct` first; appending is the only position that changes
+    // no existing row and no existing ordering.
+    tag: 'm2b/aya-expanse-schema-tools:v1',
+    origin: 'local',
+    localProvenance: {
+      modelfile: 'src/eval/models/modelfiles/aya-expanse-8b-schema-tools.Modelfile',
+      baseTag: 'aya-expanse:8b',
+      deviation:
+        'Chat template renders each tool as the complete function JSON (schema, enums, required, nested ' +
+        'properties) instead of the stock Python stub, which reads only name/type/description and drops ' +
+        'every enum and required list. Also drops the stock instruction to call `directly-answer`, which ' +
+        'is not one of this system\'s nine tools. No PARAMETER and no SYSTEM override; weights identical.',
+    },
+    rationale:
+      'ADDED BY MISSION 2D-R AS A CONTROLLED EXPERIMENT, and it is the only candidate that is not a ' +
+      'published model. `aya-expanse:8b` was recorded at 14.6% argument validity, and the wrapper fix ' +
+      'explained only part of that: a free-text `outcome` on 7 of 7 `record_call_outcome` calls and a ' +
+      'free-text `urgency` on 3 of 5 `transfer_to_human` calls survived it. The operator-captured template ' +
+      'shows why - it renders tool parameters as a Python stub carrying only name, type and description, ' +
+      'so `enum` and `required` NEVER REACHED THE MODEL, while qwen2.5\'s template sends the whole schema ' +
+      'as JSON. This tag is stock aya with that one defect corrected, so the three-way run against stock ' +
+      'aya and stock qwen2.5 separates "this model cannot follow a schema" from "this model was never ' +
+      'shown one". OPT-IN: the operator creates it (EVAL_HARNESS.md § 9.8); nothing here pulls or runs it, ' +
+      'and it is excluded from the default model list so a host without it is unaffected.',
   },
 ];
 

@@ -132,6 +132,28 @@ export interface LlmToolCallHealth {
   readonly recoveredFromText: number;
   /** Looked like a tool call, failed the fallback's checks, and was refused. */
   readonly malformed: number;
+  /**
+   * WHY each of those `malformed` refusals happened, in the same order.
+   *
+   * ADDITIVE AND OPTIONAL, MISSION 2D-R, at the request in
+   * docs/MISSION_2D_AYA_ROOT_CAUSE.md § 10. `malformed` is a count, and a count
+   * stopped being enough when the action-list rule started REMOVING a refused
+   * span from the assistant text (§ 8.2). Before that a reader could see the
+   * rejected JSON sitting in the transcript; after it, the only surviving trace
+   * was this number, and "6 malformed" does not tell you that all six were the
+   * `directly-answer` sentinel rather than six broken attempts at real tools -
+   * which is the distinction § 8.1 had to reconstruct by hand.
+   *
+   * THIS IS A DIAGNOSTIC, NOT A CONTROL SIGNAL. Nothing may branch on it. It
+   * exists so a transcript can show what the model tried and why it was
+   * refused. `CompleteTurnResult.refusals` remains a CLI-only channel that
+   * `LocalLlmProvider` strips; this is the same information travelling inside
+   * `metrics`, where every other per-turn diagnostic already lives.
+   *
+   * Optional so that every existing producer - `ScriptedLlmProvider`,
+   * `OpenAiLlmProvider`, `mappingSelfCheck`'s fixtures - compiles untouched.
+   */
+  readonly refusalReasons?: readonly string[];
 }
 
 /** Whatever the provider happens to know about the runtime serving the model. */

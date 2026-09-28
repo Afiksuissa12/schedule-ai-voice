@@ -241,4 +241,21 @@ export interface ModelInventoryEntry {
   /** Why this model is in the candidate set, or why it was rejected. */
   readonly rationale: string;
   readonly withinVramBudget: boolean | null;
+  /**
+   * ADDITIVE, MISSION 2D-R. Present only for a tag the OPERATOR created on the
+   * host from a Modelfile in this repository, rather than pulled from the Ollama
+   * registry. Omitted entirely for a registry model, so every `models.json`
+   * written before this - including the committed evidence - stays byte-valid
+   * against this type.
+   *
+   * It is recorded because a benchmark row for a locally-created model is a
+   * different kind of claim from a row for a published one: the published tag is
+   * reproducible by anyone with `ollama pull`, and this one is reproducible only
+   * from the committed Modelfile named here.
+   */
+  readonly localOrigin?: {
+    readonly modelfile: string;
+    readonly baseTag: string;
+    readonly deviation: string;
+  };
 }
