@@ -268,6 +268,21 @@ export interface SemanticClaimVerifier {
   readonly verifierName: string;
 
   /**
+   * OPTIONAL. The version of the MODEL-FACING INSTRUCTION this implementation
+   * classifies with, e.g. `semantic-claim-classifier@v1`.
+   *
+   * A second property rather than a second method, for the reason above: the
+   * interface still has exactly one behaviour on it. It exists because the
+   * classification a chain records is only reproducible if the chain also says
+   * WHICH instruction produced it - `verifierName` pins the class, not the words.
+   *
+   * ABSENT rather than empty for an implementation that has no instruction at all
+   * - every deterministic double - so `null` on the audit event means "there was
+   * nothing to pin" and never "we forgot to pin it".
+   */
+  readonly instructionRef?: string;
+
+  /**
    * Classify what the text CLAIMS. Never decide whether it is true.
    *
    * MUST NOT THROW. Every failure mode - a provider error, a timeout, an empty

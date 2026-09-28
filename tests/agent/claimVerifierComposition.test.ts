@@ -22,6 +22,7 @@ import {
 } from '../../src/agent/claimGate/semantic/index.js';
 import { LocalLlmProvider } from '../../src/llm/localLlmProvider.js';
 import { ScriptedLlmProvider } from '../../src/llm/scriptedLlmProvider.js';
+import { MetricsCapturingProvider } from '../../src/eval/runner/metricsCapturingProvider.js';
 import { ConfigurationError } from '../../src/shared/errors.js';
 import { FixedClock } from '../../src/ports/clock.js';
 import type { IsoUtcString } from '../../src/ports/clock.js';
@@ -84,6 +85,26 @@ describe('every wiring path gets a verifier - there is no null rung', () => {
     // `llmProviderConfig` would have given the local-brain demo a no-op double.
     const runtime = runtimeFor({ llm: new LocalLlmProvider() });
     expect(runtime.claimGate.semanticVerifier).toBeInstanceOf(LlmSemanticClaimVerifier);
+  });
+
+  it('and so does a local provider WRAPPED IN A DECORATOR - the benchmark shape', () => {
+    // Rung 3 again, but through the shape `src/eval/runner/runModel.ts` actually
+    // passes, which is NOT a bare provider: the benchmark wraps its
+    // `LocalLlmProvider` in `MetricsCapturingProvider` before handing it over as
+    // `options.llm`.
+    //
+    // This assertion is separate from the bare-provider one above because for a
+    // while it did not hold. The wrapper forwarded `supportsStreaming` but not
+    // `supportsStructuredOutput`, so `isStructuredOutputLlmProvider` answered
+    // false for it, rung 3 was skipped and the benchmark fell all the way to rung
+    // 4 - the rule-less double. The whole of Mission 2F was switched off on the
+    // one run that exists to measure it, and nothing said so: a verifier WAS
+    // constructed, so `verifierWired` stayed true and the report's unwired warning
+    // never fired. The test above could not catch it, because a bare provider is
+    // not the shape the benchmark uses.
+    const runtime = runtimeFor({ llm: new MetricsCapturingProvider(new LocalLlmProvider()) });
+    expect(runtime.claimGate.semanticVerifier).toBeInstanceOf(LlmSemanticClaimVerifier);
+    expect(runtime.claimGate.semanticVerifier).not.toBeInstanceOf(RuleDrivenSemanticClaimVerifier);
   });
 
   it('an explicit verifier instance wins over everything', () => {

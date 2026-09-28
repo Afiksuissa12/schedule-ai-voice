@@ -22,9 +22,14 @@
  * takes the first as each metric requires - a mean that silently mixed the
  * first call of a turn with its third would be meaningless.
  *
- * STREAMING IS FORWARDED, NOT SIMULATED. `supportsStreaming` answers whatever
- * the inner provider answers, so `isStreamingLlmProvider` keeps telling the
- * truth through the wrapper.
+ * EVERY OPTIONAL CAPABILITY IS FORWARDED, NOT SIMULATED. `supportsStreaming` and
+ * `supportsStructuredOutput` both answer whatever the inner provider answers, so
+ * `isStreamingLlmProvider` and `isStructuredOutputLlmProvider` keep telling the
+ * truth through the wrapper. The second one is not cosmetic: the composition root
+ * chooses the REAL semantic claim verifier over the offline double by asking
+ * exactly that question of the provider it was handed, and the benchmark hands it
+ * this wrapper. A swallowed capability there switches Mission 2F off for the whole
+ * benchmark silently - see `supportsStructuredOutput` below.
  */
 import type {
   CompleteTurnRequest,
@@ -132,6 +137,27 @@ export class MetricsCapturingProvider implements LlmProvider {
 
   supportsStreaming(): boolean {
     return this.inner.supportsStreaming?.() ?? false;
+  }
+
+  /**
+   * FORWARDED FOR THE SAME REASON `supportsStreaming` IS, AND IT IS LOAD-BEARING.
+   *
+   * `resolveClaimVerifier` (`src/app/composition.ts`) decides whether a runtime
+   * gets the REAL `LlmSemanticClaimVerifier` or the rule-less offline double by
+   * asking `isStructuredOutputLlmProvider(options.llm)`. The benchmark hands this
+   * wrapper in as `options.llm`. A wrapper that declared nothing would answer
+   * `false` for a `LocalLlmProvider` that answers `true`, and the composition root
+   * would hand the ENTIRE benchmark the no-op double - the whole of Mission 2F
+   * switched off on the one run that exists to measure it, with `verifierWired`
+   * still reporting `true` because a verifier object was in fact constructed.
+   *
+   * A decorator that swallows a capability is not transparent, and this one's own
+   * header promises it "forwards every call verbatim". Both capability questions
+   * are now forwarded, so a future decorator author has a pair to copy rather than
+   * a single example that looks like the complete set.
+   */
+  supportsStructuredOutput(): boolean {
+    return this.inner.supportsStructuredOutput?.() ?? false;
   }
 
   async completeTurnStreaming(req: CompleteTurnRequest, onDelta: LlmStreamHandler): Promise<CompleteTurnResult> {
