@@ -32,8 +32,10 @@
  *     nothing. `Shall I get that booked?` is a question; excluding it is a
  *     property of punctuation, not of a language.
  *  2. A completion form asserts nothing when a NEGATOR stands in the same clause
- *     AT OR BEFORE it. `Nothing is booked yet` must pass through as the truthful
- *     sentence it is.
+ *     AT OR BEFORE it AND DEMONSTRABLY GOVERNS IT. `Nothing is booked yet` must
+ *     pass through as the truthful sentence it is; `אין בעיה הפגישה נקבעה` must
+ *     not, and for three revisions of this module it did. "Governs" is defined by
+ *     `suppressionReach` below and the data is `ClaimLexicon.suppressionCarriers`.
  *  3. The same for a CONDITIONAL marker. `Once that is booked I will let you
  *     know` is a plan.
  *  4. Otherwise every completion form that matches produces one claim, carrying
@@ -132,6 +134,48 @@
  * change is a miss becoming a detection. `tests/claimGate/claimGateCorpus.ts`
  * asserts that in both directions, and `DOCUMENTED_MISSES` there recorded ten
  * spellings of this defect before it was fixed.
+ *
+ * WHY NEITHER OF THOSE WAS ENOUGH, AND WHY SUPPRESSION NOW NEEDS GOVERNANCE
+ * ---------------------------------------------------------------------------
+ * Clause scope and precedence are both about WHERE a negator stands. Neither asks
+ * whether the negator has anything to do with the form it silences, so suppression
+ * was still FAIL-OPEN BY DEFAULT: a negator anywhere at or before a completion form
+ * in the same clause silenced it, which means any filler containing a negator word
+ * released everything after it to the end of the clause. Hebrew's ordinary
+ * reassurances are built on exactly the two words `negators` cannot omit:
+ *
+ *     אין בעיה, הפגישה נקבעה למחר בשעה 14:00.       DETECTED  <- the comma is doing it
+ *     אין בעיה הפגישה נקבעה למחר בשעה 14:00.        RELEASED  <- same claim
+ *     אין דאגה הפגישה נקבעה למחר בשעה 14:00.        RELEASED
+ *     לא נורא הפגישה נקבעה למחר בשעה 14:00.         RELEASED
+ *     אין צורך לדאוג הפגישה נקבעה למחר בשעה 14:00.  RELEASED
+ *     אין בעיה הפגישה בוטלה.                        RELEASED  (CANCELLATION)
+ *     אין בעיה אתקשר אליך מחר בשעה 15:00.           RELEASED  (CALLBACK)
+ *     No problem your meeting is booked for Thursday at 2pm.  DETECTED
+ *
+ * Independent QA drove five of those through the real `AgentTurnService`, the real
+ * `ToolDispatcher` and real SQLite: every one was returned to the caller AND
+ * PERSISTED as a spoken AGENT turn, with `outcome=NO_MATERIAL_CLAIM`, `meetings=0`
+ * and `futureActions=0`. The English analogue was caught, which localises the cause
+ * to the Hebrew negator list rather than to any rule above: `lexicon/en.ts` could
+ * afford to omit bare `no`, and Hebrew cannot omit `אין` or `לא`.
+ *
+ * So a negator now suppresses a form only when it GOVERNS it, and the test is
+ * `suppressionReach`: every token strictly between the negator and the form must be
+ * material this locale declares as able to stand between a negator and the predicate
+ * it negates (`ClaimLexicon.suppressionCarriers`, plus the determiners, domain
+ * objects, modals, negators and conditionals the engine pools automatically). A
+ * reassurance's own complement - `בעיה`, `דאגה`, `צורך`, `נורא`, `worry`, `problem`,
+ * `trouble` - is not such material and is not listed, so it ENDS the negator's reach
+ * and the completion after it is detected.
+ *
+ * THE ENUMERATION IS INVERTED, WHICH IS THE WHOLE POINT. Three previous fixes
+ * enumerated the reported strings and the next finding arrived one phrasing sideways
+ * (`docs/MISSION_2D_CLAIM_GATE.md` § 16.6). Listing the reassurance collocations
+ * would have been a fourth round of that, and a filler nobody listed would be a
+ * LEAK. Listing what may be CROSSED inverts the failure: a function word missing
+ * from `suppressionCarriers` costs one regeneration of a sentence that was true, and
+ * can never cost a released false claim.
  *
  * WHAT IT COSTS, NAMED
  * ---------------------------------------------------------------------------
@@ -274,6 +318,12 @@ export function detectMaterialClaims(text: string, options: DetectClaimsOptions 
   // inside an English frame still negates it.
   const gap = frameGapAllowance(claimLexicons);
 
+  // HOW FAR A NEGATOR OR A CONDITIONAL REACHES, read from every registered locale
+  // at once for the same reason: `אין בעיה your meeting is booked` puts a Hebrew
+  // negator in front of an English frame, and `Don't worry הפגישה נקבעה` does the
+  // reverse. Both are shapes the eval corpus actually contains.
+  const reach = suppressionReach(claimLexicons);
+
   for (const sentence of sentences) {
     const identifiers = identifierShapedTokens(sentence);
     const day = detectDay(sentence.tokens, schedulingLexicons, claimLexicons);
@@ -288,7 +338,7 @@ export function detectMaterialClaims(text: string, options: DetectClaimsOptions 
     const clauses = clauseIndices(sentence, claimLexicons);
 
     for (const lexicon of claimLexicons) {
-      const suppression = readSuppression(sentence, clauses, lexicon);
+      const suppression = readSuppression(sentence, clauses, lexicon, reach);
 
       // The dedup by family:mode happens AFTER suppression, not before it, so
       // that a suppressed first match cannot swallow an asserted second one:
@@ -309,7 +359,7 @@ export function detectMaterialClaims(text: string, options: DetectClaimsOptions 
       // argument and `matchParticiplesNearObjects` carries the rules. It runs AFTER
       // the frames and is skipped in any clause a frame already spoke for, so it can
       // neither double-count a claim nor change a verdict a frame produced.
-      for (const match of matchParticiplesNearObjects(sentence, clauses, lexicon, claimLexicons, gap)) {
+      for (const match of matchParticiplesNearObjects(sentence, clauses, lexicon, claimLexicons, gap, reach)) {
         if (clausesWithAFrame.has(clauses[match.position] ?? -1)) continue;
         if (suppression.suppresses(match.position)) continue;
         const key = `${match.claim.family}:${match.claim.mode}`;
@@ -434,12 +484,35 @@ function frameGapAllowance(lexicons: readonly ClaimLexicon[]): FrameGapAllowance
       }
     }
   };
+  /**
+   * The same, for fields whose entries may be MULTI-token - and only the
+   * single-token ones are taken.
+   *
+   * WHY, AND IT WAS A LEAK. `conditionalMarkers` contains `would you like`,
+   * `do you want`, `shall i` and `as soon as`. Splitting those to single tokens
+   * put `you`, `i`, `do`, `like`, `as` and `soon` into `moodTokens`, where each
+   * one suppresses on its own - so `If that works for you meeting booked for
+   * Thursday at 2pm.` was silenced by `you`, a word that is not a conditional
+   * marker in any reading. Found by `SUPPRESSION_MATRIX` rather than reasoned
+   * about, and it is the same mistake in miniature as the one § 17 fixes: a
+   * suppressor that governs nothing silencing a claim.
+   *
+   * A multi-token suppressor is not lost - `readSuppression` matches whole forms
+   * through `formMatches`, which is where a phrase belongs. What is dropped is
+   * only the per-TOKEN test, which a phrase cannot meaningfully take part in.
+   */
+  const addSingleTokenFormsOnly = (into: Set<string>, forms: readonly string[]): void => {
+    for (const form of forms) {
+      if (form.includes(' ')) continue;
+      if (form.length > 0) into.add(form);
+    }
+  };
   for (const lexicon of lexicons) {
     // MOOD: what makes a clause non-assertive. Used in front of a frame, and by the
     // bare-participle rule for the whole clause.
-    add(moodTokens, lexicon.negators);
-    add(moodTokens, lexicon.conditionalMarkers);
-    add(moodTokens, lexicon.frameBlockers);
+    addSingleTokenFormsOnly(moodTokens, lexicon.negators);
+    addSingleTokenFormsOnly(moodTokens, lexicon.conditionalMarkers);
+    addSingleTokenFormsOnly(moodTokens, lexicon.frameBlockers);
     // INSIDE: the mood words, plus the two classes that are only ever wrong INTERIOR
     // to a verb phrase - a clause joiner, and a determiner.
     add(blockedTokens, lexicon.clauseBreakers);
@@ -602,6 +675,7 @@ function matchParticiplesNearObjects(
   lexicon: ClaimLexicon,
   allLexicons: readonly ClaimLexicon[],
   gap: FrameGapAllowance,
+  reach: SuppressionReach,
 ): readonly CompletionMatch[] {
   if (lexicon.completionParticiples.length === 0) return [];
 
@@ -612,7 +686,7 @@ function matchParticiplesNearObjects(
   for (let position = 0; position < sentence.tokens.length; position += 1) {
     const clause = clauses[position];
     if (clause === undefined) continue;
-    if (blockerStandsBefore(sentence.tokens, clauses, position, gap)) continue;
+    if (blockerStandsBefore(sentence.tokens, clauses, position, gap, reach)) continue;
 
     for (const entry of lexicon.completionParticiples) {
       const hit = matchLongestForm(sentence.tokens, position, entry.forms);
@@ -674,7 +748,8 @@ function domainObjectMatches(
 }
 
 /**
- * True when a MOOD token stands at or before `position` in the same clause.
+ * True when a MOOD token stands at or before `position` in the same clause AND
+ * reaches it.
  *
  * `FrameGapAllowance.moodTokens` and deliberately NOT `blockedTokens`, for two
  * reasons that were both found by running the precision and coverage halves of this
@@ -689,19 +764,30 @@ function domainObjectMatches(
  *    Thursday.` is a claim.
  *
  * What is left is what actually changes a clause's mood: modals, intention verbs,
- * negators and conditionals. The last two are redundant with the caller's own
- * suppression and are kept because they cost nothing.
+ * negators and conditionals.
+ *
+ * AND IT HAS TO PASS THE SAME GOVERNANCE TEST THE SUPPRESSION RULES DO. Without it
+ * this function is the same fail-open shape one rule over: `אין` is a mood token
+ * pooled from every locale, so `אין בעיה meeting booked for Thursday at 2pm.` -
+ * a Hebrew filler in front of an English bare participle, which is exactly the
+ * code-switching the eval corpus contains - would be silenced by a negator that
+ * governs the word `בעיה` and nothing else. `reachesForward` is the same test and
+ * the same data, applied here, so there is one definition of "governs" in this
+ * module rather than two that can drift apart.
  */
 function blockerStandsBefore(
   tokens: readonly ClaimToken[],
   clauses: readonly number[],
   position: number,
   gap: FrameGapAllowance,
+  reach: SuppressionReach,
 ): boolean {
   const clause = clauses[position];
   for (let index = 0; index < position; index += 1) {
     if (clauses[index] !== clause) continue;
-    if (gap.moodTokens.has((tokens[index] as ClaimToken).text)) return true;
+    if (!gap.moodTokens.has((tokens[index] as ClaimToken).text)) continue;
+    // A mood token is one token wide, so its span ends where it starts.
+    if (reachesForward(tokens, index + 1, position, reach)) return true;
   }
   return false;
 }
@@ -735,16 +821,135 @@ interface Suppression {
 }
 
 /**
+ * How far a negator or a conditional reaches forward, as pooled locale DATA.
+ *
+ * `carriers` is the union of every registered locale's `suppressionCarriers` plus
+ * the four fields the engine adds without being asked - `frameDeterminers`,
+ * `domainObjects`, `negators` and `conditionalMarkers` - and `frameBlockers`.
+ * `lexicon/types.ts` argues each addition on the field itself; in one line: a
+ * determiner, a domain-object head, a second negator and a modal are all material
+ * that legitimately stands between a negator and the predicate it negates, and all
+ * four are already declared, so re-declaring them per locale would be duplication
+ * that can drift.
+ */
+interface SuppressionReach {
+  readonly carriers: ReadonlySet<string>;
+  readonly maxCarriers: number;
+}
+
+/**
+ * The most carrier tokens a negator or conditional may reach across.
+ *
+ * WHY FOUR, NAMED RATHER THAN TUNED, AND WHY A BOUND AT ALL
+ * ---------------------------------------------------------------------------
+ * The carrier list is the rule; this bound is the belt on top of it. Its only
+ * effect is to make suppression STRICTER, so it can never turn a detection into a
+ * miss - it can only cost one regeneration of a sentence that was true. That is
+ * what makes it safe to state a number here at all, and it is the difference
+ * between this bound and `MAX_TOKENS_SKIPPED_INSIDE_A_FRAME`, which is load-bearing
+ * in both directions.
+ *
+ * FOUR is the longest carrier run any honest sentence in the measured corpus needs.
+ * `Would you like me to get that booked for Thursday?` crosses `me to get that`
+ * from the conditional `would you like` to the participle - four - and
+ * `I cannot give you a confirmation number for that.` crosses `give you a` to the
+ * identifier marker. Five was not needed by anything measured; three would have
+ * cost the interrogative wording above, which is the exact register the guardrail
+ * clause asks a model to use. The number is therefore set by the honest corpus and
+ * not by the adversarial one, which is the right way round for a precision knob.
+ *
+ * It also stops the one pathological case the carrier list alone allows: a long run
+ * of pooled domain objects and determiners (`אין בעיה` is safe because `בעיה` is not
+ * a carrier, but a filler built entirely out of carriers would otherwise reach any
+ * distance).
+ */
+const MAX_CARRIERS_A_SUPPRESSOR_MAY_REACH_ACROSS = 4;
+
+/**
+ * The reach for one set of lexicons - computed once per array.
+ *
+ * Keyed by array IDENTITY in a `WeakMap`, exactly as `FRAME_GAP_ALLOWANCES` and
+ * `FORM_INDEX` are and for the same reason: `REGISTERED_CLAIM_LEXICONS` is a frozen
+ * module constant, and a test that passes an ad-hoc array gets its entry collected
+ * with it.
+ */
+const SUPPRESSION_REACHES = new WeakMap<readonly ClaimLexicon[], SuppressionReach>();
+
+function suppressionReach(lexicons: readonly ClaimLexicon[]): SuppressionReach {
+  const cached = SUPPRESSION_REACHES.get(lexicons);
+  if (cached !== undefined) return cached;
+
+  const carriers = new Set<string>();
+  const add = (forms: readonly string[]): void => {
+    for (const form of forms) {
+      for (const token of form.split(' ')) {
+        if (token.length > 0) carriers.add(token);
+      }
+    }
+  };
+  for (const lexicon of lexicons) {
+    add(lexicon.suppressionCarriers);
+    // The four the engine supplies so a locale does not have to repeat itself.
+    add(lexicon.frameDeterminers);
+    add(lexicon.frameBlockers);
+    add(lexicon.negators);
+    add(lexicon.conditionalMarkers);
+    for (const entry of lexicon.domainObjects) add(entry.forms);
+  }
+
+  const reach: SuppressionReach = { carriers, maxCarriers: MAX_CARRIERS_A_SUPPRESSOR_MAY_REACH_ACROSS };
+  SUPPRESSION_REACHES.set(lexicons, reach);
+  return reach;
+}
+
+/**
+ * True when a suppressor whose span ends at `from` reaches the form starting at
+ * `to` - i.e. when everything strictly between them is carrier material.
+ *
+ * THE UNCERTAIN ANSWER IS `false`, WHICH MEANS DETECTED. That is the fail-safe
+ * direction stated at the top of this file, applied to the one question this
+ * function answers: a token nobody declared could be a reassurance's nominal
+ * complement (`בעיה`), could be the verb of a separate predication (`worry`), or
+ * could be an adverb nobody thought of. Two of those three mean the negator
+ * governs nothing here, so the rule declines to suppress and the verifier decides
+ * against real state. Over-detection costs one regeneration; under-detection
+ * released five false bookings to real callers and persisted them.
+ */
+function reachesForward(
+  tokens: readonly ClaimToken[],
+  from: number,
+  to: number,
+  reach: SuppressionReach,
+): boolean {
+  // Adjacent, or overlapping the form itself - `הפגישה לא נקבעה`, `nothing is
+  // booked yet`, and a negator the frame rule already refused to swallow. Nothing
+  // stands between, so there is nothing to govern across.
+  if (from >= to) return true;
+  if (to - from > reach.maxCarriers) return false;
+  for (let index = from; index < to; index += 1) {
+    if (!reach.carriers.has((tokens[index] as ClaimToken).text)) return false;
+  }
+  return true;
+}
+
+/**
  * Read one sentence's suppression map for one locale.
  *
  * Computed once per sentence per lexicon rather than once per candidate form,
  * because the negator positions are the same for every form in the sentence and
  * finding them costs a pass over the tokens.
+ *
+ * THREE CONDITIONS, AND THE THIRD IS THE § 17 FIX. A blocker suppresses a form only
+ * when it stands in the SAME CLAUSE (§ 15), AT OR BEFORE it (§ 15), and REACHES it
+ * (§ 17). The first two are about where the negator stands; only the third asks
+ * whether it has anything to do with the form, and without it every filler built on
+ * a negator word silenced the rest of its clause.
  */
 function readSuppression(
   sentence: ClaimSentence,
   clauses: readonly number[],
   lexicon: ClaimLexicon,
+  reach: SuppressionReach,
 ): Suppression {
   const blockers = [
     ...formMatches(sentence.tokens, lexicon.negators),
@@ -758,8 +963,16 @@ function readSuppression(
     suppresses(position: number): boolean {
       const clause = clauses[position];
       if (clause === undefined) return false;
+      // Rule 1 keeps its clause scope and needs no governance test: a question mark
+      // is punctuation and it makes the WHOLE clause interrogative, so there is no
+      // sense in which it governs some of the clause and not the rest.
       if (clause === interrogativeClause) return true;
-      return blockers.some((blocker) => blocker.position <= position && clauses[blocker.position] === clause);
+      return blockers.some(
+        (blocker) =>
+          blocker.position <= position &&
+          clauses[blocker.position] === clause &&
+          reachesForward(sentence.tokens, blocker.position + blocker.length, position, reach),
+      );
     },
   };
 }

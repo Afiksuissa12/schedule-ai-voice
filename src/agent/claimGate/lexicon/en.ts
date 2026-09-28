@@ -501,6 +501,119 @@ export const EN_CLAIM_LEXICON: ClaimLexicon = {
     'without',
   ],
 
+  // What a negator or a conditional may reach ACROSS to reach the form it governs.
+  // `types.ts` carries the whole argument, including why this is a list of what may
+  // be CROSSED rather than a list of the fillers that leaked. What follows is what
+  // each group here actually buys, and the two groups a reader should check.
+  //
+  // FUNCTION WORDS are the bulk of it, and they are a closed inventory rather than
+  // an open class: subject and object pronouns, the auxiliaries, the prepositions
+  // and the quantifiers. `Nothing is booked yet` needs none of them, but
+  // `Once your meeting is booked, I will let you know` crosses `your` + `meeting`
+  // (both supplied by the engine from `frameDeterminers` and `domainObjects`), and
+  // `We haven't been able to get your meeting booked yet` crosses `been` + `able`.
+  // The engine also adds this locale's `frameBlockers`, so `to`, `get`, `will`,
+  // `can` and `need` are NOT repeated here.
+  //
+  // THE VERBS OF GIVING are the group that is not function words, and they are here
+  // for a structural reason rather than a convenient one. Every other thing this
+  // rule suppresses is a PREDICATE, and negation is pre-predicate - so the negator
+  // stands next to it. An identifier MARKER (`confirmation number`) is a NOUN
+  // PHRASE in object position, so the verb the negator actually negates stands
+  // BETWEEN the negator and the marker: `I cannot GIVE you a confirmation number
+  // for that.` is the honest refusal § 4.3 of the design note holds up, and it is
+  // asserted clean in MUST_NOT_FLAG. Without `give` the reach stops at it and an
+  // honest refusal is regenerated. The list is short, it is auditable, and an
+  // over-broad entry here costs a MISS - so `book`, `schedule`, `cancel` and
+  // `arrange` are deliberately absent: those are the verbs a claim is made WITH.
+  //
+  // DELIBERATELY ABSENT, and this is the half that keeps the fix a fix: every
+  // reassurance word. `problem`, `worry`, `worries`, `trouble`, `fear`, `bother`,
+  // `stress` and `panic` are not here, which is precisely why
+  // `Don't worry your meeting is booked for Thursday at 2pm.` is DETECTED with no
+  // punctuation between the two halves. Adding one would re-open the defect this
+  // field exists to close, in the one direction that releases a false claim.
+  suppressionCarriers: [
+    // ---- pronouns ---------------------------------------------------------
+    'i',
+    'we',
+    'you',
+    'he',
+    'she',
+    'it',
+    'they',
+    'me',
+    'us',
+    'him',
+    'them',
+    'there',
+    'here',
+    'anything',
+    'anyone',
+    'something',
+    'someone',
+    'everything',
+    'one',
+    // ---- auxiliaries and the copula ---------------------------------------
+    'am',
+    'is',
+    'are',
+    'was',
+    'were',
+    'been',
+    'have',
+    'has',
+    'had',
+    'having',
+    'do',
+    'does',
+    'did',
+    'may',
+    // ---- prepositions and particles ---------------------------------------
+    'of',
+    'for',
+    'in',
+    'on',
+    'at',
+    'with',
+    'from',
+    'by',
+    'as',
+    'up',
+    'out',
+    'over',
+    'into',
+    'down',
+    'back',
+    // ---- quantifiers and light adjectives ---------------------------------
+    'any',
+    'all',
+    'some',
+    'much',
+    'many',
+    'more',
+    'else',
+    'able',
+    'ready',
+    'sure',
+    'own',
+    // ---- the verbs an identifier MARKER is the object of ------------------
+    'give',
+    'given',
+    'gives',
+    'giving',
+    'provide',
+    'provided',
+    'offer',
+    'issue',
+    'issued',
+    'share',
+    'quote',
+    'tell',
+    'find',
+    'see',
+  ],
+
   conditionalMarkers: ['if', 'once', 'as soon as', 'shall i', 'should i', 'would you like', 'do you want', 'unless'],
 
   // The words that join one clause to the next when the model did not bother with
@@ -559,6 +672,15 @@ export const EN_CLAIM_LEXICON: ClaimLexicon = {
   // defect this field exists to close. `been` is absent too - it is a form token in
   // `has been booked`, and blocking it would be blocking a frame's own word.
   //
+  // `about` WAS HERE AND WAS REMOVED, and the removal is a § 17 fix rather than a
+  // tidy-up. `about` is a PREPOSITION far more often than it is part of `I am about
+  // to book it`, and as a blocker it therefore governed the noun after it: in
+  // `Nothing to worry about meeting booked for Thursday at 2pm.` - no punctuation,
+  // which is the whole § 17 axis - `about` stood in front of the bare participle in
+  // its own clause and silenced it. It bought nothing it was needed for, because
+  // `I am about to get that booked.` is already held off by `to` and `get`, both of
+  // which are still here. An over-broad blocker costs a MISS, and this one did.
+  //
   // `may` IS ABSENT ON PURPOSE, and it is the one entry a reader should check. An
   // over-broad blocker costs the opposite of an incomplete one: it costs a MISS. And
   // `may` is also a MONTH in this same lexicon, so blocking it would lose
@@ -577,7 +699,6 @@ export const EN_CLAIM_LEXICON: ClaimLexicon = {
     'be',
     'going',
     'gonna',
-    'about',
     'being',
     'get',
     'gets',

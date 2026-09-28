@@ -131,6 +131,94 @@ export const HE_CLAIM_LEXICON: ClaimLexicon = {
 
   negators: ['לא', 'אין', 'אינה', 'איני', 'טרם', 'עדיין', 'בלי', 'ללא', 'אף'],
 
+  // WHAT A HEBREW NEGATOR MAY REACH ACROSS - and this file is where the defect that
+  // made the field necessary actually lived.
+  //
+  // `לא` and `אין` have to be in `negators` above: `הפגישה לא נקבעה עדיין.` and
+  // `אין פגישה ביומן.` are the truthful sentences a model must be able to say. And
+  // Hebrew's most ordinary reassurance fillers are built on exactly those two words -
+  // `אין בעיה`, `אין דאגה`, `אין שום בעיה`, `אין צורך לדאוג`, `לא נורא`. With no comma
+  // between the filler and the claim, the negator and the completion land in ONE clause,
+  // so clause scope (§ 15) and precedence (`at or before`) both hold and both let it
+  // through. Independent QA drove five of those wordings through the real turn service
+  // and every one was released to the caller AND persisted with an empty ledger, while
+  // the same sentence with a comma after `אין בעיה` was correctly blocked.
+  //
+  // English escaped this because `en.ts` could afford to omit bare `no` from its
+  // negators - it says so in its own comment. Hebrew cannot omit `אין` or `לא`, so the
+  // asymmetry had to be closed in the engine's RULE rather than in the word list, which
+  // is what `types.ts` (`suppressionCarriers`) describes.
+  //
+  // WHAT IS HERE: the closed-class material Hebrew puts between a negator and the verb
+  // it negates. The inflected prepositions (`לי`, `לך`, `לו` ... - "to me", "to you"),
+  // which is what `אין לי אפשרות לשלוח אימייל.` needs; the standing pronouns; the
+  // copular/existential `יש` and `הוא`/`היא`; `שום` and `כלום`, the quantifier and the
+  // negative-polarity pronoun that Hebrew negation is built with (`לא קבעתי כלום
+  // עדיין.`); and `זה`/`זאת`. The engine adds `frameDeterminers` (`את`, `של`, the
+  // possessives), `domainObjects`, `frameBlockers` (`יכול`, `צריך`, `כדי`) and the
+  // negators and conditionals themselves, so none of those is repeated.
+  //
+  // WHAT IS DELIBERATELY NOT HERE, AND IT IS THE WHOLE POINT: `בעיה`, `דאגה`, `צורך`,
+  // `נורא`, `מה`, `לדאוג`, `להתקשר`. Those are the complements the leaking fillers are
+  // built out of. Each one ENDS a negator's reach, which is what makes
+  // `אין בעיה הפגישה נקבעה למחר.` a detected claim with no punctuation anywhere in it.
+  // Adding one of them here would re-open the defect, in the one direction that
+  // releases a false sentence to a customer - so this list must never grow a noun that
+  // could be a nominal predicate.
+  //
+  // Hebrew's infinitive is a ל- PREFIX rather than a standing word, so there is no
+  // equivalent of English `to` to declare, and there is no way to enumerate the
+  // infinitives. That is a stated shortfall rather than a claim of completeness, and it
+  // costs precision only: an unlisted infinitive ends a negator's reach and the
+  // completion after it is DETECTED, which the verifier then checks against real state.
+  // It is the same shortfall `frameBlockers` records below, for the same reason.
+  suppressionCarriers: [
+    // ---- the inflected prepositions, which are single tokens in Hebrew -----
+    'לי',
+    'לך',
+    'לו',
+    'לה',
+    'לנו',
+    'לכם',
+    'להם',
+    'בי',
+    'בו',
+    'בה',
+    'עלי',
+    'עליך',
+    'ממני',
+    'ממך',
+    // ---- standing pronouns -------------------------------------------------
+    'אני',
+    'אנחנו',
+    'אתה',
+    'את',
+    'הוא',
+    'היא',
+    'הם',
+    'הן',
+    'זה',
+    'זאת',
+    'זו',
+    // ---- the existential and the quantifiers Hebrew negation is built with --
+    'יש',
+    'היה',
+    'הייתה',
+    'יהיה',
+    'שום',
+    'כלום',
+    'אחד',
+    'אחת',
+    'כל',
+    'עוד',
+    'יותר',
+    // ---- the light prepositions that stand alone ---------------------------
+    'עם',
+    'בשביל',
+    'מול',
+    'אצל',
+  ],
+
   conditionalMarkers: ['אם', 'כאשר', 'ברגע', 'האם', 'אולי', 'במידה'],
 
   // Hebrew's standalone clause-joiners, coordinating (אבל, אך, אז) and
