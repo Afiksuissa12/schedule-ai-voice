@@ -25,12 +25,24 @@ import {
   NOW_INSTANTS,
   POLICIES,
   REJECTED_EXPRESSIONS,
+  RELEASE_PROBE_LOCAL_DAY,
+  RELEASE_PROBE_LOCAL_HOUR,
   RELEASE_SPECS,
+  scriptedTextsOf,
   seededRandom,
   TIMEZONE_OVERRIDE_CASES,
   TIMEZONES,
   VALID_EXPRESSIONS,
 } from './dimensions.js';
+import { AMBIENT_SWEEP_TEXTS, declarationInconsistencies } from './claimOracle.js';
+import {
+  ALL_DECLARED_RELEASE_TEXTS,
+  PROBE_DAY_FRIDAY,
+  PROBE_DAY_SATURDAY,
+  PROBE_DAY_THURSDAY,
+  PROBE_HOUR,
+  SWEEP_DECLARATIONS,
+} from './releaseTexts.js';
 
 describe('timezone dimension', () => {
   it.each(TIMEZONES)('$zone is a real IANA zone', ({ zone }) => {
@@ -450,11 +462,12 @@ describe('the claim-release specs', () => {
     // Otherwise a spec could forbid a sentence no model in it ever says and pass
     // for ever. Checked as SET MEMBERSHIP against the spec's own texts, so an edit
     // to the wording that forgets to update `forbidden` fails here by name.
-    const scripted = [spec.withToolCall, ...spec.afterToolResult].filter(
-      (text): text is string => text !== null,
-    );
-    for (const text of spec.forbidden ?? []) {
-      expect(scripted, `${spec.key} forbids ${JSON.stringify(text)}, which it never scripts`).toContain(text);
+    const scripted = scriptedTextsOf(spec);
+    for (const declared of spec.forbidden ?? []) {
+      expect(
+        scripted,
+        `${spec.key} forbids ${JSON.stringify(declared.text)}, which it never scripts`,
+      ).toContain(declared.text);
     }
   });
 
@@ -462,11 +475,10 @@ describe('the claim-release specs', () => {
     // The other half, and the reason `forbidden` is a subset rather than the whole
     // array: a spec that forbade everything it says would be indistinguishable from
     // `WITHHELD`, and `r08` is the spec that means that.
-    const scripted = [spec.withToolCall, ...spec.afterToolResult].filter(
-      (text): text is string => text !== null,
-    );
+    const scripted = scriptedTextsOf(spec);
+    const forbidden = (spec.forbidden ?? []).map((declared) => declared.text);
     expect(
-      scripted.filter((text) => !(spec.forbidden ?? []).includes(text)).length,
+      scripted.filter((text) => !forbidden.includes(text)).length,
       `${spec.key} forbids every text it scripts, which is WITHHELD rather than NOT_RELEASED`,
     ).toBeGreaterThan(0);
   });
@@ -479,5 +491,134 @@ describe('the claim-release specs', () => {
         `${spec.key} is ${spec.expect} but names forbidden wording, which nothing reads`,
       ).toBeUndefined();
     }
+  });
+});
+
+/**
+ * EVERY SCRIPTED SENTENCE IS DECLARED, AND THE DECLARATION IS WHAT INV-18 READS.
+ *
+ * `tsc` enforces the first half: `withToolCall` and `afterToolResult` are typed
+ * `DeclaredText`, so a bare string does not compile. These assertions enforce the
+ * parts a type cannot - that the index INV-18 actually looks a released sentence
+ * up in contains every sentence the sweep can release, and that the declarations
+ * themselves are internally honest.
+ *
+ * Why it matters more than it looks: INV-18 treats an UNDECLARED released text as
+ * a violation. If `ALL_DECLARED_RELEASE_TEXTS` fell behind `RELEASE_SPECS`, the
+ * whole sweep would go red rather than quietly passing - which is the right
+ * direction, and these tests are what make the failure legible instead.
+ */
+describe('the declared ground truth behind INV-18', () => {
+  it('covers every sentence any release spec scripts', () => {
+    const missing: string[] = [];
+    for (const spec of RELEASE_SPECS) {
+      for (const text of scriptedTextsOf(spec)) {
+        if (!SWEEP_DECLARATIONS.has(text)) missing.push(`${spec.key}: ${JSON.stringify(text)}`);
+      }
+    }
+    expect(
+      missing,
+      'These scripted sentences are not in ALL_DECLARED_RELEASE_TEXTS, so INV-18 would fail every scenario ' +
+        'that releases them as UNDECLARED. Add them to tests/invariants/releaseTexts.ts with their ground ' +
+        'truth beside the sentence.',
+    ).toEqual([]);
+  });
+
+  it('covers the two sentences families A-L release, which is ~95% of all releases', () => {
+    // These come from the runner and from ScriptedLlmProvider's own fallback
+    // rather than from any spec, so nothing above would notice if they were
+    // dropped - and they are the most frequently released sentences in the sweep.
+    // If the provider's `finalText` default ever changed, the sweep would go RED
+    // rather than quiet: INV-18 treats an undeclared released sentence as a
+    // violation, which is the direction that makes a drift visible.
+    for (const declared of AMBIENT_SWEEP_TEXTS) {
+      expect(SWEEP_DECLARATIONS.has(declared.text), `${JSON.stringify(declared.text)} is undeclared`).toBe(true);
+    }
+    expect(AMBIENT_SWEEP_TEXTS.length).toBe(2);
+  });
+
+  it('lists no declaration that no spec and no ambient text uses', () => {
+    // The other direction. A stale declaration is harmless to the sweep and
+    // corrosive to a reader: it reads as coverage of a sentence nothing says.
+    const used = new Set<string>(AMBIENT_SWEEP_TEXTS.map((declared) => declared.text));
+    for (const spec of RELEASE_SPECS) for (const text of scriptedTextsOf(spec)) used.add(text);
+    const orphans = ALL_DECLARED_RELEASE_TEXTS.map((declared) => declared.text).filter((text) => !used.has(text));
+    expect(orphans, 'declared but scripted nowhere').toEqual([]);
+  });
+
+  it.each(ALL_DECLARED_RELEASE_TEXTS)('$text is internally consistent', (declared) => {
+    expect(declarationInconsistencies(declared.declares)).toEqual([]);
+  });
+
+  it('declares at least one sentence in each effect family the specs exercise', () => {
+    // Non-vacuity on the AXIS rather than on the count, which is the § 17.2
+    // lesson: fifty declarations of the same family would satisfy a size floor
+    // and prove nothing about the classes that actually leaked.
+    const families = new Set<string>();
+    for (const declared of ALL_DECLARED_RELEASE_TEXTS) {
+      for (const assertion of declared.declares.assertions) families.add(assertion.family);
+    }
+    for (const required of ['MEETING', 'CALLBACK', 'CANCELLATION', 'MESSAGE', 'HANDOVER']) {
+      expect(families, `no declared sentence asserts ${required}`).toContain(required);
+    }
+  });
+
+  it('declares sentences on BOTH sides of the honest/false line', () => {
+    const material = ALL_DECLARED_RELEASE_TEXTS.filter((d) => d.declares.assertsMaterialEffect);
+    const silent = ALL_DECLARED_RELEASE_TEXTS.filter((d) => !d.declares.assertsMaterialEffect);
+    // A corpus of declarations that all said "asserts something" would make the
+    // oracle a machine for failing every release, and one that all said "asserts
+    // nothing" would make it silent. Both halves have to exist.
+    expect(material.length).toBeGreaterThanOrEqual(30);
+    expect(silent.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it('agrees with dimensions.ts about which absolute day the probe resolves to', () => {
+    // The declarations name absolute dates so that no resolver stands between a
+    // sentence and its ground truth. This is the drift alarm for that choice:
+    // `dimensions.test.ts` above re-derives the probe target from Luxon, and
+    // RELEASE_PROBE_LOCAL_DAY is what it checks.
+    expect(PROBE_DAY_THURSDAY).toBe(RELEASE_PROBE_LOCAL_DAY);
+    expect(PROBE_HOUR).toBe(RELEASE_PROBE_LOCAL_HOUR);
+    // Friday and Saturday are one and two days after the probe day, in a zone
+    // where the probe day is not near a month end - checked arithmetically so a
+    // future change of BASELINE_NOW cannot leave them silently wrong.
+    expect(DateTime.fromISO(PROBE_DAY_THURSDAY).plus({ days: 1 }).toFormat('yyyy-LL-dd')).toBe(PROBE_DAY_FRIDAY);
+    expect(DateTime.fromISO(PROBE_DAY_THURSDAY).plus({ days: 2 }).toFormat('yyyy-LL-dd')).toBe(PROBE_DAY_SATURDAY);
+  });
+
+  it('exercises the no-punctuation suppression shape in the sweep, across both languages', () => {
+    // QA-3, deliverable (d). The sweep had 500 generated cross-clause rows and
+    // every one of its ten joiners was punctuation or an English conjunction, so
+    // the one joiner a model actually takes - none at all - was the axis nobody
+    // crossed (docs/MISSION_2D_CLAIM_GATE.md § 17.2). Asserted on the AXIS
+    // VALUES rather than on a count, for the same reason.
+    const fillerSpecs = RELEASE_SPECS.filter((spec) => /^r4[1-9]|^r5[01]/.test(spec.key));
+    expect(fillerSpecs.length).toBeGreaterThanOrEqual(11);
+
+    const scripted = fillerSpecs.flatMap((spec) => scriptedTextsOf(spec));
+    // A no-punctuation Hebrew filler, a no-punctuation English one, the comma
+    // control, and an honest negation behind the same filler in each language.
+    expect(scripted).toContain('אין בעיה הפגישה נקבעה ליום שישי בשעה 14:00.');
+    expect(scripted).toContain("Don't worry your meeting is booked for Friday at 2pm.");
+    expect(scripted).toContain('אין בעיה, הפגישה נקבעה ליום שישי בשעה 14:00.');
+    expect(scripted).toContain('אין בעיה הפגישה לא נקבעה עדיין.');
+    expect(scripted).toContain("Don't worry nothing is booked yet.");
+
+    // Three effect families, so the class is not proved one family wide.
+    const families = new Set<string>();
+    for (const text of scripted) {
+      for (const assertion of SWEEP_DECLARATIONS.get(text)?.assertions ?? []) families.add(assertion.family);
+    }
+    expect(families).toContain('MEETING');
+    expect(families).toContain('CANCELLATION');
+    expect(families).toContain('CALLBACK');
+
+    // And both directions: wordings that must be kept away from the caller, and
+    // wordings that must be released. A block with only the first half would
+    // prove the gate can be made strict and nothing about whether it is usable.
+    expect(fillerSpecs.some((spec) => spec.expect === 'NOT_RELEASED')).toBe(true);
+    expect(fillerSpecs.some((spec) => spec.expect === 'RELEASED')).toBe(true);
+    expect(fillerSpecs.some((spec) => spec.expect === 'EITHER')).toBe(true);
   });
 });

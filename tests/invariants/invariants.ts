@@ -52,6 +52,29 @@ import {
   type AssertedDay as AssertedClaimDay,
   type AssertedTime as AssertedClaimTime,
 } from '../../src/agent/claimGate/detector.js';
+// THE INDEPENDENT ORACLE. Nothing in this import chain reaches
+// `src/agent/claimGate/**` - `claimOracle.ts` imports NOTHING AT ALL and
+// `releaseTexts.ts` imports only `claimOracle.ts`, which
+// `claimOracleBoundary.test.ts` asserts by walking the transitive closure.
+//
+// That is the answer to the circularity recorded four times in
+// `docs/MISSION_2D_CLAIM_GATE.md` (§§ 15.4, 16.4, 17.2) and printed under
+// WHAT THIS ZERO IS BOUNDED BY in the sweep report: INV-18 found its claims with
+// the gate's own detector, so a sentence the detector could not see was a
+// sentence the sweep counted as zero leaks. The declaration is written by a
+// person reading the sentence, so the invariant can now fail for a reason the
+// detector did not supply.
+import {
+  buildDeclarationIndex,
+  compareWitnesses,
+  unbackedDeclaredClaims,
+  type ClaimDeclaration,
+  type DeclaredText,
+  type ObservedStateForOracle,
+  type WitnessAgreement,
+} from './claimOracle.js';
+import { PAST_FINDING_TEXTS } from './pastFindingTexts.js';
+import { ALL_DECLARED_RELEASE_TEXTS } from './releaseTexts.js';
 import type { ScenarioObservation } from './runner.js';
 import { proposedWhen, type Scenario } from './scenarios.js';
 
@@ -1562,6 +1585,62 @@ function agreesWithAssertion(
   return true;
 }
 
+/**
+ * Everything the INDEPENDENT ORACLE is allowed to consult, taken from what this
+ * scenario actually did.
+ *
+ * `observedEffectsOf` and `issuedIdentifiersOf` read rows back through the
+ * repositories and the turn's own `ToolOutcome` values; neither calls the ledger,
+ * the verifier or the detector. So this whole value is the "ledger side of ground
+ * truth" the oracle judges a declaration against: what was really persisted and
+ * really dispatched.
+ */
+export function observedStateForOracle(observation: ScenarioObservation): ObservedStateForOracle {
+  return {
+    effects: observedEffectsOf(observation).map((effect) => ({
+      kind: effect.kind,
+      describe: effect.describe,
+      localDay: effect.localDay,
+      hour: effect.hour,
+      minute: effect.minute,
+    })),
+    issuedIdentifiers: issuedIdentifiersOf(observation),
+    contactId: observation.contact.id,
+    refusals: observation.toolOutcomes
+      .filter((outcome) => !outcome.ok)
+      .map((outcome) => `${outcome.toolName}:${outcome.code ?? 'UNKNOWN'}`),
+  };
+}
+
+/**
+ * Look up a released sentence's hand-authored ground truth.
+ *
+ * Returns `undefined` when nobody declared it, which INV-18 treats as a
+ * VIOLATION. That is deliberate and it is the mandatory half of the rule: a
+ * scripted sentence with no declaration would default to "asserts nothing", and
+ * defaulting to nothing is the shape of every one of the four times this
+ * assurance layer certified a live leak as zero.
+ */
+export function declarationFor(text: string): ClaimDeclaration | undefined {
+  return DECLARATIONS.get(text);
+}
+
+/**
+ * Every sentence anybody has declared: the ones family M scripts, and the
+ * verbatim wordings of the four Mission 2D fail-open findings.
+ *
+ * The past-finding wordings are never released by the sweep, so including them
+ * costs nothing there - what it buys is that
+ * `claimOracleCatchesPastFindings.test.ts` drives the REAL invariant through the
+ * REAL lookup path rather than through an injected test double. A proof that the
+ * oracle catches those four is worth much less if the oracle it exercises is not
+ * the one the sweep runs.
+ *
+ * `buildDeclarationIndex` throws if the two files declare the same sentence two
+ * different ways, which is the drift alarm between them.
+ */
+const DECLARATIONS = buildDeclarationIndex([...ALL_DECLARED_RELEASE_TEXTS, ...PAST_FINDING_TEXTS]);
+
 /** Why one claim in a released sentence is not backed by anything observed. */
 interface UnbackedClaim {
   readonly reason: string;
@@ -1709,6 +1788,7 @@ const releasedTextAssertsNoAbsentEffect: Invariant = {
     }
 
     const results: InvariantResult[] = [];
+    const oracleState = observedStateForOracle(observation);
 
     // ---- 1. every released sentence, against independently measured state
     for (const release of releases) {
@@ -1719,6 +1799,13 @@ const releasedTextAssertsNoAbsentEffect: Invariant = {
         results.push(...withholdingIsWellFormed(this.id, observation, release));
         continue;
       }
+
+      // ---- 1a. THE INDEPENDENT WITNESS, WHICH RUNS FIRST ------------------
+      // Ground truth about this sentence, written down by a person who read it,
+      // judged against what this scenario actually persisted and dispatched.
+      // Nothing in this block consults the detector, so it can fail for a reason
+      // the detector did not supply - which is the whole point of it existing.
+      results.push(...declaredClaimsAreBackedByObservedState(this.id, observation, release, oracleState));
 
       const unbacked = unbackedClaimsIn(release.releasedText, observation, scenario);
 
@@ -1814,6 +1901,112 @@ const releasedTextAssertsNoAbsentEffect: Invariant = {
     return results;
   },
 };
+
+/**
+ * THE INDEPENDENT ORACLE, APPLIED TO ONE RELEASED SENTENCE.
+ *
+ * WHAT THIS ADDS THAT `forbidden` DOES NOT
+ * ---------------------------------------------------------------------------
+ * `ReleaseSpec.forbidden` (§ 15.4) closed the hole where the DETECTOR decided
+ * which of a spec's texts counted as the false one. It is a per-spec, binary,
+ * hand-written "this string must not go out", and it only exists on the specs
+ * somebody wrote as `NOT_RELEASED`. It cannot write the declaration, which is
+ * exactly why § 16.4 and § 17.2 happened anyway.
+ *
+ * This check is a different shape:
+ *
+ *  - it applies to EVERY released sentence in the sweep, including the ~1,900
+ *    releases in families A-L and including specs declared `EITHER` or
+ *    `RELEASED`, where `forbidden` is dormant by construction;
+ *  - the declaration says WHAT THE SENTENCE ASSERTS and of which kind, not
+ *    whether it may go out. Whether it may go out is then decided by the
+ *    scenario's OWN OBSERVED STATE - so a sentence declared supportable that is
+ *    released into a scenario where the booking was refused fails here, and no
+ *    spec had to anticipate that combination;
+ *  - an undeclared released sentence is a violation, so nothing can be silently
+ *    exempt.
+ *
+ * ONE-DIRECTIONAL, DELIBERATELY. It never reports that a SUPPORTED claim was
+ * blocked. Precision is a real cost and it is measured in
+ * `tests/claimGate/claimGateCorpus.ts`; an invariant that failed in both
+ * directions would make every legitimate regeneration a sweep violation.
+ */
+function declaredClaimsAreBackedByObservedState(
+  id: string,
+  observation: ScenarioObservation,
+  release: { readonly iteration: number; readonly outcome: string; readonly releasedText: string | null },
+  state: ObservedStateForOracle,
+): InvariantResult[] {
+  const text = release.releasedText;
+  if (text === null) return [];
+
+  const declaration = declarationFor(text);
+  if (declaration === undefined) {
+    return [
+      fail(
+        id,
+        observation.scenarioId,
+        `iteration ${release.iteration}: the system released a sentence that NO declaration covers, so this ` +
+          "invariant's independent oracle has no ground truth for it and would have to fall back on the " +
+          'detector - which is the circularity § 17.5 exists to remove. Every scripted model text in this ' +
+          'sweep must be declared in tests/invariants/releaseTexts.ts, beside the sentence, saying what it ' +
+          'asserts. Released text: ' +
+          JSON.stringify(text.slice(0, 240)),
+      ),
+    ];
+  }
+
+  // The detector's verdict is computed for the WITNESS COMPARISON only. It can
+  // neither cause nor prevent the failure below.
+  const detectorClaimCount = detectMaterialClaims(text).length;
+  const agreement: WitnessAgreement = compareWitnesses(declaration, detectorClaimCount);
+
+  const unbacked = unbackedDeclaredClaims(declaration, state);
+  if (unbacked.length > 0) {
+    return [
+      fail(
+        id,
+        observation.scenarioId,
+        `iteration ${release.iteration}: DECLARED GROUND TRUTH SAYS THIS SENTENCE WAS NOT SAFE TO SAY. The ` +
+          `released text asserts ${unbacked.length} thing(s) that nothing this scenario persisted or ` +
+          `dispatched supports. ${unbacked.map((entry) => `[${entry.reason}] ${entry.detail}`).join(' | ')}. ` +
+          `The declaration is hand-authored beside the sentence and consults no part of ` +
+          `src/agent/claimGate: "${declaration.why}". The gate reported outcome ${release.outcome}, and ` +
+          `detectMaterialClaims found ${detectorClaimCount} claim(s) in the same text` +
+          (agreement === 'DETECTOR_BLIND'
+            ? ' - SO THE DETECTOR NEVER SAW THIS AT ALL. That is a DETECTOR gap rather than a gate gap, and ' +
+              'it is the signature of all four Mission 2D fail-open findings: add the wording to ' +
+              'tests/claimGate/claimGateCorpus.ts MUST_FLAG and fix the rule that misses it.'
+            : '.') +
+          ' Released text: ' +
+          JSON.stringify(text.slice(0, 240)),
+      ),
+    ];
+  }
+
+  return [
+    pass(
+      id,
+      observation.scenarioId,
+      `iteration ${release.iteration}: released a sentence declared to assert ` +
+        `${declaration.assertsMaterialEffect ? describeDeclaredAssertions(declaration) : 'nothing material'}, ` +
+        `and observed state backs it (witnesses: ${agreement})`,
+    ),
+  ];
+}
+
+/** `MEETING/COMPLETED on 2026-03-05 at 14`, for a pass message. */
+function describeDeclaredAssertions(declaration: ClaimDeclaration): string {
+  const parts = declaration.assertions.map(
+    (assertion) =>
+      `${assertion.family}/${assertion.mode}` +
+      (assertion.localDay === null ? '' : ` on ${assertion.localDay}`) +
+      (assertion.localHour === null ? '' : ` at ${String(assertion.localHour).padStart(2, '0')}:00`),
+  );
+  if (declaration.announcesAReference) parts.push('a reference');
+  for (const token of declaration.identifiersReadOut) parts.push(`identifier ${token}`);
+  return parts.join(' + ') || 'something';
+}
 
 /**
  * The designed exhaustion outcome, checked where the whole system is running.
@@ -1995,7 +2188,7 @@ function declaredReleaseExpectationHolds(
     // `ReleaseSpec.forbidden` now names the strings, so the escape check owes the
     // detector nothing. The detector's own view is still computed, for the vacuity
     // alarm below and to say whether an escape was a GATE failure or a DETECTOR one.
-    const forbidden = spec.forbidden ?? [];
+    const forbidden = (spec.forbidden ?? []).map((declared) => declared.text);
     if (forbidden.length === 0) {
       return [
         fail(
@@ -2050,7 +2243,9 @@ function declaredReleaseExpectationHolds(
   }
 
   // RELEASED: every text the spec scripted must have gone out, byte for byte.
-  const scripted = [spec.withToolCall, ...spec.afterToolResult].filter((text): text is string => text !== null);
+  const scripted = [spec.withToolCall, ...spec.afterToolResult]
+    .filter((declared): declared is DeclaredText => declared !== null)
+    .map((declared) => declared.text);
   const missing = scripted.filter((text) => !released.includes(text));
   if (missing.length > 0) {
     return [

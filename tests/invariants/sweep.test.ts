@@ -164,6 +164,32 @@ describe('the invariant sweep', () => {
         ).toContain(reason);
       }
 
+      // --- INV-18's SECOND witness must not go vacuous either ---------------
+      // The detector-based half above can look busy while proving nothing, and
+      // for four rounds it did (docs/MISSION_2D_CLAIM_GATE.md § 17.2). The
+      // independent oracle added in § 17.5 can fail the same way, one level up:
+      // if every released sentence were declared to assert nothing, it would
+      // report perfect agreement having judged no claim at all. These three
+      // assertions are the guard, and they are on what was JUDGED rather than on
+      // what passed.
+      expect(
+        gate.releasesUndeclared,
+        'a released sentence that no hand-authored declaration covers. INV-18 fails each one, so this being ' +
+          'non-zero means the sweep is already red - it is asserted here as well so the reason is legible: ' +
+          'every scripted model text must be declared in tests/invariants/releaseTexts.ts beside the sentence.',
+      ).toBe(0);
+      expect(
+        gate.witnessAgreement.BOTH_SAW_A_CLAIM,
+        'the independent oracle must have judged real assertions, not only sentences declared to assert ' +
+          'nothing. If this is zero the declarations have been emptied and the oracle is agreeing with the ' +
+          'detector about silence, which is exactly the vacuity it was built to remove.',
+      ).toBeGreaterThan(20);
+      expect(
+        gate.witnessAgreement.BOTH_SILENT,
+        'and it must have judged the honest sentences too - a corpus in which everything asserts something ' +
+          'would make the oracle a machine for failing every release',
+      ).toBeGreaterThan(100);
+
       const claimFamily = sweep.scenarios.filter((scenario) => scenario.family === 'M-claim-release');
       expect(claimFamily.length, 'family M must be in the corpus').toBeGreaterThan(40);
       const hebrewClaims = claimFamily.filter((scenario) => /[֐-׿]/.test(JSON.stringify(scenario.release ?? {})));

@@ -57,6 +57,7 @@ import type { BusyInterval } from '../../src/ports/availability.js';
 import { createProviderRegistry } from '../../src/providers/index.js';
 import type { DeterministicTelephonyProvider } from '../../src/providers/deterministicTelephonyProvider.js';
 import { createTestDatabase, type TestDatabase } from '../helpers/testDb.js';
+import { NEUTRAL_SWEEP_OFFER } from './claimOracle.js';
 import { rulesFor } from './dimensions.js';
 import { proposedWhen, renderArguments, type Scenario } from './scenarios.js';
 
@@ -180,8 +181,14 @@ async function countRows(db: Database): Promise<DomainRowCounts> {
  * able to point at it, and because the one property that matters about it is
  * that it asserts NOTHING material - which `tests/claimGate/` verifies against
  * the real detector rather than assuming.
+ *
+ * SINCE § 17.5 IT IS ALSO DECLARED. `NEUTRAL_SWEEP_OFFER` in `claimOracle.ts`
+ * carries the hand-authored ground truth that this sentence asserts nothing, so
+ * INV-18's independent oracle judges the ~1,900 releases of families A-L rather
+ * than taking the detector's silence for an answer. The string is taken from
+ * there rather than written twice.
  */
-export const NEUTRAL_SWEEP_TEXT = 'Let me take care of that for you.';
+export const NEUTRAL_SWEEP_TEXT = NEUTRAL_SWEEP_OFFER.text;
 
 /**
  * The scripted turn for one scenario.
@@ -221,8 +228,8 @@ function scriptFor(scenario: Scenario, contactId: string) {
   }
 
   return [
-    { assistantText: release.withToolCall, toolCalls },
-    ...release.afterToolResult.map((assistantText) => ({ assistantText, toolCalls: [] })),
+    { assistantText: release.withToolCall === null ? null : release.withToolCall.text, toolCalls },
+    ...release.afterToolResult.map((declared) => ({ assistantText: declared.text, toolCalls: [] })),
   ];
 }
 

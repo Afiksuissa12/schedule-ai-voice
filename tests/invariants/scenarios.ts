@@ -1086,7 +1086,17 @@ export const FAMILY_PURPOSE: Readonly<Record<FamilyKey, string>> = {
     'may never be skipped inside a frame and the telegraphic register has no auxiliary at all. Plus r34, r35 ' +
     'and r40, the three precision halves: the interrupted wording when it is TRUE, and the honest intentions ' +
     '`I can have that booked for you` and `Let me get your meeting booked for Thursday` which a looser rule ' +
-    'would have blocked. Policed by INV-18.',
+    'would have blocked. Since r41 it carries the QA-3 shape: A FILLER BUILT ON A NEGATOR WITH NO ' +
+    'PUNCTUATION (`אין בעיה הפגישה נקבעה ליום שישי`, `אין בעיה קבעתי לך פגישה`, `אין צורך לדאוג`, the ' +
+    'CANCELLATION spelling `אין בעיה הפגישה בוטלה.`, the CALLBACK spelling where no noun phrase intervenes ' +
+    'at all, the English `Don\'t worry your meeting is booked for Friday at 2pm.` the finding did not claim, ' +
+    'and a conditional filler ending in `you`), all of which were released and persisted until suppression ' +
+    'was made to test whether a negator GOVERNS the form it silences - plus r48, the comma control that was ' +
+    'blocked throughout, and r49/r50/r51, the honest negations behind the same filler in both languages and ' +
+    'the true claim behind it. Policed by INV-18, and since section 17.5 by a SECOND witness INV-18 owns ' +
+    'that is independent of the gate: every sentence above declares, as hand-authored data beside it, what ' +
+    'it asserts and of which kind, and INV-18 fails when a declared claim is released over state that does ' +
+    'not support it - whatever the detector says.',
 };
 
 /**

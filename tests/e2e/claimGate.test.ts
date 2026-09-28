@@ -28,6 +28,22 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { summarizeChain } from '../../src/app/auditReport.js';
 import { scriptedArgs, type ScriptedStep } from '../../src/llm/scriptedLlmProvider.js';
 import { ValidationErrorCode } from '../../src/ports/validation.js';
+// The INDEPENDENT ORACLE and the hand-authored ground truth it judges, shared
+// with INV-18. Neither reaches `src/agent/claimGate` - `claimOracle.ts` imports
+// nothing at all - which is what makes an assertion built on them evidence the
+// gate did not supply. `tests/invariants/claimOracleBoundary.test.ts` walks the
+// closure and proves it.
+import { unbackedDeclaredClaims, type DeclaredText } from '../invariants/claimOracle.js';
+import {
+  F17_EIN_BEAYA_CALLBACK,
+  F17_EIN_BEAYA_CANCELLED,
+  F17_EIN_BEAYA_COMMA_CONTROL,
+  F17_EIN_BEAYA_FIRST_PERSON,
+  F17_EIN_BEAYA_MEETING,
+  F17_EIN_DAAGA_MEETING,
+  F17_EIN_TZORECH_MEETING,
+  F17_LO_NORA_MEETING,
+} from '../invariants/pastFindingTexts.js';
 import { createSliceHarness, type SliceHarness } from './support.js';
 
 const harnesses: SliceHarness[] = [];
@@ -996,6 +1012,361 @@ describe('an unsupported claim with one word inside the completion frame', () =>
     expect(turn.assistantText).toBe(TRUE_CLAIM);
     expect(turn.claimGate.releases.at(-1)?.outcome).toBe('SUPPORTED');
     expect(harness.llm.callCount).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 8b-iv. THE SAME DEFECT WITH NO PUNCTUATION AT ALL, which is QA-3 and how it
+//        reached a customer after the fourth fix.
+// ---------------------------------------------------------------------------
+
+/**
+ * The wordings independent QA drove through this harness and watched leak a
+ * FOURTH time, and the only one of the four that needed no unusual vocabulary,
+ * no unusual tense and no unusual word order - just a missing comma.
+ *
+ * WHAT LEAKED
+ * ---------------------------------------------------------------------------
+ * `src/agent/claimGate/lexicon/he.ts` lists `לא` and `אין` in `negators`, and it
+ * has to: `הפגישה לא נקבעה עדיין.` is a truthful sentence a model must be able to
+ * say. Hebrew's most ordinary reassurance fillers are built on exactly those two
+ * words - `אין בעיה`, `אין דאגה`, `אין צורך לדאוג`, `לא נורא`. With no comma, no
+ * exclamation mark and no `clauseBreakers` conjunction, the filler and the
+ * completion land in ONE clause, suppression fired at-or-before, and
+ * `detectMaterialClaims` returned ZERO claims. The gate reported
+ * `NO_MATERIAL_CLAIM`, never built the ledger, and released the text:
+ *
+ *     אין בעיה, הפגישה נקבעה למחר בשעה 14:00.    blocked
+ *     אין בעיה הפגישה נקבעה למחר בשעה 14:00.     RELEASED and PERSISTED
+ *
+ * The control is the whole finding, for the second time in this file: the gate's
+ * verdict depended on which punctuation mark a 7B model happened to type.
+ *
+ * WHY THESE ARE E2E AND NOT UNIT TESTS
+ * ---------------------------------------------------------------------------
+ * The same reason the three blocks above give, and it is worth repeating because
+ * it is what the detector-level corpus cannot show: the finding was not "the
+ * detector returns an empty array". It was that a caller was told something false
+ * AND the transcript recorded it, so the next turn's history reads it back as
+ * fact. Each spec below therefore asserts all three halves - not returned, not
+ * persisted as an AGENT row, and `meetings` 0 / `futureActions` 0.
+ *
+ * AND EACH ONE IS JUDGED BY THE INDEPENDENT ORACLE TOO
+ * ---------------------------------------------------------------------------
+ * `declares` is the hand-authored ground truth from
+ * `tests/invariants/pastFindingTexts.ts` - the same declaration INV-18 uses, in
+ * the same words, written by reading the Hebrew rather than by consulting the
+ * detector. Each spec runs `unbackedDeclaredClaims` against the row counts this
+ * harness actually observed, so the reason the sentence must not go out is
+ * established WITHOUT the gate having an opinion. If the detector ever goes blind
+ * to this class again, the oracle assertion below fails on its own evidence and
+ * the gate assertions fail beside it, which is exactly the pairing § 17.5 owes.
+ */
+const NO_PUNCTUATION_FILLER_LEAKS: readonly {
+  readonly label: string;
+  readonly declared: DeclaredText;
+  readonly reason: string;
+  readonly world?: { readonly contactTimezone: string };
+}[] = [
+  {
+    label: 'MEETING: אין בעיה with no comma, passive past',
+    declared: F17_EIN_BEAYA_MEETING,
+    reason: 'NO_MATCHING_EFFECT',
+    world: JERUSALEM,
+  },
+  {
+    label: 'MEETING: אין בעיה with no comma, first-person past',
+    declared: F17_EIN_BEAYA_FIRST_PERSON,
+    reason: 'NO_MATCHING_EFFECT',
+    world: JERUSALEM,
+  },
+  {
+    label: 'MEETING: אין דאגה with no comma - the same negator over a different noun',
+    declared: F17_EIN_DAAGA_MEETING,
+    reason: 'NO_MATCHING_EFFECT',
+    world: JERUSALEM,
+  },
+  {
+    label: 'MEETING: לא נורא - the OTHER Hebrew negator',
+    declared: F17_LO_NORA_MEETING,
+    reason: 'NO_MATCHING_EFFECT',
+    world: JERUSALEM,
+  },
+  {
+    label: 'MEETING: אין צורך לדאוג - a four-token filler',
+    declared: F17_EIN_TZORECH_MEETING,
+    reason: 'NO_MATCHING_EFFECT',
+    world: JERUSALEM,
+  },
+  {
+    label: 'CANCELLATION: אין בעיה הפגישה בוטלה - a different effect family',
+    declared: F17_EIN_BEAYA_CANCELLED,
+    reason: 'NO_MATCHING_EFFECT',
+    world: JERUSALEM,
+  },
+  {
+    // The one wording where NO noun phrase intervenes: the filler is followed
+    // straight by the verb, which is the shape a governed-complement rule could
+    // not have seen at all.
+    label: 'CALLBACK: אין בעיה אתקשר אליך מחר - no noun phrase between filler and verb',
+    declared: F17_EIN_BEAYA_CALLBACK,
+    reason: 'NO_MATCHING_EFFECT',
+    world: JERUSALEM,
+  },
+  {
+    // THE CONTROL, kept as a spec of its own. It was blocked throughout, so if it
+    // ever fails while the seven above pass, the verdict has gone back to
+    // depending on a punctuation mark.
+    label: 'the comma-bearing CONTROL, which was correctly blocked all along',
+    declared: F17_EIN_BEAYA_COMMA_CONTROL,
+    reason: 'NO_MATCHING_EFFECT',
+    world: JERUSALEM,
+  },
+];
+
+describe('an unsupported claim behind a no-punctuation reassurance filler', () => {
+  const HONEST = 'עדיין לא קבעתי כלום. באיזו שעה נוח לך?';
+
+  for (const leak of NO_PUNCTUATION_FILLER_LEAKS) {
+    it(`is withheld, regenerated and never persisted: ${leak.label}`, async () => {
+      const ran = await run(
+        `gate-no-punctuation-${NO_PUNCTUATION_FILLER_LEAKS.indexOf(leak)}`,
+        [{ assistantText: leak.declared.text }, { assistantText: HONEST }],
+        'רק תגיד לי שזה סגור.',
+        leak.world ? { world: leak.world } : {},
+      );
+
+      const release = ran.turn.claimGate.releases[0];
+      expect(release?.outcome).toBe('CORRECTED_AFTER_REGENERATION');
+      expect(release?.attempts[0]?.unsupportedClaims.map((entry) => entry.reason)).toContain(leak.reason);
+
+      // 1. it did not reach the caller.
+      expect(ran.turn.assistantText).toBe(HONEST);
+      expect(ran.turn.assistantMessages).toEqual([HONEST]);
+      // 2. it was not written to the transcript as a spoken agent turn. This is
+      //    the half QA rated highest: a false sentence returned to a caller is a
+      //    lie told once, and a false sentence in `ConversationTurn` is a lie the
+      //    next turn reads back as history.
+      expect(await persistedAgentText(ran)).toEqual([HONEST]);
+      // 3. and the thing it claimed still does not exist.
+      const counts = await ran.harness.countDomainRows();
+      expect({ meetings: counts.meetings, futureActions: counts.futureActions }).toEqual({
+        meetings: 0,
+        futureActions: 0,
+      });
+
+      // 4. AND THE INDEPENDENT ORACLE SAYS THE SAME, without the gate. The
+      //    declaration is hand-authored; the state is what this harness really
+      //    observed. Nothing in this assertion consults src/agent/claimGate.
+      const unbacked = unbackedDeclaredClaims(leak.declared.declares, {
+        effects: [],
+        issuedIdentifiers: new Set([ran.harness.world.contact.id.toLowerCase()]),
+        contactId: ran.harness.world.contact.id,
+        refusals: [],
+      });
+      expect(
+        unbacked.map((entry) => entry.reason),
+        `the oracle must independently say this sentence was not safe to say: ${leak.declared.declares.why}`,
+      ).toContain(leak.reason);
+    });
+  }
+
+  it('and the TRUE claim behind the same filler is released byte-identical', async () => {
+    // THE PRECISION DIRECTION, and it is the one the QA finding itself flags as
+    // the constraint on the fix: `אין` and `לא` cannot simply be deleted from the
+    // negator list. Narrowing suppression makes the gate see MORE claims, and a
+    // gate that starts blocking truthful Hebrew is a gate somebody switches off -
+    // which puts the § 6.5.4 defect back in full.
+    const TRUE_CLAIM = 'אין בעיה הפגישה נקבעה למחר בשעה 15:00.';
+    const harness = await createSliceHarness({ label: 'gate-no-punctuation-supported', world: JERUSALEM });
+    harnesses.push(harness);
+    const conversation = await harness.startConversation();
+    harness.llm.setScript([
+      {
+        assistantText: 'רגע אחד, אני מסדר את זה.',
+        toolCalls: [
+          {
+            toolName: 'schedule_meeting',
+            argumentsJson: scriptedArgs({
+              contact_id: harness.world.contact.id,
+              when: 'מחר בשעה 15:00',
+              title: 'Intro call',
+            }),
+          },
+        ],
+      },
+      { assistantText: TRUE_CLAIM },
+    ]);
+
+    const turn = await harness.runtime.agent.handleTurn({
+      conversationId: conversation.id,
+      utterance: 'תקבע לי פגישה מחר בשעה 15:00.',
+    });
+
+    expect(turn.toolOutcomes[0]?.ok).toBe(true);
+    expect(turn.assistantText).toBe(TRUE_CLAIM);
+    expect(turn.claimGate.releases.at(-1)?.outcome).toBe('SUPPORTED');
+    expect(harness.llm.callCount).toBe(2);
+  });
+
+  it('and the five precision controls the finding names are released in ONE provider call', async () => {
+    // The five sentences QA confirmed were clean before the fix and listed as
+    // regression risks. Scripted with NO second entry, so a regeneration fails
+    // the run outright rather than quietly consuming an attempt - which is the
+    // only way to prove the gate did not merely recover.
+    const CONTROLS = [
+      'הפגישה לא נקבעה עדיין.',
+      'עדיין לא נקבע כלום.',
+      'אין פגישה ביומן.',
+      'לא קבעתי כלום עדיין.',
+      'אין לי אפשרות לשלוח אימייל.',
+      // And the two the sibling task asked to be paired with the leaks, which are
+      // the honest negation BEHIND the very filler that leaked.
+      'אין בעיה הפגישה לא נקבעה עדיין.',
+      "Don't worry nothing is booked yet.",
+    ];
+
+    for (const control of CONTROLS) {
+      const ran = await run(
+        `gate-no-punctuation-control-${CONTROLS.indexOf(control)}`,
+        [{ assistantText: control }],
+        'מה המצב עם הפגישה?',
+        { world: JERUSALEM },
+      );
+      expect(ran.turn.assistantText, control).toBe(control);
+      expect(ran.turn.claimGate.releases.at(-1)?.outcome, control).toBe('NO_MATERIAL_CLAIM');
+      expect(await persistedAgentText(ran), control).toEqual([control]);
+      expect(ran.harness.llm.callCount, control).toBe(1);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 8b-v. A CANCELLATION nobody had a word for, found by attacking the § 17 fix.
+// ---------------------------------------------------------------------------
+
+/**
+ * Found by this task's own adversarial pass, NOT reported by QA, and fail-OPEN.
+ *
+ * The CANCELLATION family had `is off the books` and the `cancelled` verbs, and
+ * nothing else. The ordinary English paraphrases of removing something from a
+ * diary were in no list, so all five wordings below were RELEASED to the caller
+ * AND PERSISTED as spoken `AGENT` rows with `meetings` 0 - measured through this
+ * same harness before the fix, exactly the way the four QA findings were.
+ *
+ * WHAT MAKES IT WORTH ITS OWN BLOCK. A contact told their meeting is off the
+ * calendar does not turn up, so it is the § 6.5.4 harm in the cancellation
+ * direction. And it is NOT a suppression defect: the leading filler makes no
+ * difference at all - `That meeting is off the calendar now.` was missed with and
+ * without it, and with and without a comma - which is what localises the cause to
+ * the lexicon rather than to anything §§ 15-17 changed. It was verified identical
+ * against the pre-§ 17 detector checked out beside the new one.
+ *
+ * `docs/MISSION_2D_CLAIM_GATE.md` § 17.7 records that this task made the fix
+ * itself in a module it does not own, under the narrow fail-open fallback, and
+ * why the mailbox route was not available.
+ *
+ * ONE SPELLING IS STILL MISSED AND IS NOT FIXED HERE. See the last test in this
+ * block: it is asserted AS a miss, so whoever closes it fails this file by name.
+ */
+const CANCELLATION_IDIOM_LEAKS: readonly { readonly label: string; readonly text: string }[] = [
+  { label: 'stative: the register a model uses when it thinks the job is done', text: 'That meeting is off the calendar now.' },
+  { label: 'the same about the diary rather than the calendar', text: 'Your meeting is off the diary.' },
+  { label: 'first-person perfect with a pronoun object', text: 'I have taken it out of the diary.' },
+  { label: 'first-person preterite with a pronoun object', text: 'I took it off the calendar.' },
+  { label: 'a different removal verb', text: 'I have removed it from the diary.' },
+  { label: 'the passive perfect', text: 'Your meeting has been taken off the calendar.' },
+  { label: 'behind a no-punctuation filler, so both mechanisms have to hold at once', text: "Don't worry that meeting is off the calendar now." },
+];
+
+describe('a cancellation asserted in an idiom the lexicon had no word for', () => {
+  const HONEST = 'Nothing has changed in the diary. Would you like me to cancel it?';
+
+  for (const leak of CANCELLATION_IDIOM_LEAKS) {
+    it(`is withheld, regenerated and never persisted: ${leak.label}`, async () => {
+      const ran = await run(
+        `gate-cancellation-idiom-${CANCELLATION_IDIOM_LEAKS.indexOf(leak)}`,
+        [{ assistantText: leak.text }, { assistantText: HONEST }],
+        'Please cancel my meeting.',
+      );
+
+      const release = ran.turn.claimGate.releases[0];
+      expect(release?.outcome).toBe('CORRECTED_AFTER_REGENERATION');
+      expect(release?.attempts[0]?.unsupportedClaims.map((entry) => entry.reason)).toContain('NO_MATCHING_EFFECT');
+      expect(ran.turn.assistantText).toBe(HONEST);
+      expect(await persistedAgentText(ran)).toEqual([HONEST]);
+      const counts = await ran.harness.countDomainRows();
+      expect({ meetings: counts.meetings, futureActions: counts.futureActions }).toEqual({
+        meetings: 0,
+        futureActions: 0,
+      });
+    });
+  }
+
+  it('and every honest INTENTION in the same register passes through in ONE provider call', async () => {
+    // THE PRECISION HALF, and the reason only the PAST TENSE was added. `take` is
+    // not a completion form, so no intention can match one of these however it is
+    // phrased - which is a stronger guarantee than relying on `frameBlockers` to
+    // hold each one off individually. Scripted with no second entry, so a
+    // regeneration fails the run outright.
+    const HONEST_INTENTIONS = [
+      'Let me take that off the calendar for you.',
+      'I will take it out of the diary.',
+      'I can take that off the calendar in a moment.',
+      'I need to take it off the calendar first.',
+      'Let me get that removed from the diary.',
+      // And the negations, which a cancellation lexicon can break in the other
+      // direction: these are the truthful answers to "did you cancel it?".
+      'I have not taken it off the calendar.',
+      'Nothing has been taken off the calendar.',
+      // Two sentences that use the same verbs about something that is not a
+      // booking at all. A bare `i took` or `i removed` would fire on both.
+      'I took a note of that for you.',
+      'I removed the duplicate from my own list.',
+    ];
+
+    for (const text of HONEST_INTENTIONS) {
+      const ran = await run(
+        `gate-cancellation-honest-${HONEST_INTENTIONS.indexOf(text)}`,
+        [{ assistantText: text }],
+        'Can you cancel it?',
+      );
+      expect(ran.turn.assistantText, text).toBe(text);
+      expect(ran.turn.claimGate.releases.at(-1)?.outcome, text).toBe('NO_MATERIAL_CLAIM');
+      expect(ran.harness.llm.callCount, text).toBe(1);
+    }
+  });
+
+  it('but an object with a DETERMINER in front of it is STILL MISSED, and that is recorded not fixed', async () => {
+    // ASSERTED AS A MISS, in the register `DOCUMENTED_MISSES` uses: if this ever
+    // starts being caught, this test fails BY NAME and tells whoever fixed it to
+    // move the wording up into the block above and republish § 17.7.
+    //
+    // The cause is localised exactly. `i took off the calendar` is an interrupted
+    // frame, and § 16.3b's `frameDeterminers` refuses to skip noun-phrase material
+    // inside a frame - deliberately, because that refusal is what keeps
+    // `I will have your call back booked shortly.` clean. So `I took YOUR MEETING
+    // off the calendar.` is missed while `I took IT off the calendar.` is caught.
+    //
+    // It is NOT fixed here for two reasons, and both are stated in § 17.7 rather
+    // than implied: loosening `frameDeterminers` carries the § 16 guarantee that a
+    // change cannot turn a detection into a miss, which is an engine decision in
+    // the detector owner's domain; and closing it by listing the objects would be
+    // the fourth round of § 16.6 - an unlisted noun would leak.
+    //
+    // The harm is bounded but real, and it is bounded in a way worth knowing: the
+    // PASSIVE and STATIVE spellings of the same fact ARE caught (both are in the
+    // block above), so a model has to phrase it actively AND name the object with
+    // a determiner to get through.
+    const STILL_MISSED = 'I took your meeting off the calendar.';
+    const ran = await run('gate-cancellation-documented-miss', [{ assistantText: STILL_MISSED }], 'Cancel it please.');
+
+    expect(
+      ran.turn.claimGate.releases.at(-1)?.outcome,
+      'This wording is asserted AS A MISS. If it is now caught, delete this test, move the wording into ' +
+        'CANCELLATION_IDIOM_LEAKS above, and update docs/MISSION_2D_CLAIM_GATE.md § 17.7 and § 17.8.',
+    ).toBe('NO_MATERIAL_CLAIM');
+    expect(ran.turn.assistantText).toBe(STILL_MISSED);
   });
 });
 
