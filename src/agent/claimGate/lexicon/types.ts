@@ -140,6 +140,86 @@ export interface DomainObjectEntry {
   readonly family: ClaimEffectFamily;
 }
 
+/**
+ * What a carrier token DOES in the stretch between a suppressor and the form it
+ * may govern.
+ *
+ * WHY THE CARRIER LIST HAD TO GROW A ROLE - THE FIFTH FAIL-OPEN DEFECT
+ * ---------------------------------------------------------------------------
+ * `suppressionCarriers` answered one question - may a negator be carried ACROSS
+ * this token - and answering only that made the list fail open against a filler
+ * built ENTIRELY out of carriers. `not` is a declared negator, `at` and `all` are
+ * declared carriers, `i` is a declared carrier: so `Not at all I have booked your
+ * meeting for Thursday at 2pm.` had nothing but carrier material between the
+ * negator and the frame, `reachesForward` said the negator governed it, and the
+ * sentence was RELEASED to the caller and PERSISTED against an empty ledger.
+ * Independent QA drove six English and seven Hebrew wordings of that shape
+ * through the real `AgentTurnService`; `docs/MISSION_2D_CLAIM_GATE.md` § 18 has
+ * the table. The comma version was blocked in the same run, which is the third
+ * time this gate's verdict has turned on a punctuation mark.
+ *
+ * `MAX_CARRIERS_A_SUPPRESSOR_MAY_REACH_ACROSS` was named in `../detector.ts` as
+ * the mitigation for exactly this case and it does not mitigate it: the leaking
+ * fillers are two to four tokens long and sit comfortably inside the bound.
+ *
+ * WHY A ROLE AND NOT A SHORTER CARRIER LIST
+ * ---------------------------------------------------------------------------
+ * Deleting `at`, `all`, `else`, `more`, `כלום` or `יותר` from the carrier lists
+ * would close the leaks and break honest wording: `Nothing at all has been booked
+ * yet.`, `Nothing at all is booked yet.` and `לא צריך כלום הפגישה לא נקבעה עדיין.`
+ * are all clean today and all need those tokens carried across. The structural
+ * difference between the honest set and the leaking set is not the vocabulary and
+ * not the distance - it is that a NEW PREDICATION intervenes in the leaking ones
+ * and does not in the honest ones. Deciding that needs to know what each token
+ * IS, so each group now says so.
+ *
+ * THE DEFAULT IS THE FAIL-SAFE ANSWER. `role` is optional and an entry that omits
+ * it is `SUBJECT` - "this token might head a fresh subject" - which ENDS a
+ * negator's reach and therefore costs one regeneration of a sentence that was
+ * true. A group mis-declared as `MODIFIER`, `VERB` or `PREPOSITION` is the
+ * direction that costs coverage, so those three are the ones a reader should
+ * check, and `en.ts` and `he.ts` argue each group where it is declared.
+ */
+export type SuppressionCarrierRole =
+  /**
+   * May head a fresh clause SUBJECT: the pronouns, and (supplied by the engine)
+   * the domain-object nouns. A subject standing where the suppressor is still
+   * looking for its PREDICATE is a new clause, and the suppressor does not reach
+   * into it.
+   */
+  | 'SUBJECT'
+  /**
+   * An auxiliary, a copula or a transitive verb. It SATISFIES the predicate the
+   * suppressor was looking for and takes what follows as its complement, which is
+   * why `I don't have your meeting booked.` stays clean: `your meeting` is the
+   * object of `have`, not the subject of a new clause.
+   */
+  | 'VERB'
+  /**
+   * Takes exactly ONE noun phrase as its complement, so the NP after it belongs to
+   * the suppressor's own phrase rather than starting a new clause. `Nothing in the
+   * diary is booked.` and `None of your meetings are booked.` are what this buys.
+   */
+  | 'PREPOSITION'
+  /**
+   * An adverb, a quantifier or a particle. It heads nothing and satisfies nothing:
+   * `at all`, `else`, `more`, `יותר`. This is the class the leaking fillers are
+   * built out of.
+   */
+  | 'MODIFIER';
+
+/**
+ * One group of carrier tokens, with what they do.
+ *
+ * `forms` is matched exactly as every other `forms` field is - whole tokens, in
+ * the shape `normalizeScript` plus lower-casing produce.
+ */
+export interface SuppressionCarrierEntry {
+  readonly forms: readonly string[];
+  /** Defaults to `SUBJECT`, which is the fail-safe answer. See the role type. */
+  readonly role?: SuppressionCarrierRole;
+}
+
 /** A month name, so `5 March` can be compared against a resolved instant. */
 export interface MonthEntry {
   readonly forms: readonly string[];
@@ -270,8 +350,44 @@ export interface ClaimLexicon {
    * Empty is NOT a plausible answer for a natural language, and a locale that
    * declares it empty gets the strictest possible rule: only an ADJACENT negator
    * suppresses. That is safe, so it is allowed - it simply costs precision.
+   *
+   * EACH GROUP NOW CARRIES A ROLE, AND THAT IS THE § 18 FIX. Crossing a token and
+   * being carried past a whole new clause are different things, and a list that
+   * only answered the first fell open to a filler built ENTIRELY out of carriers:
+   * `Not at all I have booked your meeting for Thursday at 2pm.` and
+   * `לא צריך כלום הפגישה נקבעה למחר בשעה 14:00.` both released and persisted a
+   * false booking. `SuppressionCarrierRole` carries that argument; the groups here
+   * were already separated by comment in both locale files, so what changed is
+   * that the separation is DATA the engine can read rather than prose a reader can.
    */
-  readonly suppressionCarriers: readonly string[];
+  readonly suppressionCarriers: readonly SuppressionCarrierEntry[];
+  /**
+   * The negators that can themselves BE the subject of the predicate they look
+   * for - English `nothing`, `none`, `nobody`.
+   *
+   * WHY THIS TINY LIST EXISTS, AND WHY IT IS THE ONE THAT DECIDES `Not at all`
+   * -------------------------------------------------------------------------
+   * A negator that OPENS its clause and cannot be a subject has no subject: it is
+   * a stand-alone negative reply, and `at all`, `צריך כלום`, `yet` and the rest of
+   * its modifiers are the only thing it governs. `Not at all` is the single most
+   * ordinary English answer to "thank you", and everything after it is a new
+   * sentence the speaker did not bother to punctuate. The same holds for every
+   * Hebrew negator, because Hebrew is pro-drop and `לא צריך כלום` is impersonal -
+   * which is why `he.ts` declares this empty and means it.
+   *
+   * `nothing`, `none` and `nobody` are the exception and they are the reason the
+   * rule cannot simply be "a clause-initial negator governs nothing". In
+   * `Nothing at all has been booked yet.` the negator IS the subject and
+   * `has been booked` is its predicate, so the negation genuinely reaches - and
+   * that sentence is one of the honest controls this fix may not break.
+   *
+   * A MISSING ENTRY COSTS A REGENERATION, NEVER A LEAK, which is the only reason
+   * an enumeration is acceptable here: a subject-capable negator left off this
+   * list is treated as a stand-alone reply, its reach stops at its own modifiers,
+   * and the completion after it is DETECTED. Adding a negator that is NOT
+   * subject-capable is the direction that costs coverage.
+   */
+  readonly subjectNegators: readonly string[];
   /**
    * Forms that make a completion form CONDITIONAL rather than asserted -
    * `once`, `as soon as`, `shall i`.

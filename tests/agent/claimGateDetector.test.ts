@@ -267,13 +267,20 @@ describe('the detector holds no language-specific literal', () => {
     completionParticiples: [{ forms: ['grobbelt'], family: 'MEETING', mode: 'COMPLETED' }],
     domainObjects: [{ forms: ['vorpen'], family: 'ANY' }],
     identifierMarkers: ['snerk kod'],
-    negators: ['nix'],
-    // What a `nix` or an `iffen` may reach ACROSS. `vorp` is this locale's `the`
-    // used as a bare subject, so `Iffen vorp grobbled` is a plan; `snerk` is this
-    // locale's word for a worry and is deliberately NOT here, which is what makes
-    // `Nix snerk vorp grobbled` - the synthetic form of `אין בעיה הפגישה נקבעה` -
-    // a detected claim. Nothing in `detector.ts` has heard of either word.
-    suppressionCarriers: ['vorp'],
+    // TWO negators, because § 18's first rule turns on which one it is. `nix` is
+    // this locale's `nothing` - it can BE a subject - and `nox` is its `not`, which
+    // cannot.
+    negators: ['nix', 'nox'],
+    // What a `nix` or an `iffen` may reach ACROSS, and what each token IS. `vorp` is
+    // this locale's emphatic particle, which heads nothing; `zub` is its third-person
+    // pronoun, which can head a subject; `snerk` is its word for a worry and is
+    // deliberately NOT here at all, which is what makes `Nix snerk vorp grobbled` -
+    // the synthetic form of `אין בעיה הפגישה נקבעה` - a detected claim. Nothing in
+    // `detector.ts` has heard of any of the three.
+    suppressionCarriers: [{ forms: ['vorp'], role: 'MODIFIER' }, { forms: ['zub'] }],
+    // `nix` is subject-capable and `nox` is not, which is the synthetic form of
+    // English `nothing` versus `not`.
+    subjectNegators: ['nix'],
     conditionalMarkers: ['iffen'],
     clauseBreakers: ['ond'],
     frameBlockers: ['kanna'],
@@ -374,6 +381,40 @@ describe('the detector holds no language-specific literal', () => {
     // cannot turn a detection into a miss.
     expect(familiesIn('Nix vorp vorp vorp vorp grobbled.', [SYNTHETIC])).toEqual([]);
     expect(familiesIn('Nix vorp vorp vorp vorp vorp grobbled.', [SYNTHETIC])).toEqual(['MEETING']);
+  });
+
+  it('and reads that language own CARRIER ROLES, so an all-carrier filler cannot silence it', () => {
+    // THE § 18 RULE, PROVED TO BE DATA. Both sentences are built out of NOTHING but
+    // tokens this locale declares, at the same distance, behind the same negator.
+    // What separates them is the ROLE the locale gave each carrier: `vorp` heads
+    // nothing, so `nix` still has its predicate to find and `grobbled` is it; `zub`
+    // can head a subject, so a NEW clause starts there and `nix` never reaches it.
+    // This is the synthetic form of `Nothing at all has been booked yet.` against
+    // `Nothing else your meeting is booked for Thursday at 2pm.`
+    expect(
+      detectMaterialClaims('Nix vorp grobbled.', { lexicons: [SYNTHETIC] }),
+      'a MODIFIER heads nothing, so the negator is still looking for the predicate it finds',
+    ).toEqual([]);
+    expect(
+      familiesIn('Nix vorp zub grobbled.', [SYNTHETIC]),
+      'a SUBJECT standing where a predicate was due is a new clause, so the negator governs none of it',
+    ).toEqual(['MEETING']);
+  });
+
+  it('and knows that language own negator cannot be a subject, so a bare one governs nothing', () => {
+    // § 18 rule 1, in a language the engine holds no literal of. `nox` opens its
+    // clause and this locale does not list it in `subjectNegators`, so it has no
+    // subject and is a stand-alone negative reply - the synthetic `Not at all`. The
+    // SAME negator, the SAME carrier and the SAME form suppress correctly when
+    // something before it in the clause can be its subject.
+    expect(
+      familiesIn('Nox vorp grobbled.', [SYNTHETIC]),
+      'a clause-initial negator with no possible subject governs only its own modifiers',
+    ).toEqual(['MEETING']);
+    expect(
+      detectMaterialClaims('Zub nox vorp grobbled.', { lexicons: [SYNTHETIC] }),
+      'and the same negator with a subject in front of it governs its predicate exactly as before',
+    ).toEqual([]);
   });
 
   it('and applies the same reach to that language own BARE PARTICIPLE rule', () => {

@@ -172,52 +172,66 @@ export const HE_CLAIM_LEXICON: ClaimLexicon = {
   // costs precision only: an unlisted infinitive ends a negator's reach and the
   // completion after it is DETECTED, which the verifier then checks against real state.
   // It is the same shortfall `frameBlockers` records below, for the same reason.
+  //
+  // EVERY GROUP DECLARES ITS ROLE, AND HEBREW IS WHERE § 18 WAS MEASURED SECOND.
+  // The § 17 rule asked only "may a negator be carried across this token", and a
+  // filler built ENTIRELY out of tokens this file declares silenced the clause
+  // behind it: `לא צריך כלום הפגישה נקבעה למחר בשעה 14:00.` released and persisted
+  // a false booking, with `לא` a declared negator, `צריך` a declared
+  // `frameBlocker` and `כלום` declared right here. Seven Hebrew wordings of that
+  // shape were driven end to end. `types.ts` (`SuppressionCarrierRole`) carries the
+  // argument; the roles below are what let the engine see that `לא צריך כלום` is a
+  // complete impersonal clause and `הפגישה נקבעה` is a new one.
+  //
+  //  - THE INFLECTED PREPOSITIONS are `MODIFIER` rather than `PREPOSITION`, and
+  //    that is not a slip: `לי`, `לך`, `לו` are preposition and pronoun fused into
+  //    one token, so the phrase is already COMPLETE and there is no following noun
+  //    phrase for it to consume. Declaring them `PREPOSITION` would let them
+  //    swallow the subject of the next clause.
+  //  - THE STANDING PRONOUNS are `SUBJECT`, which is the default, so they say
+  //    nothing.
+  //  - THE EXISTENTIAL AND THE COPULAR PAST are `VERB`: `יש`, `היה`, `הייתה`,
+  //    `יהיה` satisfy the predicate a negator is looking for, which is why
+  //    `לא היה כלום הפגישה נקבעה` needs `הפגישה` to be read as a NEW subject
+  //    rather than as more of the same clause.
+  //  - THE QUANTIFIERS are `MODIFIER` - `שום`, `כל`, `עוד`, `יותר`. This is the
+  //    group `לא צריך יותר ...` is built out of.
+  //  - `כלום`, `אחד` and `אחת` stay `SUBJECT`. They are PRONOUNS - `כלום לא נקבע`
+  //    is a sentence with `כלום` as its subject - and `SUBJECT` is the fail-safe
+  //    answer besides.
+  //  - THE LIGHT PREPOSITIONS that really do take a following noun phrase are
+  //    `PREPOSITION`.
   suppressionCarriers: [
     // ---- the inflected prepositions, which are single tokens in Hebrew -----
-    'לי',
-    'לך',
-    'לו',
-    'לה',
-    'לנו',
-    'לכם',
-    'להם',
-    'בי',
-    'בו',
-    'בה',
-    'עלי',
-    'עליך',
-    'ממני',
-    'ממך',
-    // ---- standing pronouns -------------------------------------------------
-    'אני',
-    'אנחנו',
-    'אתה',
-    'את',
-    'הוא',
-    'היא',
-    'הם',
-    'הן',
-    'זה',
-    'זאת',
-    'זו',
-    // ---- the existential and the quantifiers Hebrew negation is built with --
-    'יש',
-    'היה',
-    'הייתה',
-    'יהיה',
-    'שום',
-    'כלום',
-    'אחד',
-    'אחת',
-    'כל',
-    'עוד',
-    'יותר',
+    {
+      role: 'MODIFIER',
+      forms: ['לי', 'לך', 'לו', 'לה', 'לנו', 'לכם', 'להם', 'בי', 'בו', 'בה', 'עלי', 'עליך', 'ממני', 'ממך'],
+    },
+    // ---- standing pronouns: `SUBJECT`, which is the default ----------------
+    { forms: ['אני', 'אנחנו', 'אתה', 'את', 'הוא', 'היא', 'הם', 'הן', 'זה', 'זאת', 'זו'] },
+    // ---- the existential and the copular past ------------------------------
+    { role: 'VERB', forms: ['יש', 'היה', 'הייתה', 'יהיה'] },
+    // ---- the quantifiers Hebrew negation is built with ---------------------
+    { role: 'MODIFIER', forms: ['שום', 'כל', 'עוד', 'יותר'] },
+    // ---- the negative-polarity pronouns, which really are pronouns ---------
+    { forms: ['כלום', 'אחד', 'אחת'] },
     // ---- the light prepositions that stand alone ---------------------------
-    'עם',
-    'בשביל',
-    'מול',
-    'אצל',
+    { role: 'PREPOSITION', forms: ['עם', 'בשביל', 'מול', 'אצל'] },
   ],
+
+  // EMPTY, AND THAT IS THE WHOLE POINT FOR HEBREW. `subjectNegators` names the
+  // negators that can themselves be the SUBJECT of the predicate they negate -
+  // English `nothing`, `none`, `nobody`. Hebrew has none: `לא` is a verbal
+  // negator, `אין` is an existential, and `טרם`, `עדיין`, `בלי`, `ללא` and `אף`
+  // are adverbial or prepositional. None of them is ever a subject.
+  //
+  // Hebrew is also PRO-DROP, which is what makes this matter more here than in
+  // English: `לא צריך כלום` is a complete impersonal clause with no overt subject
+  // at all, and `קבעתי` after it is a complete clause with its subject in the
+  // morphology. So a clause-initial Hebrew negator governs its own modifiers and
+  // stops, and the seven wordings QA drove end to end are all closed by that one
+  // statement rather than by listing `לא צריך כלום`, `לא היה כלום` and the rest.
+  subjectNegators: [],
 
   conditionalMarkers: ['אם', 'כאשר', 'ברגע', 'האם', 'אולי', 'במידה'],
 
