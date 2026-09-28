@@ -447,7 +447,19 @@ describe('the action list stops being spoken, and stays refused', () => {
     const result = mapOne(FIXTURE_AYA_FENCED_DIRECTLY_ANSWER);
 
     expect(result.toolCalls).toEqual([]);
-    expect(result.metrics?.toolCallHealth).toEqual({ native: 0, recoveredFromText: 0, malformed: 1 });
+    // `refusalReasons` is MISSION 2D-R, additive: the same string the CLI
+    // channel below carries, riding inside `metrics` so a transcript can render
+    // a refusal per turn (docs/MISSION_2D_AYA_ROOT_CAUSE.md § 10, § 18.3).
+    // Asserted here rather than loosened, so the two channels cannot drift.
+    // Present only because this turn refused something - the two assertions at
+    // lines 476 and 505 have `malformed: 0` and carry no such key, which is what
+    // keeps a clean turn's metrics byte-identical to before.
+    expect(result.metrics?.toolCallHealth).toEqual({
+      native: 0,
+      recoveredFromText: 0,
+      malformed: 1,
+      refusalReasons: ['names "directly-answer", which was not offered this turn'],
+    });
     expect(result.refusals).toEqual(['names "directly-answer", which was not offered this turn']);
 
     expect(result.assistantText).not.toContain('tool_name');

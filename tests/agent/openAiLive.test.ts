@@ -61,7 +61,11 @@ live('OpenAiLlmProvider against the real API (optional)', () => {
           content: [
             'You are speaking with Jordan Prospect.',
             'Their contact id is contact_live_test. Use exactly this id in every tool call.',
-            'They are in America/New_York, where it is currently Wednesday 4 March 2026 at 10:00.',
+            // Mirrors `turnContext.ts`'s real disclosure, which drops the year
+            // on purpose - docs/MISSION_2D_AYA_ROOT_CAUSE.md § 9. A live test
+            // that fed the model a year would be testing a prompt we no longer
+            // send, and would reintroduce the exemplar this fix removed.
+            'They are in America/New_York, where it is currently Wednesday 4 March at 10:00.',
           ].join('\n'),
         },
         { role: 'user', content: 'Can you call me back tomorrow afternoon at 3?' },
@@ -115,7 +119,8 @@ live('OpenAiLlmProvider against the real API (optional)', () => {
           role: 'system',
           content:
             'You are speaking with Jordan Prospect. Their contact id is contact_live_test. They are in ' +
-            'America/New_York, where it is currently Wednesday 4 March 2026 at 10:00.',
+            // Year dropped for the same reason as above.
+            'America/New_York, where it is currently Wednesday 4 March at 10:00.',
         },
         { role: 'user', content: 'Give me a ring at some point, whenever suits.' },
       ],

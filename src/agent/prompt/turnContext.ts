@@ -79,7 +79,20 @@ export function buildTurnContext(input: TurnContextInput): BuiltTurnContext {
     contactId: contact.id,
     contactDisplayName: contact.fullName,
     contactTimezone: contact.timezone,
-    contactLocalNow: localNow.toFormat("cccc d LLLL yyyy 'at' HH:mm"),
+    // NO YEAR, DELIBERATELY. See docs/MISSION_2D_AYA_ROOT_CAUSE.md § 9.
+    //
+    // With the year this read `Wednesday 4 March 2026 at 10:00`, and
+    // `day <month name> <year>` is byte-for-byte the shape that
+    // `FABRICATION_PATTERNS` calls `day-month-name-with-year` and that the
+    // fabricated-timestamp gate refuses in a time-bearing tool argument. So the
+    // one absolute date in the window was a worked example of the single format
+    // the same context window forbids twice, and `aya-expanse:8b` imitated it.
+    //
+    // Dropping the year removes the exemplar without removing the disclosure:
+    // every one of the five fabrication patterns requires a 4-digit year, the
+    // model still learns what day and what time it is for the contact, and
+    // `Wednesday 4 March at 10:00` is not a resolvable absolute instant.
+    contactLocalNow: localNow.toFormat("cccc d LLLL 'at' HH:mm"),
     isDecisionMaker: contact.isDecisionMaker,
     qualificationBand: input.qualification?.band ?? null,
     qualificationScore: input.qualification?.score ?? null,

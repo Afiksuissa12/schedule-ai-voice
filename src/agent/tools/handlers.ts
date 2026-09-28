@@ -62,10 +62,38 @@ function requireSlot(input: ToolHandlerInput) {
   return input.slot;
 }
 
-/** "Thursday 5 March at 15:00 (America/New_York)" - how a time is spoken back. */
+/**
+ * "Thursday 5 March at 15:00 (America/New_York)" - how a time is spoken back.
+ *
+ * NO YEAR, DELIBERATELY, AND THIS SITE IS THE WORST OFFENDER OF THE THREE.
+ * See docs/MISSION_2D_AYA_ROOT_CAUSE.md § 9.1a.
+ *
+ * A tool RESULT is a message the model reads, so this string is in the context
+ * window exactly like the turn context is - and it is a stronger imitation
+ * target than the disclosure, for two reasons the evidence shows directly:
+ *
+ *  1. IT IS STAMPED OK. The model sees this format as the output of a call that
+ *     SUCCEEDED, which is the most persuasive exemplar a context window can
+ *     carry. The turn context's clock is merely stated; this one is rewarded.
+ *  2. THE COPY IS VERBATIM, IN THE SAME TURN. In `vague-next-week` turn 1 aya
+ *     passed the contact's own words (`next Tuesday at 10am`) and was told
+ *     `Tuesday 10 March 2026 at 10:00 (America/New_York) is free for 30
+ *     minutes.` Its next two calls that turn sent
+ *     `when: "Tuesday 10 March 2026 at 10:00"` - this string, minus the zone
+ *     suffix. The disclosure could not have produced it: the disclosure said
+ *     `Wednesday 4 March`. Only this line says `Tuesday 10 March`.
+ *
+ * The year is what made that copy a gate failure rather than a normal refusal:
+ * every one of the five `FABRICATION_PATTERNS` needs a 4-digit year. Without it
+ * a model that still copies produces something the resolver refuses in the open,
+ * fail-closed, with a recoverable message - not a manufactured absolute instant.
+ *
+ * The zone stays. It is not part of the forbidden shape, and a time spoken back
+ * without its zone is the ambiguity this whole module exists to prevent.
+ */
 function describeLocal(startUtc: string, timezone: string): string {
   return `${DateTime.fromMillis(Date.parse(startUtc), { zone: timezone }).toFormat(
-    "cccc d LLLL yyyy 'at' HH:mm",
+    "cccc d LLLL 'at' HH:mm",
   )} (${timezone})`;
 }
 

@@ -13,7 +13,7 @@
  */
 import { join } from 'node:path';
 
-import { CANDIDATES, REJECTED } from '../models/candidates.js';
+import { CANDIDATES, isLocalOrigin, REJECTED } from '../models/candidates.js';
 import {
   DEFAULT_OLLAMA_BASE_URL,
   formatBytes,
@@ -45,7 +45,13 @@ async function main(): Promise<void> {
   for (const candidate of CANDIDATES) {
     const tag = byName.get(candidate.tag);
     if (!tag) {
-      console.log(`ABSENT  ${candidate.tag} - run \`npm run eval:pull\``);
+      // Different advice for a local tag: `eval:pull` cannot produce it.
+      console.log(
+        isLocalOrigin(candidate)
+          ? `ABSENT  ${candidate.tag} - operator-created tag; ` +
+            `\`ollama create ${candidate.tag} -f ${candidate.localProvenance?.modelfile ?? '<modelfile>'}\``
+          : `ABSENT  ${candidate.tag} - run \`npm run eval:pull\``,
+      );
       entries.push({
         tag: candidate.tag,
         present: false,
@@ -59,6 +65,7 @@ async function main(): Promise<void> {
         vramContextLength: null,
         rationale: candidate.rationale,
         withinVramBudget: null,
+        ...(candidate.localProvenance ? { localOrigin: candidate.localProvenance } : {}),
       });
       continue;
     }
@@ -105,6 +112,7 @@ async function main(): Promise<void> {
       vramContextLength,
       rationale: candidate.rationale,
       withinVramBudget: withinBudget,
+      ...(candidate.localProvenance ? { localOrigin: candidate.localProvenance } : {}),
     });
   }
 
@@ -127,10 +135,22 @@ async function main(): Promise<void> {
   if (over.length > 0) {
     console.log(`WARNING: ${over.map((e) => e.tag).join(', ')} exceeded the ${formatBytes(VRAM_BUDGET_BYTES)} budget.`);
   }
+  // An absent REGISTRY model is a broken inventory and exits non-zero. An absent
+  // LOCAL tag is not: it is opt-in, the operator may simply not have created it,
+  // and failing the inventory over it would make `eval:models` red on every host
+  // that never ran the experiment.
   const absent = entries.filter((e) => !e.present);
-  if (absent.length > 0) {
-    console.log(`MISSING: ${absent.map((e) => e.tag).join(', ')} - run \`npm run eval:pull\`.`);
+  const absentRegistry = absent.filter((e) => !e.localOrigin);
+  const absentLocal = absent.filter((e) => e.localOrigin);
+  if (absentRegistry.length > 0) {
+    console.log(`MISSING: ${absentRegistry.map((e) => e.tag).join(', ')} - run \`npm run eval:pull\`.`);
     process.exitCode = 1;
+  }
+  if (absentLocal.length > 0) {
+    console.log(
+      `NOT CREATED (optional, operator-owned): ${absentLocal.map((e) => e.tag).join(', ')} - ` +
+        'see EVAL_HARNESS.md § 9.8. Not an error.',
+    );
   }
 }
 

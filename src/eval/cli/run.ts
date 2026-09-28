@@ -16,7 +16,7 @@
  * which is what keeps the sweep's network trap at zero attempts.
  */
 import { loadCorpus } from '../corpus/index.js';
-import { CANDIDATES } from '../models/candidates.js';
+import { defaultBenchmarkTags, findCandidate, isLocalOrigin } from '../models/candidates.js';
 import { DEFAULT_OLLAMA_BASE_URL, getVersion, listModels } from '../models/ollamaAdmin.js';
 import { JUDGE_MODELS } from '../rubric/judge.js';
 import { runModel } from '../runner/runModel.js';
@@ -90,11 +90,30 @@ async function main(): Promise<void> {
   }
 
   const present = new Set((await listModels(baseUrl)).map((m) => m.name));
-  const requested = args.models.length > 0 ? args.models : CANDIDATES.map((c) => c.tag);
+  // `defaultBenchmarkTags()` is the registry candidates only. A locally-created
+  // tag has to be asked for by name with `--model`, because most hosts will not
+  // have created one and a default run must not fail on a tag nobody requested.
+  const requested = args.models.length > 0 ? args.models : defaultBenchmarkTags();
   const missing = requested.filter((tag) => !present.has(tag));
 
   if (missing.length > 0) {
-    console.error(`These models are not on the host: ${missing.join(', ')}\nRun \`npm run eval:pull\` first.`);
+    console.error(`These models are not on the host: ${missing.join(', ')}`);
+    // A local tag is missing for a different reason and needs different advice:
+    // `eval:pull` will never produce it, so saying "run eval:pull" would send
+    // the operator around a loop that cannot terminate.
+    for (const tag of missing) {
+      const candidate = findCandidate(tag);
+      if (candidate && isLocalOrigin(candidate) && candidate.localProvenance) {
+        console.error(
+          `  ${tag} is an OPERATOR-CREATED LOCAL TAG, not a registry model. Create it with:\n` +
+            `    ollama create ${tag} -f ${candidate.localProvenance.modelfile}\n` +
+            `  It is built on ${candidate.localProvenance.baseTag}, which it does not modify. See EVAL_HARNESS.md § 9.8.`,
+        );
+      }
+    }
+    if (missing.some((tag) => !findCandidate(tag) || !isLocalOrigin(findCandidate(tag)!))) {
+      console.error('Run `npm run eval:pull` for the registry models above.');
+    }
     process.exitCode = 1;
     return;
   }
