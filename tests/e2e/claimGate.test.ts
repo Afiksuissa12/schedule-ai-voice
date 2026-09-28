@@ -43,6 +43,21 @@ import {
   F17_EIN_DAAGA_MEETING,
   F17_EIN_TZORECH_MEETING,
   F17_LO_NORA_MEETING,
+  F18_EIN_YOTER_KLUM_MEETING,
+  F18_LO_HAYA_KLUM_MEETING,
+  F18_LO_TZARICH_KLUM_CALLBACK,
+  F18_LO_TZARICH_KLUM_CANCELLED,
+  F18_LO_TZARICH_KLUM_COMMA_CONTROL,
+  F18_LO_TZARICH_KLUM_FIRST_PERSON,
+  F18_LO_TZARICH_KLUM_MEETING,
+  F18_LO_TZARICH_YOTER_MEETING,
+  F18_NOT_AT_ALL_ALL_SET,
+  F18_NOT_AT_ALL_COMMA_CONTROL,
+  F18_NOT_AT_ALL_I_HAVE_BOOKED,
+  F18_NOT_AT_ALL_I_HAVE_CANCELLED,
+  F18_NOT_AT_ALL_I_WILL_CALL,
+  F18_NOT_AT_ALL_WE_HAVE_BOOKED,
+  F18_NOTHING_ELSE_MEETING_IS_BOOKED,
 } from '../invariants/pastFindingTexts.js';
 import { createSliceHarness, type SliceHarness } from './support.js';
 
@@ -1367,6 +1382,322 @@ describe('a cancellation asserted in an idiom the lexicon had no word for', () =
         'CANCELLATION_IDIOM_LEAKS above, and update docs/MISSION_2D_CLAIM_GATE.md § 17.7 and § 17.8.',
     ).toBe('NO_MATERIAL_CLAIM');
     expect(ran.turn.assistantText).toBe(STILL_MISSED);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 8b-vi. A FILLER BUILT ENTIRELY OUT OF DECLARED CARRIERS, which is QA-4 and
+//        how this class reached a customer after the FIFTH fix.
+// ---------------------------------------------------------------------------
+
+/**
+ * The wordings independent QA drove through this harness and watched leak a
+ * FIFTH time, and the second running where a comma is the whole finding.
+ *
+ * WHAT LEAKED
+ * ---------------------------------------------------------------------------
+ * § 17 made a negator suppress only the form it REACHES, and defined reach as
+ * "every token strictly between them is material this locale declares as able to
+ * stand between a negator and the predicate it negates". A filler built out of
+ * NOTHING BUT that material therefore passes the test that exists to stop it:
+ *
+ *     Not at all, I have booked your meeting for Thursday at 2pm.   blocked
+ *     Not at all I have booked your meeting for Thursday at 2pm.    RELEASED and PERSISTED
+ *     לא צריך כלום, הפגישה נקבעה למחר בשעה 14:00.                    blocked
+ *     לא צריך כלום הפגישה נקבעה למחר בשעה 14:00.                     RELEASED and PERSISTED
+ *
+ * `not` is a declared negator; `at` and `all` are declared `suppressionCarriers`
+ * (prepositions and quantifiers); `i` is a declared carrier (pronouns). `לא` is a
+ * declared negator, `צריך` a declared `frameBlocker`, `כלום` a declared carrier
+ * and `הפגישה` a declared `domainObject`. `Not at all` is the single most
+ * ordinary English reply to "thank you", which is what makes this class ordinary
+ * rather than adversarial.
+ *
+ * `MAX_CARRIERS_A_SUPPRESSOR_MAY_REACH_ACROSS` was named in `detector.ts` as the
+ * mitigation for exactly this case and did not mitigate it: these fillers are two
+ * to four tokens long and sit inside the bound. § 18.7 corrects that sentence.
+ *
+ * WHY THESE ARE E2E AND NOT UNIT TESTS
+ * ---------------------------------------------------------------------------
+ * The same reason the four blocks above give: the finding was never "the detector
+ * returns an empty array". It was that a caller was told something false AND the
+ * transcript recorded it, so the next turn's history reads it back as fact. Each
+ * spec asserts all three halves - not returned, not persisted as an AGENT row,
+ * and `meetings` 0 / `futureActions` 0 - and then asks the INDEPENDENT ORACLE the
+ * same question, on the declaration from `pastFindingTexts.ts` and the row counts
+ * this harness really observed.
+ */
+const ALL_CARRIER_FILLER_LEAKS: readonly {
+  readonly label: string;
+  readonly declared: DeclaredText;
+  readonly reason: string;
+  readonly utterance: string;
+  readonly world?: { readonly contactTimezone: string };
+}[] = [
+  {
+    label: 'A1 MEETING: the canonical English reply, first-person perfect',
+    declared: F18_NOT_AT_ALL_I_HAVE_BOOKED,
+    reason: 'NO_MATCHING_EFFECT',
+    utterance: 'Thanks for sorting that.',
+  },
+  {
+    label: 'A2 MEETING: the same filler over the first person PLURAL',
+    declared: F18_NOT_AT_ALL_WE_HAVE_BOOKED,
+    reason: 'NO_MATCHING_EFFECT',
+    utterance: 'Thanks for sorting that.',
+  },
+  {
+    label: 'A3 CALLBACK: a COMMITTED promise, so the class is not one mode',
+    declared: F18_NOT_AT_ALL_I_WILL_CALL,
+    // NO_MATCHING_EFFECT and not NO_TOOL_FOR_PROMISE: a callback IS supportable
+    // by `schedule_followup`, so the promise fails because no such row exists
+    // rather than because nothing could ever create one.
+    reason: 'NO_MATCHING_EFFECT',
+    utterance: 'Thanks, could someone ring me?',
+  },
+  {
+    label: 'A4 CANCELLATION: a different effect family',
+    declared: F18_NOT_AT_ALL_I_HAVE_CANCELLED,
+    reason: 'NO_MATCHING_EFFECT',
+    utterance: 'Thanks for taking care of that.',
+  },
+  {
+    // A DIFFERENT FILLER AND A DIFFERENT HALF OF THE RULE. `nothing` CAN be the
+    // subject of the predicate it negates - `Nothing at all has been booked yet.`
+    // is honest - so the clause that closes `Not at all` deliberately exempts it,
+    // and what catches this one is the fresh subject `your meeting`.
+    label: 'A5 MEETING: `Nothing else` over the passive, caught by the other half of the rule',
+    declared: F18_NOTHING_ELSE_MEETING_IS_BOOKED,
+    reason: 'NO_MATCHING_EFFECT',
+    utterance: 'Anything else I should know?',
+  },
+  {
+    label: 'A6 ANY: the form names no object at all',
+    declared: F18_NOT_AT_ALL_ALL_SET,
+    reason: 'NO_MATCHING_EFFECT',
+    utterance: 'Thanks for sorting that.',
+  },
+  {
+    // THE ENGLISH CONTROL, kept as a spec of its own. It was blocked throughout,
+    // so if it ever passes while A1 fails, the verdict depends on a punctuation
+    // mark again - for the third time in this file.
+    label: 'the comma-bearing CONTROL for A1, which was correctly blocked all along',
+    declared: F18_NOT_AT_ALL_COMMA_CONTROL,
+    reason: 'NO_MATCHING_EFFECT',
+    utterance: 'Thanks for sorting that.',
+  },
+  {
+    label: 'H1 MEETING: לא צריך כלום, passive past',
+    declared: F18_LO_TZARICH_KLUM_MEETING,
+    reason: 'NO_MATCHING_EFFECT',
+    utterance: 'רק תגיד לי שזה סגור.',
+    world: JERUSALEM,
+  },
+  {
+    label: 'H2 MEETING: לא היה כלום - the copular past instead of the modal',
+    declared: F18_LO_HAYA_KLUM_MEETING,
+    reason: 'NO_MATCHING_EFFECT',
+    utterance: 'רק תגיד לי שזה סגור.',
+    world: JERUSALEM,
+  },
+  {
+    label: 'H3 MEETING: לא צריך יותר - a quantifier where H1 has a pronoun',
+    declared: F18_LO_TZARICH_YOTER_MEETING,
+    reason: 'NO_MATCHING_EFFECT',
+    utterance: 'רק תגיד לי שזה סגור.',
+    world: JERUSALEM,
+  },
+  {
+    label: 'H4 MEETING: אין יותר כלום - the existential negator, not the verbal one',
+    declared: F18_EIN_YOTER_KLUM_MEETING,
+    reason: 'NO_MATCHING_EFFECT',
+    utterance: 'רק תגיד לי שזה סגור.',
+    world: JERUSALEM,
+  },
+  {
+    // PRO-DROP, and the shape no subject-hunting rule alone can read: `קבעתי`
+    // carries subject, tense and person inside one inflected word, so there is no
+    // subject TOKEN between the filler and the claim for anything to find.
+    label: 'H5 MEETING: a first-person past with no overt subject at all',
+    declared: F18_LO_TZARICH_KLUM_FIRST_PERSON,
+    reason: 'NO_MATCHING_EFFECT',
+    utterance: 'רק תגיד לי שזה סגור.',
+    world: JERUSALEM,
+  },
+  {
+    label: 'H6 CANCELLATION: לא צריך כלום הפגישה בוטלה',
+    declared: F18_LO_TZARICH_KLUM_CANCELLED,
+    reason: 'NO_MATCHING_EFFECT',
+    utterance: 'רק תגיד לי שזה בוטל.',
+    world: JERUSALEM,
+  },
+  {
+    label: 'H7 CALLBACK: no noun phrase between the filler and the verb',
+    declared: F18_LO_TZARICH_KLUM_CALLBACK,
+    reason: 'NO_MATCHING_EFFECT',
+    utterance: 'אפשר שמישהו יתקשר אליי?',
+    world: JERUSALEM,
+  },
+  {
+    label: 'the comma-bearing CONTROL for H1',
+    declared: F18_LO_TZARICH_KLUM_COMMA_CONTROL,
+    reason: 'NO_MATCHING_EFFECT',
+    utterance: 'רק תגיד לי שזה סגור.',
+    world: JERUSALEM,
+  },
+];
+
+describe('an unsupported claim behind an all-carrier reassurance filler', () => {
+  const HONEST_EN = 'Nothing is booked yet. What time works for you?';
+  const HONEST_HE = 'עדיין לא קבעתי כלום. באיזו שעה נוח לך?';
+
+  for (const leak of ALL_CARRIER_FILLER_LEAKS) {
+    it(`is withheld, regenerated and never persisted: ${leak.label}`, async () => {
+      const honest = leak.world === JERUSALEM ? HONEST_HE : HONEST_EN;
+      const ran = await run(
+        `gate-all-carrier-${ALL_CARRIER_FILLER_LEAKS.indexOf(leak)}`,
+        [{ assistantText: leak.declared.text }, { assistantText: honest }],
+        leak.utterance,
+        leak.world ? { world: leak.world } : {},
+      );
+
+      const release = ran.turn.claimGate.releases[0];
+      expect(release?.outcome).toBe('CORRECTED_AFTER_REGENERATION');
+      expect(release?.attempts[0]?.unsupportedClaims.map((entry) => entry.reason)).toContain(leak.reason);
+
+      // 1. it did not reach the caller.
+      expect(ran.turn.assistantText).toBe(honest);
+      expect(ran.turn.assistantMessages).toEqual([honest]);
+      // 2. it was not written to the transcript as a spoken agent turn - the half
+      //    QA rates highest, because a false sentence in `ConversationTurn` is a
+      //    lie the next turn reads back as history.
+      expect(await persistedAgentText(ran)).toEqual([honest]);
+      // 3. and the thing it claimed still does not exist.
+      const counts = await ran.harness.countDomainRows();
+      expect({ meetings: counts.meetings, futureActions: counts.futureActions }).toEqual({
+        meetings: 0,
+        futureActions: 0,
+      });
+
+      // 4. AND THE INDEPENDENT ORACLE SAYS THE SAME, without the gate.
+      const unbacked = unbackedDeclaredClaims(leak.declared.declares, {
+        effects: [],
+        issuedIdentifiers: new Set([ran.harness.world.contact.id.toLowerCase()]),
+        contactId: ran.harness.world.contact.id,
+        refusals: [],
+      });
+      expect(
+        unbacked.map((entry) => entry.reason),
+        `the oracle must independently say this sentence was not safe to say: ${leak.declared.declares.why}`,
+      ).toContain(leak.reason);
+    });
+  }
+
+  it('and the TRUE claim behind the same all-carrier filler is released byte-identical', async () => {
+    // THE PRECISION DIRECTION over the LEAKING wording itself. Narrowing
+    // suppression makes the gate see MORE claims, so a claim it now sees has to
+    // still go out untouched when the ledger supports it - otherwise the fix has
+    // converted a leak into a regeneration loop on a true sentence.
+    const TRUE_CLAIM = 'Not at all I have booked your meeting for tomorrow at 3pm.';
+    const harness = await createSliceHarness({ label: 'gate-all-carrier-supported' });
+    harnesses.push(harness);
+    const conversation = await harness.startConversation();
+    harness.llm.setScript([
+      {
+        assistantText: 'One moment while I get that in the diary.',
+        toolCalls: [
+          {
+            toolName: 'schedule_meeting',
+            argumentsJson: scriptedArgs({
+              contact_id: harness.world.contact.id,
+              when: 'tomorrow at 3pm',
+              title: 'Intro call',
+            }),
+          },
+        ],
+      },
+      { assistantText: TRUE_CLAIM },
+    ]);
+
+    const turn = await harness.runtime.agent.handleTurn({
+      conversationId: conversation.id,
+      utterance: 'Please book me in for tomorrow at 3pm.',
+    });
+
+    expect(turn.toolOutcomes[0]?.ok).toBe(true);
+    expect(turn.assistantText).toBe(TRUE_CLAIM);
+    expect(turn.claimGate.releases.at(-1)?.outcome).toBe('SUPPORTED');
+    expect(harness.llm.callCount).toBe(2);
+  });
+
+  it('and QA-4 precision controls are released in ONE provider call', async () => {
+    // THE CONSTRAINT THE FINDING NAMED BEFORE IT NAMED A DIRECTION. The naive way
+    // to close the leaks above is to delete `at`, `all`, `else`, `more`, `כלום`
+    // and `יותר` from `suppressionCarriers`, and that turns every sentence below
+    // into a blocked truthful answer to "is my meeting booked?" - which is the
+    // failure mode that gets a gate switched off.
+    //
+    // SCRIPTED WITH NO SECOND ENTRY, so a regeneration fails the run outright
+    // rather than quietly consuming an attempt. That is the only way to show the
+    // gate did not merely recover.
+    const CONTROLS: readonly { readonly text: string; readonly utterance: string; readonly hebrew: boolean }[] = [
+      { text: 'Nothing at all has been booked yet.', utterance: 'Is my meeting booked?', hebrew: false },
+      { text: 'Nothing at all is booked yet.', utterance: 'Is my meeting booked?', hebrew: false },
+      {
+        text: 'I cannot see anything at all in the diary for you.',
+        utterance: 'Can you see my meeting?',
+        hebrew: false,
+      },
+      { text: 'Nothing else has been confirmed.', utterance: 'Anything else confirmed?', hebrew: false },
+      { text: "I don't have your meeting booked.", utterance: 'Is my meeting booked?', hebrew: false },
+      { text: 'Nothing in the diary is booked.', utterance: 'Is anything in the diary?', hebrew: false },
+      { text: 'None of your meetings are booked.', utterance: 'Are my meetings booked?', hebrew: false },
+      { text: 'לא צריך כלום הפגישה לא נקבעה עדיין.', utterance: 'הפגישה נקבעה?', hebrew: true },
+      { text: 'לא צריך כלום עדיין לא קבעתי כלום.', utterance: 'הפגישה נקבעה?', hebrew: true },
+      // And the honest wording the finding paired with the leaks, which stays in
+      // this list because it is the § 17 constraint and the § 18 fix must not
+      // have quietly broken it.
+      { text: 'אין בעיה הפגישה לא נקבעה עדיין.', utterance: 'הפגישה נקבעה?', hebrew: true },
+    ];
+
+    for (const control of CONTROLS) {
+      const ran = await run(
+        `gate-all-carrier-control-${CONTROLS.indexOf(control)}`,
+        [{ assistantText: control.text }],
+        control.utterance,
+        control.hebrew ? { world: JERUSALEM } : {},
+      );
+      expect(ran.turn.assistantText, control.text).toBe(control.text);
+      expect(ran.turn.claimGate.releases.at(-1)?.outcome, control.text).toBe('NO_MATERIAL_CLAIM');
+      expect(await persistedAgentText(ran), control.text).toEqual([control.text]);
+      expect(ran.harness.llm.callCount, control.text).toBe(1);
+    }
+  });
+
+  it('and the honest INTENTIONS that name the object are released in ONE provider call too', async () => {
+    // The other precision axis the § 18 scan touches: a VERB between the negator
+    // and the noun phrase makes that phrase an OBJECT rather than a new subject.
+    // These differ from `Not at all meeting booked for Thursday at 2pm.` only in
+    // that a verb stands there, so if the scan ever stops distinguishing the two
+    // this fails on the honest wording rather than on the false one.
+    const CONTROLS = [
+      'Let me get your meeting booked for Thursday.',
+      "We haven't been able to get your meeting booked yet.",
+      'I need to get your callback booked first.',
+      'Once your meeting is booked I will let you know.',
+    ];
+
+    for (const control of CONTROLS) {
+      const ran = await run(
+        `gate-all-carrier-intention-${CONTROLS.indexOf(control)}`,
+        [{ assistantText: control }],
+        'Where are we with the booking?',
+      );
+      expect(ran.turn.assistantText, control).toBe(control);
+      expect(ran.turn.claimGate.releases.at(-1)?.outcome, control).toBe('NO_MATERIAL_CLAIM');
+      expect(await persistedAgentText(ran), control).toEqual([control]);
+      expect(ran.harness.llm.callCount, control).toBe(1);
+    }
   });
 });
 
