@@ -1872,14 +1872,24 @@ $ npx vitest run tests/invariants/architectureCounts.test.ts
 $ # file restored; this branch still does not carry the edit
 ```
 
-So the merged tree is **79 files passed / 0 failed / 1 skipped; 2,286 passed / 0
-failed / 2 skipped**, and the two red assertions on *this* branch in isolation are
-the last thing standing between the numbers in § 11.9 and a wholly green suite.
-This branch deliberately still does not carry the edit: the file is not mine, the
-owner has already made it, and carrying a duplicate of somebody else's change is
-how a merge conflict gets manufactured in a file I was told not to touch. **§ 7 of
-this document is the counter-example this paragraph exists to avoid becoming** —
-that one was asked for twice, never answered, and shipped unresolved.
+So the two red assertions on *this* branch in isolation were the last thing standing
+between the numbers in § 11.9 and a wholly green suite. This branch deliberately
+still does not carry the edit: the file is not mine, the owner has already made it,
+and carrying a duplicate of somebody else's change is how a merge conflict gets
+manufactured in a file I was told not to touch. **§ 7 of this document is the
+counter-example this paragraph exists to avoid becoming** — that one was asked for
+twice, never answered, and shipped unresolved.
+
+**The projection this paragraph originally carried was wrong, and § 12 replaces it
+with a measurement.** It said the merged tree would be *"79 files passed / 0 failed
+/ 1 skipped; 2,286 passed / 0 failed / 2 skipped"* — this branch's own 79/2,286 with
+the two failures subtracted. That arithmetic is only valid if no sibling adds a test,
+and two of them did: `AUTO-EVAL-AND-DOCS` landed `tests/eval/verifierEvalReadiness.test.ts`
+and `tests/eval/layeredClaimMeasure.test.ts`. The integrator measured the actual
+merge at **81 files (80 passed, 1 skipped); 2,370 tests (2,368 passed, 0 failed, 2
+skipped)** — see § 12. A number computed from one branch about a tree that does not
+exist yet is a guess, and this document's own standard is that a guess is labelled
+as one.
 
 ### 11.12 What this assurance still cannot see
 
@@ -1957,3 +1967,107 @@ and fails loudly when the premise stops being true.**
 
 A green INV-19 should still be read as what it is: **a statement about the wiring,
 proved with a double that reads nothing.**
+
+---
+
+## 12. Integration — the four Mission 2F branches measured as one tree
+
+Written by the **integrator**, on the merge of
+`AUTO-DETERMINISTIC-LAYER`, `AUTO-VERIFIER-CORE`, `AUTO-EVAL-AND-DOCS` and
+`AUTO-ADVERSARIAL-ASSURANCE`. Every figure below was produced by running the command
+on the merged tree, in the foreground, one at a time, with a clean working tree —
+not carried over from any branch's own section.
+
+**Why this section exists.** `AUTO-ADVERSARIAL-ASSURANCE` was excluded from the first
+integration because its agent session was lost, not because anything it wrote failed.
+Its work — INV-19, the adversarial corpus, the cross-layer proofs, the fail-closed
+end-to-end proofs and the extended oracle — is now merged, and the whole is measured
+here rather than inferred from four separate measurements of four separate parts.
+
+### 12.1 The full sequence, as run
+
+| # | command | result | wall |
+|---|---|---|---:|
+| 1 | `npm run typecheck` | **PASS**, no output | 9 s |
+| 2 | `npm run build` | **PASS**, no output | 10 s |
+| 3 | `npm run test` | **PASS — 80 files passed / 1 skipped (81); 2,368 tests passed / 0 failed / 2 skipped (2,370)** | 381 s |
+| 4 | `npm run qa:sweep` | **PASS — 1,171 scenarios, 14,853 applicable checks (25,246 evaluated), 0 violations, 0 network attempts** | 244 s |
+| 5 | `npm run qa:sweep -- --determinism` | **PASS** — the same 1,171 / 14,853 / 25,246 / 0 / 0; INV-09 *"a second full run produced byte-identical classifications for every scenario id"* | 490 s |
+| 6 | `npm run check:anti-scripting` | **PASS** — no canned dialogue on the customer-facing path, 1 allowance in force | 1 s |
+| 7 | `npm run context:prove` | **PASS — 9/9 proofs** | 23 s |
+| 8 | `localeParity`, `hebrewGrammar`, `localeRefusalBreadth`, `localeDateAndTime` | **PASS** — 4 files, **235 tests** | 3 s |
+| 9 | `tests/claimGate`, `tests/eval`, `tests/e2e`, the four oracle/authority files, `tests/llm` | **PASS** — 28 files, **795 tests** | 77 s |
+
+Row 9 is the integrator's own selection of directories and is **not** the same file
+set as § 11.9 row 9 or as `MISSION_2F_SEMANTIC_VERIFIER.md` § 16 row 9; the three
+counts differ because the selections differ, not because any result does. Row 3 is
+the number that covers all of them.
+
+**Every per-invariant zero held, including the two this mission touched:** INV-18
+**4,928 / 4,928** applicable, 0 violations; INV-19 **2,322 / 2,322** applicable, 0
+violations. All seventeen per-scenario invariants: 0 violations each. INV-10: **0**
+outbound attempts.
+
+**The claim-gate summary block, verbatim from the merged tree's own report:**
+
+```
+  CLAIMS THAT LEAKED PAST THE GATE    : 0   (must be 0)
+  TEXTS RELEASED WITHOUT PASSING BOTH LAYERS : 0   (must be 0, INV-19)
+    scenarios with a verifier wired     : 1171
+    scenarios with NO verifier wired    : 0   (must be 0)
+    scenarios where NOBODY SAID         : 0   (must be 0; unstated is not the same as wired)
+    attempts both layers read           : 2598
+    ...on which the 2nd layer ANSWERED  : 2546
+    ...on which it FAILED CLOSED        : 52
+    unions smaller than deterministic   : 0   (must be 0; the union may only ADD)
+    claims ONLY the 2nd layer saw       : 8   (each one would have leaked before Mission 2F)
+```
+
+Those ten lines are **byte-identical** to the ones `AUTO-EVAL-AND-DOCS` quoted in
+`MISSION_2F_SEMANTIC_VERIFIER.md` § 16 and to the ones this document's § 11.9 quotes,
+which is the cross-branch agreement that matters: the assurance branch's INV-19
+counts and the eval branch's INV-19 counts describe the same wiring, and merging them
+changed neither.
+
+### 12.2 What the integration actually had to reconcile
+
+**The code merged without a seam.** No conflict markers, no duplicated symbol, no
+import left dangling, no test that passed on a branch and failed on the merge.
+`npm run typecheck` was clean on the merged tree before any integrator edit, and the
+suite was already green. The four branches partitioned cleanly by directory — the
+deterministic lexicon, the verifier and its wiring, the eval corpus and rubric, and
+the assurance tests — and each stayed inside its own.
+
+**One seam was real, and it was a number.** § 11.11 above stated the merged tree's
+test totals as a *projection* made on the assurance branch, before the sibling tests
+existed, and the projection was low by 84 tests and 2 files. It is corrected in place
+and pointed here. **Every other number quoted across the two Mission 2F documents
+reproduced exactly** — the 1,171 scenarios, the 14,853 applicable and 25,246
+evaluated checks, the 235 Hebrew parity tests, the 9/9 context proofs, the whole
+claim-gate summary block, and the 2,368 / 2,370 in
+`MISSION_2F_SEMANTIC_VERIFIER.md` § 16 rows 3 and 4.
+
+**The cross-task blocker of § 11.11 is closed on the merged tree, by measurement.**
+`tests/invariants/architectureCounts.test.ts` re-derives **17** from `INVARIANTS.length`
+and **1,171** from `generateScenarios()` and compares them with `docs/ARCHITECTURE.md`.
+On the assurance branch alone it was red on both. On the merge it is part of the 80
+green files, because `AUTO-EVAL-AND-DOCS` landed the edit in the file it owns and the
+assurance branch correctly declined to duplicate it. **The two branches were right
+separately and are consistent together**, which is the only form in which that
+blocker could be said to be answered.
+
+**Both committed evidence directories are untouched.** `eval-output/` and
+`eval-output-fair-20260927/` are byte-identical after the whole sequence; `git status`
+was clean before the first command and clean after the last, `npm run build` included.
+**No model was called at any point** — row 5's INV-10 is the machine-checked form of
+that claim, and rows 1–9 attempted zero outbound connections between them.
+
+### 12.3 What integration does not add
+
+A green merge is evidence that four branches compose, and **nothing more**. Every
+residual in §§ 8, 10.4 and 11.12 of this document, and in §§ 12 and 13 of
+`MISSION_2F_SEMANTIC_VERIFIER.md`, survives the merge unchanged — in particular that
+the sweep's second layer is a **lookup table with no classification logic in it**, so
+INV-19's 2,322 green checks bound the wiring and say nothing about whether a real
+verifier reads a sentence correctly. Merging four branches that each proved the wiring
+proves the wiring four times. It does not begin to prove the vocabulary.

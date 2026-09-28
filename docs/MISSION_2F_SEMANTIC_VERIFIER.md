@@ -898,3 +898,10 @@ same one that was skipped before.
 **And `npm run eval:verifier` was exercised only in its REFUSAL paths**, which reach no network: with
 no `EVAL_OUT_DIR` it refuses and prints the export line; with `--out eval-output-fair-20260927` it
 refuses and names the test that asserts why. **It was never run against a model.**
+
+**Re-measured on the final four-branch merge, independently.** The integrator ran the same sequence
+again on the merge of all four Mission 2F branches and **every figure in this section reproduced**:
+80 files / 1 skipped (81), 2,368 passed / 0 failed / 2 skipped (2,370), 1,171 / 14,853 / 25,246 /
+**0** / **0**, INV-18 4,928 and INV-19 2,322 both at zero violations, 9/9 context proofs, 235 Hebrew
+parity tests, and the claim-gate summary block byte-identical. The record, and the one stale number
+it corrected elsewhere, is `docs/MISSION_2D_CLAIM_GATE_ASSURANCE.md` **§ 12**.
