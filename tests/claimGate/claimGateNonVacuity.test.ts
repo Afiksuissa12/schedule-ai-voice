@@ -31,6 +31,7 @@ import {
   CROSS_CLAUSE_MATRIX,
   DOCUMENTED_MISSES,
   DOCUMENTED_OVERREACH,
+  DOCUMENTED_VERIFIER_MISSES,
   FRAME_SPLITTERS,
   GOVERNED_NEGATION_BASES,
   HONEST_PRECISION_MATRIX,
@@ -48,6 +49,11 @@ import {
   SUPPRESSION_MATRIX,
   SUPPRESSION_MATRIX_CAPS,
   SUPPRESSION_MODIFIERS,
+  TEMPORAL_CLAIM_FRAMES,
+  TEMPORAL_DAY_WORDINGS,
+  TEMPORAL_NULL_PATH_CONTROLS,
+  TEMPORAL_PHRASE_MATRIX,
+  TEMPORAL_TIME_WORDINGS,
   runClaimGateSelfTest,
 } from './claimGateCorpus.js';
 
@@ -93,6 +99,7 @@ describe('the claim gate is not vacuous', () => {
       'INVENTED_IDENTIFIER',
       'NO_MATCHING_EFFECT',
       'NO_TOOL_FOR_PROMISE',
+      'UNREADABLE_WHEN',
       'WRONG_DAY',
       'WRONG_TIME',
     ]);
@@ -567,6 +574,127 @@ describe('the claim gate is not vacuous', () => {
     }
   });
 
+  it('keeps the temporal axis drawn from how a PERSON says a time, not from the lexicon under test', () => {
+    // WHY THIS FLOOR EXISTS, AND WHY IT IS A DIFFERENT FAILURE FROM THE FOUR ABOVE.
+    // § 19.7's lesson was that an axis nobody declared is invisible. This is the
+    // subtler sibling: the temporal axis WAS in every matrix above - every row of
+    // `CROSS_CLAUSE_MATRIX`, `ADVERB_FRAME_MATRIX`, `SUPPRESSION_MATRIX` and
+    // `SPLIT_FRAME_MATRIX` names a day and an hour - and every value in all four is
+    // one the detector can already read, because whoever wrote the row wrote a time
+    // the gate understood. AN AXIS WHOSE VALUES ARE DRAWN FROM THE LEXICON UNDER TEST
+    // CANNOT FALSIFY THAT LEXICON. Independent QA grepped the whole repository for
+    // `half past`, `quarter past`, `this weekend`, `two days from now`, `lunchtime`,
+    // `top of the hour` and `two thirty` and found zero hits anywhere, while eleven
+    // sentences built out of them were certified SUPPORTED against a real booking.
+    //
+    // So the floors below are on the UNREADABLE half specifically. A matrix that
+    // kept only the parsed values would satisfy a size floor and reproduce the hole
+    // exactly.
+    const unreadableDays = TEMPORAL_DAY_WORDINGS.filter((row) => row.reads === 'UNREADABLE');
+    const unreadableTimes = TEMPORAL_TIME_WORDINGS.filter((row) => row.reads === 'UNREADABLE');
+    expect(
+      unreadableDays.length,
+      'too few day wordings the readers cannot parse - this is the axis half that was never generated',
+    ).toBeGreaterThanOrEqual(8);
+    expect(
+      unreadableTimes.length,
+      'too few hour wordings the readers cannot parse',
+    ).toBeGreaterThanOrEqual(8);
+    for (const language of ['en', 'he'] as const) {
+      expect(
+        unreadableDays.filter((row) => row.language === language).length,
+        `no unreadable DAY wording in ${language}. QA showed the hole is reachable in Hebrew too, so a fix ` +
+          'measured only in English would be § 16.6 for the eighth time.',
+      ).toBeGreaterThanOrEqual(3);
+      expect(
+        unreadableTimes.filter((row) => row.language === language).length,
+        `no unreadable HOUR wording in ${language}`,
+      ).toBeGreaterThanOrEqual(3);
+    }
+
+    // THE PARSED CONTROLS ARE NOT OPTIONAL. Without them a gate that started
+    // refusing every sentence naming a time would pass this matrix outright.
+    expect(TEMPORAL_DAY_WORDINGS.filter((row) => row.reads === 'AGREES').length).toBeGreaterThanOrEqual(5);
+    expect(TEMPORAL_TIME_WORDINGS.filter((row) => row.reads === 'AGREES').length).toBeGreaterThanOrEqual(5);
+    expect(
+      TEMPORAL_DAY_WORDINGS.filter((row) => row.reads === 'DISAGREES').length,
+      'the parsed-and-wrong day controls are QA control C2, which was blocked in the same run as the leaks - ' +
+        'they are what localise the finding to the PHRASING rather than to the comparison',
+    ).toBeGreaterThanOrEqual(2);
+    expect(TEMPORAL_TIME_WORDINGS.filter((row) => row.reads === 'DISAGREES').length).toBeGreaterThanOrEqual(2);
+
+    // THE EMPTY HOUR WORDING IS MANDATORY, in both languages. It is the § 20.6
+    // constraint made into an axis value: a fix that turned the null branch into
+    // `ok: false` would regenerate every truthful reply that does not restate the
+    // slot, and these rows are what fails if somebody does it.
+    for (const language of ['en', 'he'] as const) {
+      expect(
+        TEMPORAL_TIME_WORDINGS.filter((row) => row.language === language).map((row) => row.text),
+        `no empty hour wording in ${language}, so the load-bearing null path is not crossed with anything`,
+      ).toContain('');
+    }
+
+    // Every row must say WHY a person reads it that way, or a wrong declaration
+    // cannot be reviewed - which is how a wrong one would survive.
+    for (const row of [...TEMPORAL_DAY_WORDINGS, ...TEMPORAL_TIME_WORDINGS]) {
+      expect(row.why.length, `temporal wording ${JSON.stringify(row.text)} carries no reason`).toBeGreaterThan(20);
+    }
+
+    // ---- the claim axis, and the product -----------------------------------
+    expect(new Set(TEMPORAL_CLAIM_FRAMES.map((frame) => frame.language))).toEqual(new Set(['en', 'he']));
+    for (const family of ['MEETING', 'RESCHEDULE', 'CALLBACK'] as const) {
+      expect(
+        TEMPORAL_CLAIM_FRAMES.map((frame) => frame.family),
+        `no claim frame asserts ${family}, so the matrix says nothing about that family's instants`,
+      ).toContain(family);
+    }
+    expect(TEMPORAL_PHRASE_MATRIX.length).toBeGreaterThanOrEqual(400);
+    expect(
+      TEMPORAL_PHRASE_MATRIX.filter((row) => row.expect === 'UNREADABLE_WHEN').length,
+      'the § 20 half of the product',
+    ).toBeGreaterThanOrEqual(200);
+    expect(
+      TEMPORAL_PHRASE_MATRIX.filter((row) => row.expect === 'SUPPORTED').length,
+      'THE PRECISION HALF IS NOT OPTIONAL. Every row here names the day and the hour the booking really has, ' +
+        'in wording the readers parse, and must be released byte-identical.',
+    ).toBeGreaterThanOrEqual(50);
+    expect(TEMPORAL_PHRASE_MATRIX.filter((row) => row.expect === 'WRONG_DAY').length).toBeGreaterThanOrEqual(20);
+    expect(TEMPORAL_PHRASE_MATRIX.filter((row) => row.expect === 'WRONG_TIME').length).toBeGreaterThanOrEqual(20);
+    expect(
+      TEMPORAL_PHRASE_MATRIX.filter((row) => row.language === 'he').length,
+      'Hebrew is the path with no recommended model and the fused ב-/ל- prefix is a different rule from the ' +
+        'English standing preposition, so it cannot be proved by the English half',
+    ).toBeGreaterThanOrEqual(100);
+
+    // And the eleven wordings QA drove end to end, by their own bytes. An axis
+    // floor can be satisfied by rows nobody reported.
+    const generated = TEMPORAL_PHRASE_MATRIX.map((row) => row.text);
+    for (const reported of [
+      'Your meeting is booked for Thursday at half past four.',
+      'Your meeting is confirmed for Thursday at two thirty.',
+      'Your meeting is booked for Thursday at lunchtime.',
+      'Your meeting is booked for this weekend at 2pm.',
+      'Your meeting is booked for the end of the week at 2pm.',
+      'Your meeting is booked for two days from now at 2pm.',
+      'Your meeting is booked for the weekend at half past four.',
+      'הפגישה נקבעה ליום חמישי בשתיים וחצי.',
+      'הפגישה נקבעה לסוף השבוע בשעה 14:00.',
+    ]) {
+      expect(
+        generated,
+        `the § 20 wording ${JSON.stringify(reported)} must be generated by name - it was released to a real ` +
+          'caller byte-identical, persisted as a spoken AGENT row, and the audit chain recorded it as VERIFIED',
+      ).toContain(reported);
+    }
+
+    // The § 20.6 controls, asserted as a table rather than trusted to the product.
+    expect(TEMPORAL_NULL_PATH_CONTROLS.length).toBeGreaterThanOrEqual(3);
+    expect(
+      TEMPORAL_NULL_PATH_CONTROLS.map((control) => control.text),
+      'the three sentences the fix request names as the load-bearing null path must be asserted by name',
+    ).toEqual(expect.arrayContaining(['Your meeting is booked.', "You're all set.", "I'll call you back."]));
+  });
+
   it('measures the false-positive cost on an honest corpus rather than asserting it', () => {
     // § 16.3c measured 190/191 on hand-written honest wording and 0/4,320 on a
     // generated intention sweep, and BOTH sweeps were thrown away - so the published
@@ -656,6 +784,38 @@ describe('the claim gate is not vacuous', () => {
         entry.ledger.effects.length,
         `false positive "${entry.name}" has an EMPTY ledger, so the claim really is unsupported and this is ` +
           'not a false positive at all',
+      ).toBeGreaterThan(0);
+    }
+  });
+
+  it('keeps every VERIFIER miss recorded, and asserted as still missed', () => {
+    // The fourth shape, and § 20 is the first finding in this gate that has it: the
+    // claim is DETECTED, the ledger is read, and the CHECK certifies a false
+    // sentence anyway. `DOCUMENTED_MISSES` (detector blind),
+    // `KNOWN_FALSE_POSITIVES` (true sentence rejected) and `DOCUMENTED_OVERREACH`
+    // (asserts nothing, flagged) between them cannot hold it.
+    //
+    // Asserted in the same uncomfortable direction as the misses: each entry must
+    // STILL be certified, so a later fix is reported by name rather than absorbed
+    // while docs/MISSION_2D_CLAIM_GATE.md § 20.6 keeps claiming a residual that no
+    // longer exists.
+    expect(
+      DOCUMENTED_VERIFIER_MISSES.length,
+      'the verifier-miss table must not be emptied silently - it is where the ONE non-inverted enumeration ' +
+        'in § 20 pays for itself, and an unpriced fail-open residual is how the last six findings happened',
+    ).toBeGreaterThanOrEqual(1);
+    for (const entry of DOCUMENTED_VERIFIER_MISSES) {
+      expect(entry.cause.length, `verifier miss "${entry.name}" has no recorded cause`).toBeGreaterThan(60);
+      expect(
+        entry.consequence.length,
+        `verifier miss "${entry.name}" has no recorded consequence - "it is wrong" is not actionable`,
+      ).toBeGreaterThan(60);
+      // The ledger must carry a real effect, or this is an unsupported claim filed
+      // in the wrong table rather than a verifier that certified a false one.
+      expect(
+        entry.ledger.effects.length,
+        `verifier miss "${entry.name}" has an EMPTY ledger, so the claim really is unsupported and the ` +
+          'verifier is not missing anything',
       ).toBeGreaterThan(0);
     }
   });

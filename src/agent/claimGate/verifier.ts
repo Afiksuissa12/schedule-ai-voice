@@ -5,7 +5,7 @@
  * No clock (the ledger carries the turn's pinned `nowUtc`), no database (the
  * ledger was already built from one), no provider.
  *
- * THE FOUR WAYS A CLAIM FAILS
+ * THE WAYS A CLAIM FAILS
  * ---------------------------------------------------------------------------
  *  - `NO_MATCHING_EFFECT` - the ledger has no effect of the family asserted.
  *    This is the `qwen2.5:7b-instruct` defect: "I've booked the callback for 3pm"
@@ -27,6 +27,12 @@
  *    `aya-expanse:8b`'s promised confirmation email cannot be supported by any
  *    state whatsoever, and saying that plainly is more use to the model than
  *    "no matching effect".
+ *  - `UNREADABLE_WHEN` - the text named a day or a time in a phrase the detector
+ *    could not read, so there is nothing to compare and the § 20 fail-open is
+ *    what would happen if this were allowed to pass. It is reported separately
+ *    from `WRONG_DAY` because it is not a contradiction: the record may well
+ *    agree with what the model meant, and what the model has to do about it is
+ *    different - name the day and the hour plainly rather than pick another one.
  *
  * COMPARISON IS DONE IN THE CONTACT'S OWN TIMEZONE
  * ---------------------------------------------------------------------------
@@ -44,6 +50,35 @@
  * on the ledger), and a bare hour with nothing to pin it is accepted when it
  * agrees modulo 12. Every other uncertainty - an unknown family, an effect with
  * no instant to compare, a day that cannot be reconciled - is unsupported.
+ *
+ * THAT PARAGRAPH WAS FALSE AS WRITTEN UNTIL § 20, AND THE CORRECTION IS THE
+ * SEVENTH FAIL-OPEN FINDING
+ * ---------------------------------------------------------------------------
+ * It claimed every other uncertainty resolved to unsupported, and one did not.
+ * `reconcile` began with
+ *
+ *     if (day === null && time === null) return { ok: true };
+ *
+ * and that line could not tell "the sentence named no day or time" from "the
+ * sentence named a day or a time I could not read". The detector's readers are a
+ * lexicon enumeration, so an unparsed phrase came back as `null`, and `null` was
+ * read as NOTHING ASSERTED. `Your meeting is booked for Thursday at half past
+ * four.` was therefore certified SUPPORTED - not merely missed, AFFIRMATIVELY
+ * CERTIFIED, with a `matchedEffect` named in the audit - against a booking at
+ * 15:00. Eleven wordings were driven through the real `AgentTurnService` and real
+ * SQLite and every one was released byte-identical and persisted; `4:30pm` and
+ * `Saturday`, the same contradictions in parseable wording, were blocked in the
+ * same run. `docs/MISSION_2D_CLAIM_GATE.md` § 20 has the table.
+ *
+ * The distinction is now carried on the claim itself - `DetectedClaim
+ * .unreadTemporal`, which is non-empty exactly when the detector saw temporal
+ * material it could not resolve - and this module treats it as the uncertainty it
+ * is. `UNREADABLE_WHEN` is the reason, one regeneration is the cost, and the
+ * sentence that genuinely names nothing (`Your meeting is booked.`) still passes
+ * with no regeneration because its `unreadTemporal` is empty.
+ *
+ * SO THE HEADING IS NOW TRUE, and the § 8.3 harm this gate's `WRONG_DAY` was
+ * built for is no longer reachable through a phrase the detector cannot parse.
  */
 import { DateTime } from 'luxon';
 
@@ -57,6 +92,7 @@ export const UNSUPPORTED_CLAIM_REASONS = [
   'EFFECT_WAS_REFUSED',
   'WRONG_DAY',
   'WRONG_TIME',
+  'UNREADABLE_WHEN',
   'INVENTED_IDENTIFIER',
   'NO_TOOL_FOR_PROMISE',
 ] as const;
@@ -276,7 +312,15 @@ interface Reconciliation {
 function reconcile(claim: DetectedClaim, effect: LedgerEffect, ledger: ActionLedger): Reconciliation {
   const day = claim.assertedDay;
   const time = claim.assertedTime;
-  if (day === null && time === null) return { ok: true };
+  const unread = claim.unreadTemporal;
+
+  // § 20. THE THIRD STATE, AND IT HAS TO BE TESTED BEFORE THE NULL SHORTCUT. A
+  // claim whose day and time are both `null` may be either of two things, and
+  // only one of them is safe: `Your meeting is booked.` names nothing and must
+  // pass with no regeneration, while `Your meeting is booked for the weekend.`
+  // names something this gate could not read. `unreadTemporal` is what tells them
+  // apart, so the shortcut below is now conditional on it being empty.
+  if (day === null && time === null && unread.length === 0) return { ok: true };
 
   const local = effect.localTime;
   if (local === null) {
@@ -294,6 +338,16 @@ function reconcile(claim: DetectedClaim, effect: LedgerEffect, ledger: ActionLed
   if (time !== null) {
     const verdict = reconcileTime(time, local, ledger);
     if (!verdict) return { ok: false, reason: 'WRONG_TIME', assertedLocal: describeAsserted(day, time) };
+  }
+
+  // § 20, AND IT IS TESTED LAST ON PURPOSE. Whatever the text DID name is
+  // compared first, so `Your meeting is booked for Saturday at half past four.`
+  // against a Thursday booking is reported as WRONG_DAY - a flat contradiction
+  // the model can act on - rather than as an unreadable phrase. `UNREADABLE_WHEN`
+  // is what is left when everything readable agreed and something in the same
+  // temporal phrase did not get read at all.
+  if (unread.length > 0) {
+    return { ok: false, reason: 'UNREADABLE_WHEN', assertedLocal: describeUnread(unread, day, time) };
   }
 
   return { ok: true };
@@ -376,4 +430,17 @@ function toMinutes(hhmm: string): number {
 function describeAsserted(day: AssertedDay | null, time: AssertedTime | null): string {
   const parts = [...(day?.forms ?? []), ...(time?.forms ?? [])];
   return parts.length > 0 ? parts.join(' ') : '(unspecified)';
+}
+
+/**
+ * The § 20 detail: which word stopped the read, and what was read around it.
+ *
+ * Tokens rather than the sentence, for the reason `stateInstruction.ts` gives at
+ * length: a string this code puts in front of the model is a script, whoever
+ * wrote it. A bare word is a fact about the parse and cannot be read out.
+ */
+function describeUnread(unread: readonly string[], day: AssertedDay | null, time: AssertedTime | null): string {
+  const readable = describeAsserted(day, time);
+  const could = `could not read ${unread.map((token) => JSON.stringify(token)).join(', ')}`;
+  return day === null && time === null ? could : `${readable}; ${could}`;
 }

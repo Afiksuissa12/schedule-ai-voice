@@ -288,6 +288,21 @@ export interface DetectedClaim {
   readonly excerpt: string;
   readonly assertedDay: AssertedDay | null;
   readonly assertedTime: AssertedTime | null;
+  /**
+   * Tokens standing where a day or a time belongs that NO rule read.
+   *
+   * THE THIRD STATE, AND IT IS THE § 20 FIX. `assertedDay === null` used to mean
+   * two different things - "the sentence named no day" and "the sentence named a
+   * day I could not read" - and `verifier.ts` had no way to tell them apart, so it
+   * read both as NOTHING ASSERTED and certified the second one SUPPORTED. This
+   * field is the distinction: empty means the sentence genuinely named nothing
+   * there, non-empty means it named something this detector could not resolve.
+   *
+   * `unreadTemporalMaterial` below holds the rule and
+   * `lexicon/types.ts` (`TemporalOpenerEntry`) holds the argument. The verifier
+   * treats a non-empty value as uncertainty, and uncertainty is UNSUPPORTED.
+   */
+  readonly unreadTemporal: readonly string[];
   /** Identifier-shaped tokens found in this sentence, verbatim. */
   readonly identifiers: readonly string[];
 }
@@ -374,6 +389,10 @@ function claimIdentity(claim: DetectedClaim): string {
     claim.locale,
     day === null ? '-' : `${day.isoWeekday}/${day.offsetDays}/${day.dayOfMonth}/${day.month}/${day.year}`,
     time === null ? '-' : `${time.hour}/${time.minute}/${time.dayPart}/${time.hourIsAmbiguous}`,
+    // § 20. Part of WHAT THE CLAIM SAYS, not of where it was found: a claim whose
+    // day is unresolved and one whose day is absent are different claims with
+    // different verdicts, so the two views must not dedupe one onto the other.
+    claim.unreadTemporal.join(','),
     claim.identifiers.join(','),
   ].join('|');
 }
@@ -417,6 +436,15 @@ function claimsInView(text: string, context: DetectionContext): DetectedClaim[] 
   }
 
   return out;
+}
+
+/** What one sentence says about WHEN and about references, read once. */
+interface SentenceWideReading {
+  readonly day: AssertedDay | null;
+  readonly time: AssertedTime | null;
+  /** § 20: temporal material no rule read. See `DetectedClaim.unreadTemporal`. */
+  readonly unreadTemporal: readonly string[];
+  readonly identifiers: readonly string[];
 }
 
 /** The pooled, per-call data every sentence is read against. */
@@ -463,15 +491,7 @@ function collectClaims(
   // them; on the bridged pass almost no pair produces a match at all, so they are
   // read on demand and the common case costs nothing. `readSentences` is unchanged,
   // so the first pass reads exactly what it always did.
-  let read: { day: AssertedDay | null; time: AssertedTime | null; identifiers: readonly string[] } | null = null;
-  const sentenceWide = (): { day: AssertedDay | null; time: AssertedTime | null; identifiers: readonly string[] } => {
-    read ??= {
-      day: detectDay(sentence.tokens, schedulingLexicons, claimLexicons),
-      time: detectTime(sentence.tokens, schedulingLexicons),
-      identifiers: identifierShapedTokens(sentence),
-    };
-    return read;
-  };
+  let read: SentenceWideReading | null = null;
 
   // WHERE THE CLAUSES ARE is a property of the TEXT, so it is read ONCE from
   // every registered locale at the same time, outside the per-lexicon loop.
@@ -480,6 +500,32 @@ function collectClaims(
   // Hebrew negator and the Hebrew completion are divided by an ENGLISH
   // conjunction, and a Hebrew-only view of the clauses cannot see it.
   const clauses = clauseIndices(sentence, claimLexicons);
+
+  const sentenceWide = (): SentenceWideReading => {
+    if (read !== null) return read;
+    // WHICH TOKENS A RULE ACTUALLY CONSUMED, recorded as the two readers run.
+    // § 20: the gate used to record only what it UNDERSTOOD and throw the rest
+    // away, which is `src/scheduling/naturalLanguage.ts`'s § 8.3 defect one layer
+    // up. The resolver has refused an unaccounted-for token ever since; this set
+    // is what lets the gate ask the same question.
+    const consumed = new Set<number>();
+    const readAsATime = new Set<number>();
+    const day = detectDay(sentence.tokens, schedulingLexicons, claimLexicons, consumed);
+    const time = detectTime(sentence.tokens, schedulingLexicons, consumed, readAsATime);
+    read = {
+      day,
+      time,
+      unreadTemporal: unreadTemporalMaterial(
+        sentence.tokens,
+        clauses,
+        { consumed, readAsATime },
+        claimLexicons,
+        schedulingLexicons,
+      ),
+      identifiers: identifierShapedTokens(sentence),
+    };
+    return read;
+  };
 
   for (const lexicon of claimLexicons) {
     const suppression = readSuppression(sentence, clauses, lexicon, reach);
@@ -500,8 +546,8 @@ function collectClaims(
       const key = `${match.claim.family}:${match.claim.mode}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      const { day, time, identifiers } = sentenceWide();
-      out.push({ ...match.claim, assertedDay: day, assertedTime: time, identifiers });
+      const { day, time, unreadTemporal, identifiers } = sentenceWide();
+      out.push({ ...match.claim, assertedDay: day, assertedTime: time, unreadTemporal, identifiers });
     }
 
     // THE FALLBACK: a bare participle beside a domain object, in a clause no frame
@@ -519,8 +565,8 @@ function collectClaims(
       const key = `${match.claim.family}:${match.claim.mode}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      const { day, time, identifiers } = sentenceWide();
-      out.push({ ...match.claim, assertedDay: day, assertedTime: time, identifiers });
+      const { day, time, unreadTemporal, identifiers } = sentenceWide();
+      out.push({ ...match.claim, assertedDay: day, assertedTime: time, unreadTemporal, identifiers });
     }
 
     // An identifier MARKER is an assertion that the system has an identifier
@@ -534,7 +580,7 @@ function collectClaims(
         crossesTheCut(hit.position, hit.position + hit.length, crossing),
     );
     if (marker !== undefined) {
-      const { day, time, identifiers } = sentenceWide();
+      const { day, time, unreadTemporal, identifiers } = sentenceWide();
       out.push({
         kind: 'IDENTIFIER_ASSERTED',
         family: 'ANY',
@@ -545,6 +591,7 @@ function collectClaims(
         excerpt: sentence.raw,
         assertedDay: day,
         assertedTime: time,
+        unreadTemporal,
         // The marker's OWN claim carries the looser shapes as well - see
         // `markerAdjacentIdentifiers`. Only this claim does; the effect
         // claims above and the bare-shape claim below keep the strict list.
@@ -559,7 +606,7 @@ function collectClaims(
   // first pass read. A token cannot straddle a cut, so there is nothing here that
   // crossing could add and a second report would only duplicate.
   if (crossing === null) {
-    const { day, time, identifiers } = sentenceWide();
+    const { day, time, unreadTemporal, identifiers } = sentenceWide();
     if (identifiers.length > 0) {
       out.push({
         kind: 'IDENTIFIER_ASSERTED',
@@ -571,6 +618,7 @@ function collectClaims(
         excerpt: sentence.raw,
         assertedDay: day,
         assertedTime: time,
+        unreadTemporal,
         identifiers,
       });
     }
@@ -609,7 +657,7 @@ interface CompletionMatch {
    */
   readonly coversFrom: number;
   readonly coversTo: number;
-  readonly claim: Omit<DetectedClaim, 'assertedDay' | 'assertedTime' | 'identifiers'>;
+  readonly claim: Omit<DetectedClaim, 'assertedDay' | 'assertedTime' | 'unreadTemporal' | 'identifiers'>;
 }
 
 /** The `SuppressedForm` a completion match asks the suppression rules about. */
@@ -1790,6 +1838,7 @@ function detectDay(
   tokens: readonly ClaimToken[],
   schedulingLexicons: readonly LocaleLexicon[],
   claimLexicons: readonly ClaimLexicon[],
+  consumed: Set<number>,
 ): AssertedDay | null {
   let isoWeekday: number | null = null;
   let offsetDays: number | null = null;
@@ -1798,11 +1847,21 @@ function detectDay(
   let year: number | null = null;
   const forms: string[] = [];
 
+  // § 20. A span is recorded for EVERY hit, including the ones whose value is
+  // dropped because an earlier form already answered that field. The set answers
+  // "did a rule look at this token", not "did this token decide the verdict", and
+  // the second reading would report a word the gate had in fact read.
+  const take = (position: number, length: number): void => {
+    for (let offset = 0; offset < length; offset += 1) consumed.add(position + offset);
+  };
+
   for (let position = 0; position < tokens.length; position += 1) {
     for (const lexicon of schedulingLexicons) {
       for (const entry of lexicon.weekdays) {
         const hit = matchLongestForm(tokens, position, entry.forms);
-        if (hit && isoWeekday === null) {
+        if (!hit) continue;
+        take(position, hit.length);
+        if (isoWeekday === null) {
           isoWeekday = entry.isoWeekday;
           forms.push(hit.form);
         }
@@ -1810,7 +1869,9 @@ function detectDay(
       for (const entry of lexicon.dayAnchors) {
         if (entry.kind !== 'RELATIVE_DAY' || entry.offsetDays === undefined) continue;
         const hit = matchLongestForm(tokens, position, entry.forms);
-        if (hit && offsetDays === null) {
+        if (!hit) continue;
+        take(position, hit.length);
+        if (offsetDays === null) {
           offsetDays = entry.offsetDays;
           forms.push(hit.form);
         }
@@ -1820,7 +1881,9 @@ function detectDay(
     for (const lexicon of claimLexicons) {
       for (const entry of lexicon.months) {
         const hit = matchLongestForm(tokens, position, entry.forms);
-        if (hit && month === null) {
+        if (!hit) continue;
+        take(position, hit.length);
+        if (month === null) {
           month = entry.month;
           forms.push(hit.form);
         }
@@ -1837,6 +1900,7 @@ function detectDay(
       month = Number(iso[2]);
       dayOfMonth = Number(iso[3]);
       forms.push(token.text);
+      take(position, 1);
       continue;
     }
 
@@ -1847,6 +1911,7 @@ function detectDay(
         if (ordinal && dayOfMonth === null) {
           dayOfMonth = Number(ordinal[1]);
           forms.push(token.text);
+          take(position, 1);
         }
       }
     }
@@ -1857,6 +1922,7 @@ function detectDay(
       if (value >= 2000 && value <= 2999) {
         year = value;
         forms.push(token.text);
+        take(position, 1);
       }
     }
   }
@@ -1866,8 +1932,9 @@ function detectDay(
   if (month !== null && dayOfMonth === null) {
     const nearby = bareDayOfMonthNearMonth(tokens, claimLexicons);
     if (nearby !== null) {
-      dayOfMonth = nearby;
-      forms.push(String(nearby));
+      dayOfMonth = nearby.value;
+      forms.push(String(nearby.value));
+      take(nearby.position, 1);
     }
   }
 
@@ -1886,7 +1953,7 @@ function detectDay(
 function bareDayOfMonthNearMonth(
   tokens: readonly ClaimToken[],
   claimLexicons: readonly ClaimLexicon[],
-): number | null {
+): { readonly value: number; readonly position: number } | null {
   for (let position = 0; position < tokens.length; position += 1) {
     for (const lexicon of claimLexicons) {
       for (const entry of lexicon.months) {
@@ -1897,7 +1964,7 @@ function bareDayOfMonthNearMonth(
           if (candidate === undefined) continue;
           if (!/^\d{1,2}$/u.test(candidate.text)) continue;
           const value = Number(candidate.text);
-          if (value >= 1 && value <= 31) return value;
+          if (value >= 1 && value <= 31) return { value, position: position + offset };
         }
       }
     }
@@ -1912,6 +1979,8 @@ function bareDayOfMonthNearMonth(
 function detectTime(
   tokens: readonly ClaimToken[],
   schedulingLexicons: readonly LocaleLexicon[],
+  read: Set<number>,
+  readAsATime: Set<number>,
 ): AssertedTime | null {
   let hour: number | null = null;
   let minute: number | null = null;
@@ -1919,6 +1988,15 @@ function detectTime(
   let dayPart: string | null = null;
   let hourWasBare = false;
   const forms: string[] = [];
+
+  // § 20, and the same rule `detectDay` uses: every hit is recorded, whether or
+  // not its value survives the first-wins comparison. See `detectDay`.
+  const take = (position: number, length: number): void => {
+    for (let offset = 0; offset < length; offset += 1) {
+      read.add(position + offset);
+      readAsATime.add(position + offset);
+    }
+  };
 
   // ---- pass A: day parts, which CONSUME their tokens ---------------------
   // Order and consumption are both load-bearing, and for the reason the
@@ -1934,6 +2012,7 @@ function detectTime(
         const hit = matchLongestForm(tokens, position, entry.forms);
         if (!hit) continue;
         for (let offset = 0; offset < hit.length; offset += 1) consumed.add(position + offset);
+        take(position, hit.length);
         if (dayPart === null) {
           dayPart = entry.dayPart;
           forms.push(hit.form);
@@ -1949,7 +2028,9 @@ function detectTime(
     for (const lexicon of schedulingLexicons) {
       for (const entry of lexicon.namedTimes) {
         const hit = matchLongestForm(tokens, position, entry.forms);
-        if (hit && hour === null) {
+        if (!hit) continue;
+        take(position, hit.length);
+        if (hour === null) {
           hour = entry.hour;
           minute = entry.minute;
           forms.push(hit.form);
@@ -1957,11 +2038,21 @@ function detectTime(
       }
       for (const entry of lexicon.meridiems) {
         const hit = matchLongestForm(tokens, position, entry.forms);
-        if (hit && meridiem === null) {
+        if (!hit) continue;
+        take(position, hit.length);
+        if (meridiem === null) {
           meridiem = entry.meridiem;
           forms.push(hit.form);
         }
       }
+      // THE CLOCK SUFFIXES ARE READ HERE AND NOWHERE ELSE, and only § 20 needs
+      // them: `o'clock` never changed an hour this gate computed, so the readers
+      // had no reason to look at it, so it was a leftover standing inside a
+      // temporal phrase and `at 2 o'clock` would have reported it as unread. The
+      // resolver declares the same forms for the same reason (`LocaleLexicon
+      // .clockSuffixes`) - it marks the number in front of it as a clock time.
+      const suffix = matchLongestForm(tokens, position, lexicon.clockSuffixes);
+      if (suffix !== null) take(position, suffix.length);
     }
 
     const token = tokens[position];
@@ -1969,20 +2060,26 @@ function detectTime(
 
     // `15:00`, and the same thing behind an attaching clock prefix - `ב-15:00`.
     const clock = readClockToken(token.text, schedulingLexicons);
-    if (clock !== null && hour === null) {
-      hour = clock.hour;
-      minute = clock.minute;
-      if (clock.meridiem !== null) meridiem = clock.meridiem;
-      hourWasBare = clock.bare;
-      forms.push(token.text);
+    if (clock !== null) {
+      take(position, 1);
+      if (hour === null) {
+        hour = clock.hour;
+        minute = clock.minute;
+        if (clock.meridiem !== null) meridiem = clock.meridiem;
+        hourWasBare = clock.bare;
+        forms.push(token.text);
+      }
       continue;
     }
   }
 
   // A bare hour introduced by a clock prefix - `at 3`, `בשעה 14`.
-  if (hour === null) {
-    const bare = readBareHourAfterPrefix(tokens, schedulingLexicons);
-    if (bare !== null) {
+  const bare = readBareHourAfterPrefix(tokens, schedulingLexicons);
+  if (bare !== null) {
+    // The PREFIX and the digits both, even when an earlier rule already answered
+    // the hour: `at 3` behind `tomorrow at 3pm` is not unread material.
+    take(bare.position, bare.length);
+    if (hour === null) {
       hour = bare.hour;
       minute = 0;
       hourWasBare = true;
@@ -2005,6 +2102,384 @@ function detectTime(
     dayPart,
     forms,
   };
+}
+
+// ---------------------------------------------------------------------------
+// § 20: temporal material NO rule read
+// ---------------------------------------------------------------------------
+
+/**
+ * Tokens standing where a day or a time belongs that neither reader consumed.
+ *
+ * THE DEFECT, AND WHY IT IS NOT A MISSING WORD
+ * ---------------------------------------------------------------------------
+ * `detectDay` and `detectTime` record what they UNDERSTOOD and ignore the rest of
+ * the sentence. So `Your meeting is booked for Thursday at half past four.` came
+ * back with a day and `assertedTime === null`, `verifier.ts` read that null as
+ * "the sentence named no time", and the claim skipped the time comparison and was
+ * certified SUPPORTED against a booking at 15:00. Eleven wordings of that shape
+ * were driven through the real `AgentTurnService` and real SQLite; every one was
+ * returned byte-identical AND persisted as a spoken AGENT turn, with the audit
+ * chain recording the false sentence as VERIFIED and naming the effect that
+ * "supports" it. `4:30pm` and `Saturday` - the same contradictions in wording the
+ * readers parse - were blocked in the same run.
+ *
+ * THIS IS `src/scheduling/naturalLanguage.ts`'s § 8.3 DEFECT ONE LAYER UP. The
+ * resolver used to blank its matches out of a string and throw away whatever
+ * survived, which booked `מחר ב-15:00` for TODAY. Its fix was the rule it still
+ * carries: "a phrase may resolve only if EVERY non-whitespace token was consumed
+ * by a rule." This gate reads the SAME lexicons and never adopted that rule. This
+ * function is the gate adopting it.
+ *
+ * WHY IT IS BOUNDED BY A SLOT AND THE RESOLVER'S IS NOT
+ * ---------------------------------------------------------------------------
+ * The resolver is handed a `when` string that is ALL temporal phrase, so every
+ * token in it is fair game. This gate is handed a whole sentence, most of which
+ * is not about time at all - `Your meeting is booked ...` would refuse on
+ * `meeting` and on `booked`. So the leftover rule applies only inside a TEMPORAL
+ * SLOT: the stretch of a clause that a `temporalOpeners` word introduces.
+ * `lexicon/types.ts` (`TemporalOpenerEntry`) argues why the opener is the right
+ * axis and why it is the one list here that is not inverted.
+ *
+ * THE SLOT, EXACTLY
+ * ---------------------------------------------------------------------------
+ *  - It OPENS at an opener - a standing word (`for`, `at`, `on`) or a fused
+ *    prefix (Hebrew `ב`, `ל`), in which case what the prefix was fused to is the
+ *    first thing in the slot.
+ *  - It RUNS to the end of the opener's own CLAUSE, which is the § 15 boundary,
+ *    already computed, and already knows about `clauseBreakers`. `I have booked
+ *    you for Thursday, and thanks for waiting.` therefore does not read `waiting`
+ *    as a day.
+ *  - It ENDS EARLY at a `temporalSlotEnder` - `with Jordan Miller`, `after lunch`.
+ *  - Inside it, a token is ACCOUNTED FOR when a reader consumed it, when it is
+ *    carrier material, or when it opens the next slot. THE FIRST TOKEN THAT IS
+ *    NONE OF THOSE IS REPORTED AND CLOSES THE SLOT.
+ *
+ * AN HOUR CLOSES THE SLOT, AND A DAY DOES NOT. Measured, on the committed corpus,
+ * and it is the difference between 22 over-reports and 6. An hour is the LAST
+ * thing an English or a Hebrew temporal phrase names - after `at 2pm` and after
+ * `בשעה 14:00` the phrase is finished, and whatever follows belongs to the rest of
+ * the sentence (`... at 2pm with Jordan Miller.`, `... בשעה 14:00 No problem.`).
+ * A day is not: `for Thursday at half past four` and `for Thursday first thing`
+ * both carry the hour AFTER the day, and the second of those has no second opener
+ * to catch it, so a day reading has to leave the slot open.
+ *
+ * ONE REPORT PER SLOT, AND THAT IS A PRECISION DECISION RATHER THAN A TIDY ONE.
+ * Reporting every unaccounted token would walk the rest of the clause after the
+ * first unknown word and quote a person's name, a company, a reason - none of
+ * which the verifier can do anything with, and all of which would end up in an
+ * audit detail. One token is enough: the verdict is BOOLEAN (resolved or not),
+ * and the string exists only so a reader of the audit can see which word stopped
+ * it.
+ *
+ * FAIL-SAFE DIRECTION, STATED FOR THIS FUNCTION. Over-reporting costs ONE
+ * regeneration of a sentence that was true. Under-reporting certifies a wrong day
+ * or a wrong hour to a customer and writes it to the transcript as fact. So every
+ * ambiguity here resolves towards REPORTING, and the two lists that decide it -
+ * `temporalCarriers` and `temporalSlotEnders` - are written so that a missing
+ * entry over-reports.
+ */
+function unreadTemporalMaterial(
+  tokens: readonly ClaimToken[],
+  clauses: readonly number[],
+  readings: TemporalReadings,
+  lexicons: readonly ClaimLexicon[],
+  schedulingLexicons: readonly LocaleLexicon[],
+): readonly string[] {
+  const index = temporalIndex(lexicons, schedulingLexicons);
+  if (index.standaloneOpeners.length === 0 && index.attachedOpeners.length === 0) return [];
+
+  const out: string[] = [];
+  let position = 0;
+
+  while (position < tokens.length) {
+    const opener = openerAt(tokens, position, readings, index);
+    if (opener === null) {
+      position += 1;
+      continue;
+    }
+
+    const clause = clauses[position];
+    // A FUSED opener carries its own complement: `בשתיים` is `ב` + `שתיים`, and
+    // `שתיים` is the first thing in the slot. It is judged here because it is not
+    // a token of its own and the loop below can only see tokens.
+    if (opener.remainder !== null && !index.carrierTokens.has(opener.remainder)) {
+      out.push(opener.remainder);
+      position += opener.span;
+      continue;
+    }
+
+    let cursor = position + opener.span;
+    while (cursor < tokens.length && clauses[cursor] === clause) {
+      // AN OPENER INSIDE A SLOT STARTS THE NEXT ONE, and it is tested before
+      // anything else for the reason the outer loop tests it first: every English
+      // opener is also a preposition in `suppressionCarriers`, which the engine
+      // pools, so a carrier-first order would account for `at` and never look
+      // inside `at half past four` at all. A FUSED opener whose complement is
+      // carrier material (`לך`) continues this slot instead of starting one.
+      const next = openerAt(tokens, cursor, readings, index);
+      if (next !== null) {
+        if (next.remainder !== null && index.carrierTokens.has(next.remainder)) {
+          cursor += next.span;
+          continue;
+        }
+        break;
+      }
+      // An HOUR ends the phrase. See the header: after `at 2pm` and after
+      // `בשעה 14:00` there is nothing temporal left to say, and reading on walks
+      // into whatever the rest of the sentence is about.
+      if (readings.readAsATime.has(cursor)) {
+        cursor += 1;
+        break;
+      }
+      const accounted = accountedAt(tokens, cursor, readings, index);
+      if (accounted !== null) {
+        cursor += accounted;
+        continue;
+      }
+      if (matchLongestForm(tokens, cursor, index.enderForms) !== null) break;
+      out.push((tokens[cursor] as ClaimToken).text);
+      cursor += 1;
+      break;
+    }
+    position = Math.max(cursor, position + opener.span);
+  }
+
+  return out;
+}
+
+/** Which tokens the two readers consumed, and which of them named an HOUR. */
+interface TemporalReadings {
+  readonly consumed: ReadonlySet<number>;
+  /** The subset `detectTime` read. An hour closes its slot; a day does not. */
+  readonly readAsATime: ReadonlySet<number>;
+}
+
+/** How many tokens at `position` a rule read or a carrier permits, or `null`. */
+function accountedAt(
+  tokens: readonly ClaimToken[],
+  position: number,
+  readings: TemporalReadings,
+  index: TemporalIndex,
+): number | null {
+  if (readings.consumed.has(position)) return 1;
+  // AN IDENTIFIER IS READ, JUST NOT AS A TIME. `The confirmation number for this
+  // callback is CONF123456.` puts a code inside the slot `for` opens, and the
+  // shape table above already recognised it - so a rule DID account for it, which
+  // is the only question this function asks. Whether the code is real is decided
+  // by `verifier.ts`'s identifier branch, which runs before any of this.
+  const token = tokens[position];
+  if (token !== undefined && identifierShapeOf(token.text) !== null) return 1;
+  const carrier = matchLongestForm(tokens, position, index.carrierForms);
+  return carrier === null ? null : carrier.length;
+}
+
+/** One opener that matched: how many tokens it took, and any fused complement. */
+interface OpenerMatch {
+  readonly span: number;
+  /** What a FUSED opener was written onto, or `null` for a standing word. */
+  readonly remainder: string | null;
+}
+
+/**
+ * The opener at `position`, standing or fused, or `null`.
+ *
+ * THE THREE TESTS ARE IN THIS ORDER AND THE ORDER IS LOAD-BEARING BOTH WAYS:
+ *
+ *  1. A STANDING form first, longest first, for the reason every other matcher in
+ *     this module prefers the longest: Hebrew `בשעה` is a standing opener of its
+ *     own and must not be read as the fused prefix `ב` plus the word `שעה`.
+ *  2. A token a reader already CONSUMED, or carrier material, is not an opener.
+ *     This is what keeps the fused Hebrew prefixes off `למחר` (a day anchor the
+ *     detector read) and off `לך` ("to you", a declared carrier) - splitting
+ *     either would open a slot on a word that is already accounted for.
+ *  3. A FUSED prefix last.
+ *
+ * Step 2 deliberately sits BETWEEN the two, rather than before both: every English
+ * opener - `for`, `at`, `on`, `in`, `by`, `from` - is also a preposition in
+ * `suppressionCarriers`, which the engine pools into the carriers. Testing
+ * carriers first would account for `at` and never look inside `at half past four`
+ * at all, which is the § 20 defect surviving its own fix. That was not reasoned
+ * about: it was the first thing the corpus measurement reported.
+ */
+function openerAt(
+  tokens: readonly ClaimToken[],
+  position: number,
+  readings: TemporalReadings,
+  index: TemporalIndex,
+): OpenerMatch | null {
+  const standing = matchLongestForm(tokens, position, index.standaloneOpeners);
+  if (standing !== null) return { span: standing.length, remainder: null };
+
+  if (accountedAt(tokens, position, readings, index) !== null) return null;
+
+  const text = tokens[position]?.text;
+  if (text === undefined) return null;
+
+  let best: string | null = null;
+  for (const prefix of index.attachedOpeners) {
+    if (prefix.length === 0 || !text.startsWith(prefix) || text.length <= prefix.length) continue;
+    if (best === null || prefix.length > best.length) best = prefix;
+  }
+  return best === null ? null : { span: 1, remainder: text.slice(best.length) };
+}
+
+/** The pooled § 20 data for one set of lexicons - computed once per array. */
+interface TemporalIndex {
+  readonly standaloneOpeners: readonly string[];
+  /** Fused prefixes, already crossed with their separators. */
+  readonly attachedOpeners: readonly string[];
+  readonly carrierForms: readonly string[];
+  /** The single-token carriers, for judging a fused opener's complement. */
+  readonly carrierTokens: ReadonlySet<string>;
+  readonly enderForms: readonly string[];
+}
+
+/**
+ * Keyed by array IDENTITY in a `WeakMap`, exactly as `FRAME_GAP_ALLOWANCES` and
+ * `SUPPRESSION_REACHES` are and for the same reason.
+ */
+const TEMPORAL_INDEXES = new WeakMap<readonly ClaimLexicon[], TemporalIndex>();
+
+function temporalIndex(
+  lexicons: readonly ClaimLexicon[],
+  schedulingLexicons: readonly LocaleLexicon[],
+): TemporalIndex {
+  const cached = TEMPORAL_INDEXES.get(lexicons);
+  if (cached !== undefined) return cached;
+
+  const standaloneOpeners: string[] = [];
+  const attachedOpeners: string[] = [];
+  const declared: string[] = [];
+  const pooled: string[] = [];
+  const enderForms: string[] = [];
+
+  for (const lexicon of lexicons) {
+    for (const entry of lexicon.temporalOpeners) {
+      for (const form of entry.forms) {
+        if (!entry.attaches) {
+          standaloneOpeners.push(form);
+          continue;
+        }
+        for (const separator of entry.attachedSeparators ?? ['']) attachedOpeners.push(`${form}${separator}`);
+      }
+    }
+    // THE LOCALE'S OWN ANSWER, taken verbatim. It is the considered one and it is
+    // the only one the naming-a-time filter below does not second-guess - the
+    // same first-writer-wins shape `suppressionReach` uses for roles.
+    declared.push(...lexicon.temporalCarriers);
+    enderForms.push(...lexicon.temporalSlotEnders);
+
+    // WHAT THE ENGINE SUPPLIES, so no locale repeats itself. Each of these is a
+    // class the locale has ALREADY declared for another rule, and none of them can
+    // be a day or an hour:
+    //  - `frameDeterminers`  an article or a possessive is noun-phrase material.
+    //  - `domainObjects`     `in the DIARY`, `for your MEETING` - the two commonest
+    //                        non-temporal complements in this system's own traffic.
+    //  - the COMPLETION forms and `identifierMarkers` - the words of the claim
+    //    itself. `is off the books` puts `books` inside the slot `off` opens.
+    //  - `negators`, `conditionalMarkers`, `frameBlockers`, `clauseBreakers` and
+    //    `suppressionCarriers` - the function-word inventory. This is the group
+    //    that matters most in Hebrew, where `לא` would otherwise be split by the
+    //    fused ל- opener into a preposition and the letter `א`.
+    //
+    // POOLED PER TOKEN AND NOT PER FORM, which is not a detail. `is on the books`
+    // is a three-token frame, and what stands inside the slot `on` opens is its
+    // LAST token: matching whole forms from the cursor would never reach `books`
+    // and `Your meeting is on the books.` would report it as an unresolved day.
+    // The same holds for `will be in touch` and for a frame an adverb interrupted
+    // (`I've NOW booked`), which no whole-form match can close over.
+    const pool = (forms: readonly string[]): void => {
+      for (const form of forms) {
+        for (const token of form.split(' ')) {
+          if (token.length > 0) pooled.push(token);
+        }
+      }
+    };
+    pool(lexicon.frameDeterminers);
+    for (const entry of lexicon.domainObjects) pool(entry.forms);
+    for (const entry of lexicon.completionMarkers) pool(entry.forms);
+    for (const entry of lexicon.completionParticiples) pool(entry.forms);
+    pool(lexicon.identifierMarkers);
+    pool(lexicon.negators);
+    pool(lexicon.conditionalMarkers);
+    pool(lexicon.frameBlockers);
+    pool(lexicon.clauseBreakers);
+    for (const entry of lexicon.suppressionCarriers) pool(entry.forms);
+  }
+
+  // THE FILTER, AND IT IS THE ONE THING THAT KEEPS THE POOLING FROM RE-OPENING THE
+  // DEFECT. Those lists were assembled for other questions and one of them names an
+  // HOUR: English `one` is a `suppressionCarriers` pronoun, and permitting it would
+  // account for `at one` and certify a 15:00 booking described as one o'clock -
+  // § 20 surviving its own fix. So a pooled form is dropped whenever the SCHEDULING
+  // lexicons - the resolver's own data, which is where the meaning of a temporal
+  // word lives - read it as naming a when.
+  //
+  // The locale's `temporalCarriers` is deliberately NOT filtered: `en.ts` re-permits
+  // `a` and `an` there on purpose (they are quantity words only inside `in a couple
+  // of hours`, and alone they name no hour), and Hebrew re-permits its classifiers
+  // `יום` and `שעה`. A locale saying so explicitly is the considered answer.
+  const namesAWhen = schedulingTokens(schedulingLexicons);
+  const carrierForms = [...declared, ...pooled.filter((form) => !namesAWhen.has(form))];
+
+  const carrierTokens = new Set<string>();
+  for (const form of carrierForms) {
+    if (!form.includes(' ')) carrierTokens.add(form);
+  }
+
+  const index: TemporalIndex = {
+    standaloneOpeners,
+    attachedOpeners,
+    carrierForms,
+    carrierTokens,
+    enderForms,
+  };
+  TEMPORAL_INDEXES.set(lexicons, index);
+  return index;
+}
+
+/**
+ * Every single-token form the RESOLVER reads as naming a day, an hour or a span.
+ *
+ * Read from `src/scheduling/lexicon` rather than listed here, for the reason
+ * `DetectClaimsOptions.schedulingLexicons` gives: the gate must not be able to
+ * disagree with the resolver about what a temporal word is.
+ */
+const SCHEDULING_TOKENS = new WeakMap<readonly LocaleLexicon[], ReadonlySet<string>>();
+
+function schedulingTokens(lexicons: readonly LocaleLexicon[]): ReadonlySet<string> {
+  const cached = SCHEDULING_TOKENS.get(lexicons);
+  if (cached !== undefined) return cached;
+
+  const out = new Set<string>();
+  const add = (forms: readonly string[]): void => {
+    for (const form of forms) {
+      if (!form.includes(' ')) out.add(form);
+    }
+  };
+  for (const lexicon of lexicons) {
+    for (const entry of lexicon.weekdays) add(entry.forms);
+    for (const entry of lexicon.dayAnchors) add(entry.forms);
+    for (const entry of lexicon.dayParts) add(entry.forms);
+    for (const entry of lexicon.namedTimes) add(entry.forms);
+    // `weekdayModifiers` is DELIBERATELY NOT HERE, and it is the one omission a
+    // reader should check. English declares `['this', 'coming', 'on', 'the']` as
+    // the THIS modifier, so including it would drop `the` and `this` out of the
+    // pooled determiners - and `Your meeting is booked for the 15th.` would report
+    // its own article as an unresolved day. Those four change no arithmetic in the
+    // resolver either (only `next` / `הבא` does), and NEXT is not declared in any
+    // claim lexicon list, so it is never pooled and never permitted: `booked for
+    // next Thursday` is unresolved, which is the correct answer for a phrase whose
+    // day the detector reads as THIS Thursday.
+    for (const entry of lexicon.relativeOffset.quantities) add(entry.forms);
+    for (const entry of lexicon.relativeOffset.units) add(entry.forms);
+    for (const entry of lexicon.relativeOffset.fixedDurations) add(entry.forms);
+    add(lexicon.periodTokens);
+    add(lexicon.vaguenessMarkers);
+  }
+  SCHEDULING_TOKENS.set(lexicons, out);
+  return out;
 }
 
 function applyMeridiem(hour: number, meridiem: 'am' | 'pm' | null): number {
@@ -2072,7 +2547,7 @@ function readClockToken(token: string, schedulingLexicons: readonly LocaleLexico
 function readBareHourAfterPrefix(
   tokens: readonly ClaimToken[],
   schedulingLexicons: readonly LocaleLexicon[],
-): { readonly hour: number } | null {
+): { readonly hour: number; readonly position: number; readonly length: number } | null {
   for (let position = 0; position < tokens.length; position += 1) {
     for (const lexicon of schedulingLexicons) {
       for (const entry of lexicon.clockPrefixes) {
@@ -2082,7 +2557,7 @@ function readBareHourAfterPrefix(
         if (next === undefined) continue;
         if (!/^\d{1,2}$/u.test(next.text)) continue;
         const hour = Number(next.text);
-        if (hour <= 23) return { hour };
+        if (hour <= 23) return { hour, position, length: hit.length + 1 };
       }
     }
   }

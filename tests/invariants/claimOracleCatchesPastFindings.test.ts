@@ -66,6 +66,10 @@ const {
   QA3_FIVE_WORDINGS,
   QA4_ENGLISH_WORDINGS,
   QA4_HEBREW_WORDINGS,
+  QA6_DAY_WORDINGS,
+  QA6_HEBREW_WORDINGS,
+  QA6_HOUR_WORDINGS,
+  QA6_PARSED_CONTROLS,
 } = await import('./pastFindingTexts.js');
 const { T_MEETING_THURSDAY_2PM, T_NEUTRAL_OFFER } = await import('./releaseTexts.js');
 
@@ -165,6 +169,26 @@ const REAL_THURSDAY_BOOKING = [
     // 2026-03-05 14:00 Asia/Jerusalem is 12:00 UTC.
     startUtc: '2026-03-05T12:00:00.000Z',
     endUtc: '2026-03-05T12:30:00.000Z',
+    externalCalendarEventId: null,
+  },
+];
+
+/**
+ * THE § 20 BOOKING, AND IT IS THE ONE THAT MAKES THAT SECTION DIFFERENT.
+ *
+ * Every finding before § 20 leaked into an EMPTY ledger, so the oracle only had
+ * to notice that nothing happened. § 20's eleven sentences were driven against a
+ * booking that really existed - QA's harness called `schedule_meeting` with
+ * `tomorrow afternoon at 3` and it really persisted - so the oracle has to
+ * disagree about the DAY or the HOUR rather than about whether anything happened
+ * at all. 2026-03-05 15:00 Asia/Jerusalem is 13:00 UTC.
+ */
+const REAL_THURSDAY_1500_BOOKING = [
+  {
+    id: 'meeting-proof-1500',
+    status: 'SCHEDULED',
+    startUtc: '2026-03-05T13:00:00.000Z',
+    endUtc: '2026-03-05T13:30:00.000Z',
     externalCalendarEventId: null,
   },
 ];
@@ -269,6 +293,87 @@ describe('INV-18 fails on all five Mission 2D QA findings with the detector blin
     expect(callbackFailure).toContain('CALLBACK COMMITTED');
     const [cancellationFailure] = failuresFor('אין בעיה הפגישה בוטלה.');
     expect(cancellationFailure).toContain('CANCELLATION COMPLETED');
+  });
+});
+
+describe('§ 20: the oracle catches a wrong day or hour against a booking that REALLY EXISTS', () => {
+  // WHY THIS BLOCK IS SEPARATE FROM THE ONE ABOVE. Every finding § 14 to § 19
+  // leaked into an EMPTY ledger, where the oracle only has to notice that nothing
+  // happened - and the block above drives them that way. § 20 is the first finding
+  // where the tool call SUCCEEDED: `toolOutcomes[0].ok === true` and one `meetings`
+  // row, in all eleven cases. So NO_MATCHING_EFFECT is not available here and the
+  // oracle has to disagree about the day or the hour, which is the half of
+  // `unbackedDeclaredClaims` that had never been exercised by a past finding.
+  //
+  // The detector is still stubbed blind for the whole file, so a failure here
+  // cannot have come from `detectMaterialClaims`. It comes from a human reading
+  // `half past four` and writing 16:30 beside it.
+
+  function againstTheRealBooking(released: string): string[] {
+    return failuresFor(released, { meetings: REAL_THURSDAY_1500_BOOKING });
+  }
+
+  for (const wording of [...QA6_HOUR_WORDINGS, ...QA6_DAY_WORDINGS, ...QA6_HEBREW_WORDINGS]) {
+    it(`fails against the real 15:00 booking: ${wording.text}`, () => {
+      const failures = againstTheRealBooking(wording.text);
+      expect(
+        failures.length,
+        'INV-18 passed a sentence naming a day or an hour the record does not have, against a booking that ' +
+          'really exists and says something else. That is § 20: the gate did not merely miss these, it ' +
+          'returned them in `supported` with a matchedEffect and the audit recorded them as VERIFIED.',
+      ).toBeGreaterThan(0);
+      const fromTheOracle = failures.filter((detail) => detail.includes('DECLARED GROUND TRUTH'));
+      expect(fromTheOracle.length, `failures were:\n${failures.join('\n---\n')}`).toBe(1);
+      expect(fromTheOracle[0]).toMatch(/WRONG_DAY|WRONG_TIME/u);
+    });
+  }
+
+  it('reports the HOUR wordings as WRONG_TIME, because they get the day right', () => {
+    // The two halves are different bugs and the oracle has to be able to say
+    // which. T1-T6 all name Thursday, which is the booked day, so the only thing
+    // that can be wrong is the hour.
+    for (const wording of QA6_HOUR_WORDINGS) {
+      const [failure] = againstTheRealBooking(wording.text);
+      expect(failure, `for ${wording.text}`).toContain('WRONG_TIME');
+    }
+  });
+
+  it('reports the DAY wordings as WRONG_DAY, and names both days', () => {
+    const [weekend] = againstTheRealBooking('Your meeting is booked for this weekend at 3pm.');
+    expect(weekend).toContain('WRONG_DAY');
+    expect(weekend).toContain('2026-03-07');
+    expect(weekend).toContain('2026-03-05');
+  });
+
+  it('catches QA-6 two parsed CONTROLS the same way, which is the finding', () => {
+    // `Your meeting is booked for Thursday at 4:30pm.` was blocked by the GATE and
+    // `... at half past four.` was released, in the same run, against the same
+    // state. Those two say the same thing, so the ORACLE must treat them
+    // identically - and it does, because a declaration is written by reading the
+    // sentence rather than by matching it. If these two ever needed different
+    // declarations the oracle would have inherited the defect.
+    for (const wording of QA6_PARSED_CONTROLS) {
+      expect(againstTheRealBooking(wording.text).length, `no failure for ${wording.text}`).toBeGreaterThan(0);
+    }
+    const [spelled] = againstTheRealBooking('Your meeting is booked for Thursday at 4:30pm.');
+    const [spoken] = againstTheRealBooking('Your meeting is booked for Thursday at half past four.');
+    expect(spelled).toContain('WRONG_TIME');
+    expect(spoken).toContain('WRONG_TIME');
+  });
+
+  it('and passes the sentence that names the hour the record really has', () => {
+    // The precision direction, on the same state. Without this the block above
+    // would be satisfied by an oracle that failed every sentence naming a time.
+    expect(failuresFor('Your meeting is booked for Thursday at 3pm.', {
+      meetings: REAL_THURSDAY_1500_BOOKING,
+    })).toEqual([]);
+  });
+
+  it('covers every wording the finding listed, not a subset', () => {
+    expect(QA6_HOUR_WORDINGS.length, 'the finding listed six hour wordings T1-T6').toBe(6);
+    expect(QA6_DAY_WORDINGS.length, 'four day wordings D1-D4 plus B1, where both halves are wrong').toBe(5);
+    expect(QA6_HEBREW_WORDINGS.length, 'the finding listed four Hebrew wordings').toBe(4);
+    expect(QA6_PARSED_CONTROLS.length).toBe(2);
   });
 });
 
