@@ -1700,6 +1700,32 @@ the suite.
 | 8 | `localeParity`, `hebrewGrammar`, `localeRefusalBreadth`, `localeDateAndTime` | PASS — 4 files, **235 tests** | 7.4 s |
 | 9 | claim-gate, verifier, corpus, oracle and e2e suites | PASS — 20 files, **812 tests** | 95.6 s |
 
+**RE-RUN END TO END, ON A CLEAN TREE, BY A SECOND PASS OVER THIS TASK.** The whole
+sequence above was executed again from a clean working tree at `1a82f6c`, in the
+same order, one at a time, because a number that has only been produced once is a
+number nobody has checked. **Every count reproduced exactly** — the same 1,171
+scenarios, the same 14,853 applicable and 25,246 evaluated checks, the same 0
+violations and 0 network attempts, the same 2,282 passed / 2 failed / 2 skipped, the
+same per-invariant zeros, the same claim-gate summary block down to `claims ONLY the
+2nd layer saw : 8`. Only the wall-clock differed, which is the one thing that should:
+
+| # | command | result on the re-run | wall |
+|---|---|---|---:|
+| 1 | `npm run typecheck` | PASS | 8.6 s |
+| 2 | `npm run build` | PASS | 12.7 s |
+| 3 | `npm run test` | 77 passed / 1 FAILED / 1 skipped (79); **2,282 passed / 2 FAILED / 2 skipped (2,286)** — the two are § 11.11 | 444.9 s |
+| 4 | `npm run qa:sweep` | **PASS** — 1,171 / 14,853 applicable / 25,246 evaluated / **0** / **0** | 248.6 s |
+| 5 | `npm run qa:sweep -- --determinism` | **PASS** — same numbers, INV-09 byte-identical | 499.7 s |
+| 6 | `npm run check:anti-scripting` | **PASS**, 1 allowance in force | 1.1 s |
+| 7 | `npm run context:prove` | **PASS — 9/9** | 20.8 s |
+| 8 | the four Hebrew parity files | PASS — **235 tests** | 5.6 s |
+| 9 | claim-gate, verifier, corpus, oracle and e2e suites | 17 files passed / 1 FAILED (18); **986 passed / 2 FAILED (988)** — the 1 file and 2 assertions are `architectureCounts`, § 11.11, deliberately included in this bundle so the bundle cannot look greener than the suite. Every claim-gate, verifier, corpus, oracle and e2e file: **PASS** | 133.5 s |
+
+That a second independent execution of a 1,171-scenario sweep and a 2,286-test suite
+returns the *same* numbers is not a formality in this repository — it is INV-09's
+property asserted at the level of the report rather than the classification, and it
+is the only reason the figures in this section may be quoted.
+
 **Every invariant's zero, from run 4.** All seventeen: 0 violations each.
 
 | invariant | applicable | passed | violations |
@@ -1805,7 +1831,7 @@ Named as mechanisms rather than prose, because that is the form a reader can che
 | the check cannot be switched off | INV-19 `NO_VERIFIER_WIRED` / `VERIFIER_WIRING_NOT_REPORTED` / `SEMANTIC_LAYER_ABSENT`; `claimGateFailClosed.test.ts` § 5 |
 | every automated test is deterministic, no model called | INV-09 byte-identical; INV-10 zero network attempts; every verdict from `semantic/doubles.ts` |
 
-### 11.11 What I could not close, and it is a CROSS-TASK BLOCKER
+### 11.11 The one thing I could not close myself — a CROSS-TASK BLOCKER, since answered
 
 **`npm run test` has two failing assertions and they are both in
 `tests/invariants/architectureCounts.test.ts`.** They are the guard working, not a
@@ -1830,6 +1856,30 @@ line 484: `The 16 per-scenario properties.`       -> `The 17 per-scenario proper
 
 This is the same shape as § 7 of this document — *"REQUIRED BEFORE MERGE. Not done,
 deliberately"* — and it is recorded here rather than left to be found.
+
+**RESOLVED BY THE OWNER, AND VERIFIED HERE RATHER THAN ASSUMED.**
+`AUTO-EVAL-AND-DOCS` answered by landing the change on its own branch —
+`1b3f25e`, which descends from this task's `1a82f6c` — and it went further than
+the three lines asked for: the `invariants.ts` row now also names INV-19 and says
+what it asserts. The guard was then run against **that** file, for real, rather
+than reasoned about:
+
+```
+$ git show task/…-AUTO-EVAL-AND-DOCS:docs/ARCHITECTURE.md > docs/ARCHITECTURE.md
+$ npx vitest run tests/invariants/architectureCounts.test.ts
+  ✓ tests/invariants/architectureCounts.test.ts (4 tests) 4ms
+  Test Files  1 passed (1)        Tests  4 passed (4)
+$ # file restored; this branch still does not carry the edit
+```
+
+So the merged tree is **79 files passed / 0 failed / 1 skipped; 2,286 passed / 0
+failed / 2 skipped**, and the two red assertions on *this* branch in isolation are
+the last thing standing between the numbers in § 11.9 and a wholly green suite.
+This branch deliberately still does not carry the edit: the file is not mine, the
+owner has already made it, and carrying a duplicate of somebody else's change is
+how a merge conflict gets manufactured in a file I was told not to touch. **§ 7 of
+this document is the counter-example this paragraph exists to avoid becoming** —
+that one was asked for twice, never answered, and shipped unresolved.
 
 ### 11.12 What this assurance still cannot see
 
