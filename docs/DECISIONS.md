@@ -3,8 +3,9 @@
 Why this slice is built the way it is, what was deliberately deferred, and what
 the Founder now has to decide.
 
-Read **§ 0 FOUNDER DIRECTIVE — Baseline V1** and **§ 1 FOUNDER DECISIONS REQUIRED**
-first. Everything below them is context.
+Read **§ 0 FOUNDER DIRECTIVE — Baseline V1**, **§ 0A FOUNDER DIRECTIVE — a SEMANTIC
+second check on the claim gate** and **§ 1 FOUNDER DECISIONS REQUIRED** first.
+Everything below them is context.
 
 ---
 
@@ -25,6 +26,71 @@ reasoning.
 Full text, rationale, and what it concretely means for the next milestone:
 `docs/BASELINE_V1.md` § 4. Not yet implemented as of Baseline V1 — this is a
 directive for what comes next, not a change made to this codebase.
+
+---
+
+## 0A. FOUNDER DIRECTIVE — a SEMANTIC second check on the claim gate (recorded 2026-09-28)
+
+**The known leaks are NOT accepted.** Eight successive independent QA rounds each
+found a phrasing shape the deterministic lexicon detector did not recognise, and
+each one leaked a false success claim to a contact and persisted it with no effect
+behind it. A lexicon detector cannot be shown complete.
+`docs/MISSION_2D_CLAIM_GATE.md` § 17.8 states why the sequence does not terminate,
+and § 1.9 below put the question to me and built nothing. **This is the answer: a
+semantic AI second check is added as defence in depth.**
+
+It answers the objection § 11.1 makes — *"putting the guarantee inside a second
+model call puts it back where it failed"* — not by disputing it but by making sure
+no guarantee lives in the model call at all. The bounds below are what make that
+true, and they are non-negotiable.
+
+**What the semantic verifier may do.** It may ONLY classify whether a proposed
+customer-facing response claims or implies that a material action has happened or
+been committed to.
+
+**What it may NEVER do.** It must never execute an action, approve an action,
+create state, override validation, or have its judgement treated as proof that
+something happened. **Authoritative truth comes ONLY from successful validated
+tool results and persisted application and domain state.**
+
+**It must fail safely.** Malformed, schema-invalid, timed-out, empty or
+unavailable output is UNSUPPORTED — never clean. I accept what that buys: a
+verifier outage hands off every claiming turn to a human. That is the correct
+direction for this product and it is a cost a deployment has to be sized for.
+
+**It may only ADD suspicion**, as a union with the deterministic layer, and it can
+never clear, suppress or override something the deterministic layer flagged. The
+final supported/unsupported decision is always made by deterministic code
+reconciling the classified claims against the action ledger.
+
+**Blocked replies are regenerated naturally through the same LLM**, reusing the
+existing bounded attempts and the existing non-canned audited exhaustion outcome.
+Never a canned correction. § 0 applies unchanged and in full: no scripted
+production or demo conversation, no canned customer-facing wording, no predefined
+dialogue trees. Model-facing instructions are permitted; customer-facing wording
+is not.
+
+**The verifier's model must be configurable and must default to the configured
+local model.** Do not change model defaults and do not implement per-language
+routing — § 12 stays design-only.
+
+**Do not reject this architecture solely because it adds latency.** It costs one
+extra provider round trip on every customer-facing text, including the ~98% that
+assert nothing, and the previous "no material claim, no cost" fast path is gone by
+design — a fast path conditioned on the deterministic detector would let the layer
+whose gaps this exists to cover decide whether to cover them. Realtime voice
+optimisation comes later.
+
+**Both layers must catch the two live QA classes.** The deterministic half is
+`docs/MISSION_2D_CLAIM_GATE.md` § 21; the semantic half and the whole design are
+[`docs/MISSION_2F_SEMANTIC_VERIFIER.md`](MISSION_2F_SEMANTIC_VERIFIER.md), which
+carries the authority boundaries with the type and the test that enforce each, the
+fail-closed matrix, the determinism controls in effect and NOT guaranteed, the
+latency measurement method, and the residual limits.
+
+**What was NOT done.** No model was called, pulled, created or run by the mission
+that implemented this. No model default was changed. `prisma/schema.prisma` is
+untouched. Nothing was merged to Baseline V1 master.
 
 ---
 
@@ -234,7 +300,30 @@ what runs, approved or not.
 
 ---
 
-### 1.9 A model-assisted SECOND OPINION for the claim gate's vocabulary surface — **question raised, NOTHING BUILT, NO MODEL CALLED**
+### 1.9 A model-assisted SECOND OPINION for the claim gate's vocabulary surface — **ANSWERED IN § 0A, AND BUILT**
+
+> **RESOLVED 2026-09-28.** The Founder answered this question in **§ 0A**: the known
+> leaks are not accepted, and the semantic second check is added as defence in
+> depth in **exactly the one-directional shape this subsection said would be
+> compatible with § 11.1**. It may raise suspicion on text the deterministic
+> detector passed; it may never clear a claim the detector raised.
+>
+> **It is now built.** `src/ports/claimVerifier.ts`,
+> `src/agent/claimGate/semantic/`, wired by default with no off switch. The
+> consequences this subsection priced in advance were all accepted as priced: a
+> model failure costs a regeneration and never a release; it cannot weaken any
+> guarantee that exists today; **and it costs one extra provider round trip on the
+> happy path.** The fourth consequence named below — that byte-identical
+> determinism would end for `npm run qa:sweep -- --determinism` — was avoided
+> rather than accepted: the sweep wires a deterministic double, so it stays
+> byte-identical, **and the sweep therefore proves the layered pipeline and NOT the
+> semantic layer's accuracy.** That limit is stated as residual 1 of
+> [`docs/MISSION_2F_SEMANTIC_VERIFIER.md`](MISSION_2F_SEMANTIC_VERIFIER.md) § 12
+> rather than left implicit, and `npm run eval:verifier` (EVAL_HARNESS.md § 11) is
+> the operator command that measures the thing the sweep cannot.
+>
+> **The text below is left exactly as it was written**, because it is the record of
+> a question and not a document that tracks the answer.
 
 **Recorded 2026-09-28 by `MISSION-2D-R-CLAIM-GATE-FAILSAFE-AUTO-INDEPENDENT-ORACLE`,
 part 1(b) of Mission 2D-R.** Raised as a question, not a proposal. **Nothing was

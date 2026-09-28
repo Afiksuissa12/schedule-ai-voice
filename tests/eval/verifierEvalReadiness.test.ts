@@ -112,6 +112,18 @@ describe('the labelled verifier corpus loads with its contract satisfied', () =>
     expect(corpus.cases.length).toBeGreaterThan(0);
   });
 
+  it('counts 172 cases - 112 English, 47 Hebrew, 13 mixed - the numbers the docs quote', () => {
+    // `docs/MISSION_2F_SEMANTIC_VERIFIER.md` § 12.3 residual 15 quotes the total,
+    // and this is the assertion that keeps it honest as the corpus grows. A count
+    // in a document that nothing re-derives is a count that goes stale - which is
+    // exactly why `tests/invariants/architectureCounts.test.ts` exists.
+    const coverage = verifierCoverage(loadVerifierCorpus().cases);
+    expect(coverage.byLanguage.en.claims + coverage.byLanguage.en.controls).toBe(112);
+    expect(coverage.byLanguage.he.claims + coverage.byLanguage.he.controls).toBe(47);
+    expect(coverage.byLanguage.mixed.claims + coverage.byLanguage.mixed.controls).toBe(13);
+    expect(loadVerifierCorpus().cases).toHaveLength(172);
+  });
+
   it('leaves NO coverage requirement unmet', () => {
     // `loadVerifierCorpus` already throws on this; asserting it separately means
     // the failure message names the missing axis rather than being a load error.
