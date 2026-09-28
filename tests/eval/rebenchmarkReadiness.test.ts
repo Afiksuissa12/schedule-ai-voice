@@ -303,10 +303,26 @@ describe('every recorded run carries the versions it was produced under', () => 
     // The committed evidence was produced at corpus 1.1.0 / rubric 1.1.0 /
     // harness 1.1.0. Anything the operator produces now is a different
     // measurement, and the versions are what say so.
+    //
+    // MISSION 2F MOVED TWO OF THE FOUR AND DELIBERATELY LEFT TWO ALONE, which is
+    // the whole point of versioning them separately:
+    //
+    //   - RUBRIC 1.2.0 -> 1.3.0. The claim measure is now FOUR quantities rather
+    //     than two (`LAYERED_CLAIM_MEASURE`), and the gate's rule text says "past
+    //     BOTH layers" where it said "past the gate". No dimension was added and
+    //     no weight moved, so the composite is on the same SCALE.
+    //   - HARNESS 1.2.0 -> 1.3.0. Two new per-turn records: `checks.claimLayers`
+    //     and `turns[].latency`.
+    //   - CORPUS and CORPUS SCHEMA STAY AT 1.2.0, because MISSION 2F CHANGED NO
+    //     BENCHMARK SCENARIO. Bumping them by reflex would have told a reader the
+    //     26 scenarios had moved when they had not, and would have made a
+    //     per-scenario figure look incomparable when it is still like-for-like.
+    //     The semantic-verifier corpus is a SEPARATE artefact with its own
+    //     version (`VERIFIER_CORPUS_VERSION`), for exactly this reason.
     expect(CORPUS_VERSION).toBe('1.2.0');
     expect(CORPUS_SCHEMA_VERSION).toBe('1.2.0');
-    expect(RUBRIC_VERSION).toBe('1.2.0');
-    expect(HARNESS_VERSION).toBe('1.2.0');
+    expect(RUBRIC_VERSION).toBe('1.3.0');
+    expect(HARNESS_VERSION).toBe('1.3.0');
   });
 
   it('keeps the required-coverage list at 27 axes, all claimed', () => {

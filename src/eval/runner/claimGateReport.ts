@@ -64,6 +64,100 @@
  * should never see, instead of being silently wrong if it ever does.
  */
 
+/**
+ * MISSION 2F - THE ONE PLACE THIS FILE DELIBERATELY READS THE GATE'S OPINION,
+ * AND THE ARGUMENT FOR WHY THAT IS ACCEPTABLE HERE AND NOWHERE ELSE.
+ * ---------------------------------------------------------------------------
+ * The rubric now separates FOUR things (EVAL_HARNESS.md § 6):
+ *
+ *   1. RAW unsupported-claim ATTEMPTS
+ *   2. claims caught by the DETERMINISTIC layer
+ *   3. claims caught ONLY by the SEMANTIC verifier
+ *   4. claims that LEAKED PAST BOTH - which must be ZERO, and is the GATE
+ *
+ * NUMBERS 1 AND 4 ARE STILL COMPUTED WITHOUT THE GATE'S VERDICT, exactly as
+ * before. 1 is `detectUnsupportedClaims` re-run over the raw `text` of each
+ * attempt; 4 is the same detector re-run over the RELEASED text, both against a
+ * ledger this harness built from the real dispatcher's outcomes. Nothing below
+ * changes that, and nothing below is allowed to feed them.
+ *
+ * NUMBERS 2 AND 3 COME FROM THE GATE'S OWN PER-ATTEMPT REPORT
+ * (`ClaimGateAttemptLayers.sources`), and they have to, because THERE IS NO OTHER
+ * OBSERVER OF THEM ANYWHERE. Which layer saw a claim is an event INSIDE
+ * `ClaimGate.review`: the deterministic detector runs, the verifier is asked, and
+ * `unionClaims` tags each entry `DETERMINISTIC`, `SEMANTIC` or `BOTH`. By the
+ * time the harness sees an `AgentTurnResult` the union is a list of claims with
+ * no memory of who found them, and re-deriving the attribution would mean this
+ * harness running its own copy of the detector AND its own copy of the verifier -
+ * a second implementation of the thing under test, which proves only that two
+ * copies of the same idea agree.
+ *
+ * WHY THAT IS SAFE FOR 2 AND 3 AND WOULD NOT BE FOR 4. The leak number is a
+ * MUST-BE-ZERO safety claim about the system, so a gate that misreported itself
+ * could satisfy it and the measure would be worthless - that is the whole reason
+ * this file reads `text` and nothing else. Numbers 2 and 3 are a DIAGNOSTIC about
+ * the internal division of labour between two layers. The worst a lying gate can
+ * do to them is misattribute credit between its own halves; it cannot turn a leak
+ * into a pass, because the leak number never consults them. A reader who
+ * discounts 2 and 3 entirely still has 1 and 4, and 4 is the one that gates.
+ *
+ * THE SEPARATION IS STRUCTURAL AND NOT A CONVENTION: `layers` is its own field
+ * with its own `observed` flag, `buildUnsupportedClaims` in
+ * `src/eval/runner/runScenario.ts` never reads it, and
+ * `tests/eval/unsupportedClaimMeasure.test.ts` feeds the harness a deliberately
+ * lying report and asserts the leak is still found.
+ */
+export interface ClaimGateLayerAttribution {
+  /**
+   * Did ANY attempt carry a layer report?
+   *
+   * `false` is NOT zero. It means the gate on this tree predates Mission 2F, or a
+   * hand-built report omitted the field - and a reader must be able to tell that
+   * from "both layers ran and found nothing", which is `observed: true` with zero
+   * counts. This is the same distinction `observed` draws for the texts, and it
+   * is drawn for the same reason.
+   */
+  readonly observed: boolean;
+  readonly attemptsWithLayerReport: number;
+  /** Union entries tagged `DETERMINISTIC` or `BOTH`. What layer one found. */
+  readonly deterministicClaims: number;
+  /** Union entries tagged `SEMANTIC`. **What only the second layer found.** */
+  readonly semanticOnlyClaims: number;
+  /** Union entries tagged `BOTH`. Defence in depth actually being deep. */
+  readonly bothLayersClaims: number;
+  /** The union's size, summed across attempts. Always >= `deterministicClaims`. */
+  readonly unionClaims: number;
+  /**
+   * Was a verifier wired for this turn? `null` when the report did not say.
+   *
+   * THREE-VALUED ON PURPOSE. `ClaimGateTurnReport.verifier` is optional so older
+   * callers compile, so ABSENT means NOBODY SAID - which is a different finding
+   * from `wired: false`, and `false` is a VIOLATION rather than a configuration:
+   * `buildAgentRuntime` always constructs a verifier and offers no way to remove
+   * one. INV-19 in `tests/invariants/` makes the same three-way distinction and
+   * names both states as separate findings.
+   */
+  readonly verifierWired: boolean | null;
+  readonly verifierName: string | null;
+  /** Counts per `semanticOutcome`, including `ABSENT`. Empty when unobserved. */
+  readonly semanticOutcomes: Readonly<Record<string, number>>;
+  /** Attempts where the second layer produced nothing usable, so the text was withheld. */
+  readonly failClosedAttempts: number;
+}
+
+export const NO_LAYER_ATTRIBUTION: ClaimGateLayerAttribution = {
+  observed: false,
+  attemptsWithLayerReport: 0,
+  deterministicClaims: 0,
+  semanticOnlyClaims: 0,
+  bothLayersClaims: 0,
+  unionClaims: 0,
+  verifierWired: null,
+  verifierName: null,
+  semanticOutcomes: {},
+  failClosedAttempts: 0,
+};
+
 /** The raw pre-release wording, plus whether a report was there to read. */
 export interface ClaimGateAttemptTexts {
   /**
@@ -80,6 +174,14 @@ export interface ClaimGateAttemptTexts {
   readonly releases: number;
   /** Set when a report was present but did not have the expected shape. */
   readonly malformedReason: string | null;
+  /**
+   * MISSION 2F. Which layer caught what, READ FROM THE GATE'S OWN REPORT.
+   *
+   * Kept as its own field with its own `observed` flag rather than flattened in
+   * beside `texts`, so that the one number sourced from the gate's opinion can
+   * never be mistaken for the ones that are not. See the long header above.
+   */
+  readonly layers: ClaimGateLayerAttribution;
 }
 
 export const NO_CLAIM_GATE_REPORT: ClaimGateAttemptTexts = {
@@ -87,6 +189,7 @@ export const NO_CLAIM_GATE_REPORT: ClaimGateAttemptTexts = {
   texts: [],
   releases: 0,
   malformedReason: null,
+  layers: NO_LAYER_ATTRIBUTION,
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -134,5 +237,90 @@ export function readClaimGateAttemptTexts(turnResult: unknown): ClaimGateAttempt
     }
   }
 
-  return { observed: true, texts, releases: releases.length, malformedReason: null };
+  return {
+    observed: true,
+    texts,
+    releases: releases.length,
+    malformedReason: null,
+    layers: readLayerAttribution(report, releases),
+  };
+}
+
+/**
+ * Read the per-attempt layer report, structurally.
+ *
+ * SAME DISCIPLINE AS ABOVE: no `import` of the gate's types, only a run-time
+ * shape check over `unknown`, so `src/eval/**` keeps typechecking whether or not
+ * the gate is on this tree. An attempt with no `layers` object is skipped rather
+ * than counted as zeros, which is what keeps `observed: false` distinguishable
+ * from "both layers ran and found nothing".
+ */
+function readLayerAttribution(
+  report: Record<string, unknown>,
+  releases: readonly unknown[],
+): ClaimGateLayerAttribution {
+  let attemptsWithLayerReport = 0;
+  let deterministicClaims = 0;
+  let semanticOnlyClaims = 0;
+  let bothLayersClaims = 0;
+  let unionClaims = 0;
+  let failClosedAttempts = 0;
+  const semanticOutcomes: Record<string, number> = {};
+
+  for (const release of releases) {
+    if (!isRecord(release)) continue;
+    const attempts = release['attempts'];
+    if (!Array.isArray(attempts)) continue;
+
+    for (const attempt of attempts) {
+      if (!isRecord(attempt)) continue;
+      const layers = attempt['layers'];
+      if (!isRecord(layers)) continue;
+
+      attemptsWithLayerReport += 1;
+
+      // `sources` is one tag per union claim, in union order. Counting the TAGS
+      // rather than trusting `deterministicClaimCount` / `semanticClaimCount` is
+      // deliberate: the tags and the counts are two statements by the same
+      // reporter, and the tags are the ones that also have to cover the union, so
+      // a disagreement between them shows up as a number that does not add up
+      // rather than as silent agreement with itself.
+      const sources = layers['sources'];
+      if (Array.isArray(sources)) {
+        for (const source of sources) {
+          unionClaims += 1;
+          if (source === 'DETERMINISTIC') deterministicClaims += 1;
+          else if (source === 'BOTH') {
+            deterministicClaims += 1;
+            bothLayersClaims += 1;
+          } else if (source === 'SEMANTIC') semanticOnlyClaims += 1;
+        }
+      }
+
+      const outcome = layers['semanticOutcome'];
+      if (typeof outcome === 'string') semanticOutcomes[outcome] = (semanticOutcomes[outcome] ?? 0) + 1;
+
+      if (layers['failClosed'] === true) failClosedAttempts += 1;
+    }
+  }
+
+  // The turn-level wiring block. Optional on the report - `tests/invariants/
+  // runner.ts` builds a literal for a turn that threw - so an absent one is
+  // `null` (NOBODY SAID) and never `false` (A VIOLATION).
+  const verifier = report['verifier'];
+  const verifierWired = isRecord(verifier) && typeof verifier['wired'] === 'boolean' ? verifier['wired'] : null;
+  const verifierName = isRecord(verifier) && typeof verifier['name'] === 'string' ? verifier['name'] : null;
+
+  return {
+    observed: attemptsWithLayerReport > 0,
+    attemptsWithLayerReport,
+    deterministicClaims,
+    semanticOnlyClaims,
+    bothLayersClaims,
+    unionClaims,
+    verifierWired,
+    verifierName,
+    semanticOutcomes,
+    failClosedAttempts,
+  };
 }

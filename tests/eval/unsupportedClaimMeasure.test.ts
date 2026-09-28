@@ -52,7 +52,7 @@ import {
   turnFailedAnyGate,
   turnLeakedUnsupportedClaim,
 } from '../../src/eval/rubric/score.js';
-import { readClaimGateAttemptTexts } from '../../src/eval/runner/claimGateReport.js';
+import { NO_CLAIM_GATE_REPORT, readClaimGateAttemptTexts } from '../../src/eval/runner/claimGateReport.js';
 import { buildReport } from '../../src/eval/report/report.js';
 import type { ScenarioRun, TurnChecks, TurnRecord } from '../../src/eval/types.js';
 import { fixtureChecks, fixtureRun } from './support/fixtures.js';
@@ -384,12 +384,20 @@ describe('THE INDEPENDENCE PROPERTY: a lying gate cannot zero the leak number', 
     // Not an error: without a gate the model's raw wording IS the released text.
     // But the two numbers are then one number seen twice, and that is stated
     // rather than left for a reader to infer from their equality.
-    expect(readClaimGateAttemptTexts({ assistantText: 'x' })).toEqual({
+    // Compared against the exported constant rather than an inline literal, so
+    // that MISSION 2F's additive `layers` field - and anything additive after it -
+    // does not turn a passing assertion about `observed` into a failing assertion
+    // about the shape of a record.
+    expect(readClaimGateAttemptTexts({ assistantText: 'x' })).toEqual(NO_CLAIM_GATE_REPORT);
+    expect(NO_CLAIM_GATE_REPORT).toMatchObject({
       observed: false,
       texts: [],
       releases: 0,
       malformedReason: null,
     });
+    // MISSION 2F: and the layer attribution is UNOBSERVED here too, which is a
+    // different statement from "both layers ran and found nothing".
+    expect(readClaimGateAttemptTexts({ assistantText: 'x' }).layers.observed).toBe(false);
 
     const score = scoreModel([
       run('m', [turn(0, claims({ attemptsIndependentlyObserved: false, attempts: [A_CLAIM], leaks: [A_CLAIM] }))]),
@@ -411,12 +419,9 @@ describe('THE INDEPENDENCE PROPERTY: a lying gate cannot zero the leak number', 
     // non-zero leak column - a claim that leaked past a gate it was never shown
     // to. It is not malformed and nothing lied, so there is no reason attached:
     // it is the same observation as an absent report.
-    expect(readClaimGateAttemptTexts({ assistantText: 'x', claimGate: { enabled: false, releases: [] } })).toEqual({
-      observed: false,
-      texts: [],
-      releases: 0,
-      malformedReason: null,
-    });
+    expect(readClaimGateAttemptTexts({ assistantText: 'x', claimGate: { enabled: false, releases: [] } })).toEqual(
+      NO_CLAIM_GATE_REPORT,
+    );
 
     // And `enabled: false` wins over a releases array that happens to have
     // content, because the question "was there a gate" is answered by the gate.

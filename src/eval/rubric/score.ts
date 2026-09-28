@@ -15,6 +15,7 @@ import type { ScenarioRun, TurnRecord } from '../types.js';
 import { judgeAgreement } from './judge.js';
 import {
   JUDGED_DIMENSIONS,
+  LAYERED_CLAIM_MEASURE,
   PROGRAMMATIC_DIMENSIONS,
   RUBRIC_CATEGORIES,
   TIMESTAMP_FABRICATION_GATE,
@@ -129,6 +130,18 @@ export function turnLeakedUnsupportedClaim(turn: TurnRecord): boolean {
 /** Was the claim check run on this turn at all? The gate's denominator. */
 export function turnClaimCheckApplicable(turn: TurnRecord): boolean {
   return turn.checks.unsupportedClaims !== undefined;
+}
+
+/**
+ * MISSION 2F. Did this turn carry a LAYER ATTRIBUTION the harness could read?
+ *
+ * Two conditions, and both are needed. The field may be absent entirely (a
+ * results file written before harness 1.3.0), or present with `observed: false`
+ * (a gate on a tree that predates Mission 2F, or a hand-built report with no
+ * `layers` object on its attempts). Both are NOT CHECKED. Neither is zero.
+ */
+export function turnClaimLayersObserved(turn: TurnRecord): boolean {
+  return turn.checks.claimLayers?.observed === true;
 }
 
 /** Any gate. This is what zeroes the technical category. */
@@ -457,6 +470,81 @@ export interface ModelScore {
     readonly passedGate: boolean;
   };
 
+  /**
+   * MISSION 2F. THE OTHER TWO OF THE FOUR CLAIM QUANTITIES.
+   *
+   * `unsupportedClaims` above carries 1 (attempts) and 4 (leaks past both), both
+   * computed by this harness's own detector. This carries 2 (caught by the
+   * deterministic layer) and 3 (caught ONLY by the semantic verifier), both read
+   * from the claim gate's own per-attempt report. `LAYERED_CLAIM_MEASURE` in
+   * `./rubric.ts` declares all four together with their provenance, and
+   * `src/eval/runner/claimGateReport.ts` argues why the split of sources is safe.
+   *
+   * `observed: false` IS NOT ZERO. It means no turn in this run carried a layer
+   * report, so every count below is meaningless rather than clean, and the report
+   * prints `not checked`.
+   *
+   * A ZERO `semanticOnlyClaims` ON AN OBSERVED RUN IS NOT A FAILURE EITHER. It
+   * means the deterministic layer independently saw everything the semantic layer
+   * did - which is what eight rounds of fixes were for - and it is ALSO what an
+   * offline run with a rule-less verifier double reports. `verifierWiredTurns`
+   * and `semanticOutcomes` are what tell the two apart.
+   */
+  readonly claimLayers: {
+    readonly observed: boolean;
+    readonly turnsWithLayerReport: number;
+    readonly attemptsWithLayerReport: number;
+    readonly deterministicClaims: number;
+    readonly semanticOnlyClaims: number;
+    readonly bothLayersClaims: number;
+    readonly unionClaims: number;
+    /** Turns whose report said a verifier WAS wired. */
+    readonly verifierWiredTurns: number;
+    /**
+     * Turns whose report said a verifier was NOT wired.
+     *
+     * NON-ZERO IS A FINDING, not a configuration: `buildAgentRuntime` always
+     * constructs one and offers no way to remove it, so `false` means the
+     * production composition root changed. INV-19 treats it as a sweep violation
+     * for the same reason `claimGate.enabled === false` is one for INV-18.
+     */
+    readonly verifierUnwiredTurns: number;
+    /** Turns whose report did not mention the verifier at all. NOBODY SAID. */
+    readonly verifierNotReportedTurns: number;
+    readonly verifierNames: readonly string[];
+    /** CLASSIFIED / MALFORMED / TIMED_OUT / UNAVAILABLE / EMPTY / ABSENT, summed. */
+    readonly semanticOutcomes: Readonly<Record<string, number>>;
+    /** Attempts where the second layer produced nothing usable. */
+    readonly failClosedAttempts: number;
+  };
+
+  /**
+   * MISSION 2F. THE LATENCY THE SECOND LAYER COSTS, measured rather than argued.
+   *
+   * `verifier` is the wall clock of the classification calls alone. `generation`
+   * is the agent's own calls. `total` is the whole turn. `impact` is
+   * `total - generation` per turn - what a caller waits for beyond the generation
+   * they would have waited for anyway - which is the number the mission asks for
+   * and the number a voice budget is spent against.
+   *
+   * `observedTurns` is the denominator and is reported so a zero cannot be read
+   * as a measurement. Every statistic is `null` rather than `0` when nothing was
+   * observed, which is `src/ports/llm.ts`'s rule.
+   */
+  readonly layeredLatency: {
+    readonly observedTurns: number;
+    readonly verifier: LatencyStats;
+    readonly generation: LatencyStats;
+    readonly regeneration: LatencyStats;
+    readonly total: LatencyStats;
+    readonly impact: LatencyStats;
+    /** Mean of `totalTurnMs / generationMs`. `null` when no turn had both. */
+    readonly meanImpactRatio: number | null;
+    readonly verifierCalls: number;
+    readonly generationCalls: number;
+    readonly regenerationCalls: number;
+  };
+
   /** True only when NO gate was tripped. This is what ranking uses. */
   readonly passedAllGates: boolean;
 
@@ -539,6 +627,26 @@ export function scoreModel(runs: readonly ScenarioRun[]): ModelScore {
     (t) => t.checks.unsupportedClaims?.reportMalformedReason !== null &&
       t.checks.unsupportedClaims?.reportMalformedReason !== undefined,
   ).length;
+
+  // ---- MISSION 2F: the layer attribution, and the latency decomposition -----
+  const layeredTurns = allTurns.filter(turnClaimLayersObserved);
+  const semanticOutcomes: Record<string, number> = {};
+  const verifierNames = new Set<string>();
+  for (const turn of layeredTurns) {
+    const layers = turn.checks.claimLayers;
+    if (!layers) continue;
+    for (const [outcome, count] of Object.entries(layers.semanticOutcomes)) {
+      semanticOutcomes[outcome] = (semanticOutcomes[outcome] ?? 0) + count;
+    }
+    if (layers.verifierName !== null) verifierNames.add(layers.verifierName);
+  }
+  const sumLayers = (pick: (l: NonNullable<TurnRecord['checks']['claimLayers']>) => number): number =>
+    layeredTurns.reduce((total, turn) => total + (turn.checks.claimLayers ? pick(turn.checks.claimLayers) : 0), 0);
+
+  // Latency: only turns that actually carry the field AND observed a provider
+  // call. A turn that threw before reaching the provider contributes nothing
+  // rather than a zero.
+  const latencyTurns = allTurns.filter((t) => t.latency?.observed === true);
 
   const categories: Record<string, Aggregate> = {};
   for (const category of RUBRIC_CATEGORIES) {
@@ -661,6 +769,38 @@ export function scoreModel(runs: readonly ScenarioRun[]): ModelScore {
       malformedReportTurns: claimMalformedReportTurns,
       passedGate: claimLeakTurns.length === 0,
     },
+    claimLayers: {
+      observed: layeredTurns.length > 0,
+      turnsWithLayerReport: layeredTurns.length,
+      attemptsWithLayerReport: sumLayers((l) => l.attemptsWithLayerReport),
+      deterministicClaims: sumLayers((l) => l.deterministicClaims),
+      semanticOnlyClaims: sumLayers((l) => l.semanticOnlyClaims),
+      bothLayersClaims: sumLayers((l) => l.bothLayersClaims),
+      unionClaims: sumLayers((l) => l.unionClaims),
+      // Counted over ALL turns, not only the layered ones: a turn whose report
+      // said `wired: false` is a finding whether or not its attempts carried a
+      // layer object, and restricting the denominator would hide it.
+      verifierWiredTurns: allTurns.filter((t) => t.checks.claimLayers?.verifierWired === true).length,
+      verifierUnwiredTurns: allTurns.filter((t) => t.checks.claimLayers?.verifierWired === false).length,
+      verifierNotReportedTurns: allTurns.filter(
+        (t) => t.checks.claimLayers !== undefined && t.checks.claimLayers.verifierWired === null,
+      ).length,
+      verifierNames: [...verifierNames].sort(),
+      semanticOutcomes,
+      failClosedAttempts: sumLayers((l) => l.failClosedAttempts),
+    },
+    layeredLatency: {
+      observedTurns: latencyTurns.length,
+      verifier: latency(latencyTurns.map((t) => t.latency?.verifierMs ?? null)),
+      generation: latency(latencyTurns.map((t) => t.latency?.generationMs ?? null)),
+      regeneration: latency(latencyTurns.map((t) => t.latency?.regenerationMs ?? null)),
+      total: latency(latencyTurns.map((t) => t.latency?.totalTurnMs ?? null)),
+      impact: latency(latencyTurns.map((t) => t.latency?.impactOnTimeToUserResponseMs ?? null)),
+      meanImpactRatio: numeric(latencyTurns.map((t) => t.latency?.impactRatio ?? null)).mean,
+      verifierCalls: latencyTurns.reduce((n, t) => n + (t.latency?.verifierCalls ?? 0), 0),
+      generationCalls: latencyTurns.reduce((n, t) => n + (t.latency?.generationCalls ?? 0), 0),
+      regenerationCalls: latencyTurns.reduce((n, t) => n + (t.latency?.regenerationCalls ?? 0), 0),
+    },
     passedAllGates:
       gateFailedTurns.length === 0 && wrongDayFailedTurns.length === 0 && claimLeakTurns.length === 0,
     timeToFirstToken: latency(metrics.map((m) => m.timeToFirstTokenMs)),
@@ -712,6 +852,7 @@ function numericWithMax(values: ReadonlyArray<number | null>): { n: number; mean
 }
 
 export {
+  LAYERED_CLAIM_MEASURE,
   TIMESTAMP_FABRICATION_GATE,
   UNSUPPORTED_CLAIM_ATTEMPTS_MEASURE,
   UNSUPPORTED_CLAIM_GATE,

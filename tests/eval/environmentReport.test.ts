@@ -363,9 +363,16 @@ describe('results.json stays backward-readable', () => {
     // MOVED @2 -> @3 BY MISSION 2D, for the same reason @1 became @2: the shape
     // GREW. results@3 adds `unsupportedClaimAttemptsMeasure` at the top level, a
     // third entry in `gates`, `models[].unsupportedClaims` and three
-    // `perScenario[]` keys. The superset property is what actually matters and it
-    // is asserted by the next test rather than by this literal.
-    expect(json.schema).toBe('schedule-ai-voice/eval-results@3');
+    // `perScenario[]` keys.
+    //
+    // MOVED @3 -> @4 BY MISSION 2F, on the same rule again. results@4 adds
+    // `layeredClaimMeasure` at the top level - the FOUR claim quantities declared
+    // as data with the provenance of each - plus `models[].claimLayers` and
+    // `models[].layeredLatency`. NO GATE WAS ADDED, which is why `gates` still
+    // has three entries: only the fourth quantity gates, and it IS the third
+    // entry in `gates`. The superset property is what actually matters and it is
+    // asserted by the next test rather than by this literal.
+    expect(json.schema).toBe('schedule-ai-voice/eval-results@4');
   });
 
   it('keeps every key a results@1 reader depends on, unmoved and unrenamed', () => {
