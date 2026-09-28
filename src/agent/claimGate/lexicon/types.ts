@@ -228,6 +228,80 @@ export interface MonthEntry {
 }
 
 /**
+ * A word that ANNOUNCES a day or a time is about to be named.
+ *
+ * WHY THIS FIELD EXISTS - THE SEVENTH FAIL-OPEN DEFECT, AND THE FIRST IN THE
+ * VERIFIER RATHER THAN THE DETECTOR
+ * ---------------------------------------------------------------------------
+ * `detectDay` and `detectTime` read the SAME locale data the scheduling resolver
+ * reads, and they read it with the opposite discipline.
+ * `src/scheduling/naturalLanguage.ts` has refused any phrase carrying a token no
+ * rule accounted for since § 8.3 - "a phrase may resolve only if EVERY
+ * non-whitespace token was consumed by a rule" - because silently dropping a word
+ * is what booked `מחר ב-15:00` for TODAY. The gate's readers dropped them: a form
+ * that matched was recorded and everything else in the sentence was ignored.
+ *
+ * So `assertedDay` / `assertedTime` came back `null` for a phrase the detector
+ * could not read, `verifier.ts` read `null` as NOTHING ASSERTED rather than as
+ * UNCERTAINTY, and the claim skipped the day and time comparison entirely and was
+ * certified SUPPORTED. Independent QA drove eleven such sentences through the real
+ * `AgentTurnService`, the real `ToolDispatcher` and real SQLite against a booking
+ * that really existed on THURSDAY AT 15:00:
+ *
+ *     Your meeting is booked for Thursday at half past four.    SUPPORTED, persisted
+ *     Your meeting is confirmed for Thursday at two thirty.     SUPPORTED, persisted
+ *     Your meeting is booked for Thursday at lunchtime.         SUPPORTED, persisted
+ *     Your meeting is booked for this weekend at 3pm.           SUPPORTED, persisted
+ *     Your meeting is booked for two days from now at 3pm.      SUPPORTED, persisted
+ *     Your meeting is booked for Thursday at 4:30pm.            the CONTROL - blocked
+ *     Your meeting is booked for Saturday at 3pm.               the CONTROL - blocked
+ *
+ * The two controls are the finding: the gate HAS the WRONG_DAY and WRONG_TIME
+ * concepts and applies them, and the verdict turned only on whether the model
+ * happened to write `4:30pm` or `half past four`. `docs/MISSION_2D_CLAIM_GATE.md`
+ * § 20 has the whole table, in both languages.
+ *
+ * WHY AN OPENER AND NOT MORE TIME VOCABULARY
+ * ---------------------------------------------------------------------------
+ * The obvious patch is to teach the time lexicon `half past` and `quarter to`.
+ * That is § 16.6's pattern for the eighth time: the next round arrives with
+ * `twenty past three`, and every value nobody listed is a LEAK. The fix has to be
+ * stated at the level of the AXIS.
+ *
+ * The axis is: WHERE IN A SENTENCE A DAY OR A TIME IS ALLOWED TO BE. A day and a
+ * time do not float free in either registered language - they stand after a word
+ * that introduces them (`at`, `on`, `for`, Hebrew's ב- and ל- prefixes). That word
+ * is a closed class of PREPOSITIONS, which is exactly what the temporal NOUNS and
+ * the hour SPELLINGS are not. So the locale declares the openers, the engine reads
+ * the stretch after each one, and anything in it that the day and time readers did
+ * not consume and that `temporalCarriers` does not permit is UNRESOLVED - which
+ * the verifier then treats as uncertainty, which is unsupported, which is one
+ * regeneration.
+ *
+ * THIS IS THE ONE ENUMERATION IN THIS FIX THAT IS NOT INVERTED, and saying so is
+ * the point. A missing OPENER costs a miss: a temporal phrase introduced by a
+ * preposition nobody listed is never examined. What makes that acceptable where
+ * listing `half past` is not, is that the opener class is closed and tiny - a
+ * language has a dozen temporal prepositions and an unbounded number of ways to
+ * say an hour - and that a missing opener loses only the phrases that preposition
+ * introduces, while a missing hour spelling loses that hour behind EVERY
+ * preposition. `temporalCarriers`, which is the list that decides whether a slot
+ * is resolved, IS inverted in the usual direction.
+ *
+ * `attaches` mirrors `ClockPrefixEntry` in `src/scheduling/lexicon/types.ts` and
+ * exists for the same language: Hebrew writes `ב-15:00`, `ב15:00`, `בשתיים` and
+ * `ליום חמישי` with the preposition FUSED to the word it introduces, so there is
+ * no standing token to match and the opener has to be stripped off the front.
+ */
+export interface TemporalOpenerEntry {
+  readonly forms: readonly string[];
+  /** True when this locale writes the opener fused to the word it introduces. */
+  readonly attaches: boolean;
+  /** What may stand between a fused opener and its word. Defaults to `['']`. */
+  readonly attachedSeparators?: readonly string[];
+}
+
+/**
  * One locale's complete claim vocabulary. Data only - no functions, no regexes,
  * no control flow.
  */
@@ -493,4 +567,75 @@ export interface ClaimLexicon {
    * Empty for a locale that does not write them.
    */
   readonly ordinalSuffixes: readonly string[];
+  /**
+   * The words that announce a day or a time follows.
+   *
+   * `TemporalOpenerEntry` carries the whole argument, including why this is the
+   * one list here that is not inverted. Empty is a valid answer only for a locale
+   * that marks a temporal phrase some other way; for a locale that writes
+   * prepositions, an empty list means no temporal phrase is ever examined and the
+   * § 20 defect is open in that language.
+   */
+  readonly temporalOpeners: readonly TemporalOpenerEntry[];
+  /**
+   * What may stand inside a temporal phrase WITHOUT naming a day or a time.
+   *
+   * WHY THIS IS A LIST OF WHAT IS PERMITTED AND NOT A LIST OF WHAT LEAKED
+   * -------------------------------------------------------------------------
+   * This is the field that decides the § 20 verdict, so it is the one that has to
+   * be INVERTED. `detectDay` and `detectTime` consume what they understood; every
+   * remaining token in the stretch after a `temporalOpeners` word is a word the
+   * gate did not read, and the safe reading of an unread word standing where a day
+   * or an hour belongs is "this might BE the day or the hour, and I cannot check
+   * it". So a token is accounted for only when a rule consumed it or when it is
+   * named here, and anything else makes the claim's day and time UNRESOLVED.
+   *
+   * A word missing from this list therefore costs ONE REGENERATION of a sentence
+   * that was true, and can never cost a released false claim. That is the same
+   * direction `frameBlockers` and `suppressionCarriers` are written in, and the
+   * only direction `../detector.ts`'s fail-safe rule permits an enumeration at
+   * all. It is also, exactly, `LocaleLexicon.carriers` in
+   * `src/scheduling/lexicon/types.ts` - the list the resolver has had since § 8.3,
+   * for the same reason, doing the same job one layer up.
+   *
+   * WHAT BELONGS HERE: the function words and the light nouns that stand inside a
+   * `for ...` or `at ...` phrase without being any part of the answer - articles,
+   * `of`, `o'clock`, `sharp`, `time`, the object pronouns. NOT a temporal noun.
+   * `weekend`, `week`, `month`, `lunchtime`, `midday`, `quarter`, `half` and every
+   * spelled-out hour are deliberately ABSENT, and adding one would re-open the
+   * defect this field exists to close in the one direction that releases a false
+   * sentence to a customer.
+   *
+   * The engine ADDS, from every registered locale and without being asked, exactly
+   * two of the existing fields: `frameDeterminers` (an article or a possessive is
+   * noun-phrase material and names no hour) and `domainObjects` (`in the DIARY` and
+   * `for your MEETING` are the two commonest non-temporal complements in this
+   * system's own traffic). Declaring either again here would be duplication that
+   * can drift.
+   *
+   * `suppressionCarriers` is DELIBERATELY NOT POOLED, and the reason is a live
+   * fail-open one rather than a matter of taste. That list is a function-word
+   * inventory assembled for a different question, and it contains `one` - which is
+   * an HOUR. Pooling it would account for `at one` and certify a 15:00 booking
+   * described as one o'clock, which is the § 20 defect surviving its own fix. The
+   * pronouns this field really does need are therefore written out per locale
+   * below, where a reader can see which ones were chosen.
+   */
+  readonly temporalCarriers: readonly string[];
+  /**
+   * Words that END a temporal phrase by introducing something that is not one.
+   *
+   * `Your meeting is booked for Thursday at 2pm with Jordan Miller.` is the
+   * sentence this exists for: `with` starts a companion, not an hour, and without
+   * it the slot opened by `at` would run on into a person's name and report it as
+   * an unread day. The locale's `clauseBreakers` are pooled in by the engine
+   * already - `and`, `but`, `so`, `אבל` - because a new clause ends a temporal
+   * phrase whatever else it does.
+   *
+   * Inverted in the safe direction like `temporalCarriers`: a missing ender lets a
+   * slot run one phrase too far and costs one regeneration of a true sentence. It
+   * can never cost a leak, because a slot that runs too FAR reports MORE, never
+   * less.
+   */
+  readonly temporalSlotEnders: readonly string[];
 }

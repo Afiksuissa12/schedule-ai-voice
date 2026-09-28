@@ -844,4 +844,136 @@ export const EN_CLAIM_LEXICON: ClaimLexicon = {
   ],
 
   ordinalSuffixes: ['st', 'nd', 'rd', 'th'],
+
+  // The prepositions English puts in front of a day or a time. `types.ts`
+  // (`TemporalOpenerEntry`) carries the argument for why the axis is the
+  // PREPOSITION and not the hour spelling; what follows is why these words.
+  //
+  // `for`, `at` and `on` are the three that matter and they are the three the § 20
+  // leak used: `booked FOR this weekend`, `booked ... AT half past four`, `booked
+  // ON the 15th`. `by`, `from`, `until`, `till` and `starting` are the deadline and
+  // range prepositions a model writes when it is being helpful. `to` is here for
+  // `moved to Friday`, which is a completion frame in this very lexicon. `in`
+  // is here for `in two days` and `in the afternoon`, and it is the one that needs
+  // `diary` and `calendar` on the carrier side - `that is in the diary` is the most
+  // ordinary true sentence this agent says, and the engine supplies the objects.
+  //
+  // DELIBERATELY ABSENT: `with`, `about`, `regarding`. Each introduces a companion
+  // or a subject rather than a time, and each is a `temporalSlotEnder` below
+  // instead. `after` and `before` are absent too, for a reason that is the fail-safe
+  // direction rather than an oversight: they introduce a RELATIVE anchor (`after
+  // lunch`, `before the weekend`) that this gate cannot resolve at all, so a slot
+  // opened by one would report every time. They are ended instead, which leaves
+  // `I have booked you in after lunch.` as a stated miss rather than a permanent
+  // regeneration - and it is recorded as such in
+  // `docs/MISSION_2D_CLAIM_GATE.md` § 20.6.
+  //
+  // `to` IS ABSENT AND IT IS THE ONE ENTRY A READER SHOULD CHECK, because it is
+  // the entry that was tried and MEASURED OUT. `to` really does introduce a time
+  // in `moved to Friday`, and it is also the English INFINITIVE MARKER - so as an
+  // opener it read the verb after every `to` in the corpus as an unresolved day:
+  // 854 rows of `nothing to worry about`, `no need to do anything`, `happy to
+  // help`, `unable to reach them`. Those are honest reassurances, and regenerating
+  // them is precisely the precision cost § 20.6 of the mission brief forbids
+  // paying. Nothing here can tell an infinitive from a preposition without a verb
+  // list, and a verb list is § 16.6's pattern again. So `to` is out, the residual
+  // is named - `I have moved it to half past four.` is not examined - and it is
+  // recorded in `DOCUMENTED_VERIFIER_MISSES` (`tests/claimGate/claimGateCorpus.ts`)
+  // rather than left to be discovered, which is a table § 20 had to add because the
+  // claim here is DETECTED and it is the CHECK that misses it. Every wording in the
+  // § 20 table reaches its phrase through `for`, `at` or `on`.
+  //
+  // English fuses nothing, so every entry stands alone.
+  temporalOpeners: [{ forms: ['for', 'at', 'on', 'in', 'by', 'from', 'until', 'till', 'starting'], attaches: false }],
+
+  // What may stand inside `for ...` / `at ...` without being any part of the day or
+  // the hour. `types.ts` argues why this list is INVERTED and what that buys; what
+  // follows is what each group is here for and, more importantly, what is not.
+  //
+  // THE OBJECT AND DEMONSTRATIVE PRONOUNS are the commonest non-temporal complement
+  // of `for`: `Let me take care of that FOR YOU.`, `I have booked that for us.`
+  // A pronoun names a person or a thing already mentioned and can never be an hour.
+  //
+  // THE PHRASE FURNITURE is the rest: `of` and `the` inside `the 15th of March`,
+  // `o'clock` and `sharp` after an hour, `local` and `time` in `at 2pm your local
+  // time` - which is the wording `SPEAK_TIMES_IN_CONTACT_TIMEZONE` asks for, so it
+  // had better not cost a regeneration. `please`, `then` and `now` are the
+  // politeness and discourse particles a model puts at the end of the phrase.
+  //
+  // DELIBERATELY ABSENT, AND THIS IS THE HALF THAT KEEPS THE FIX A FIX: every word
+  // that could BE a day or an hour. `weekend`, `week`, `month`, `day`, `days`,
+  // `hour`, `minute`, `lunchtime`, `breakfast`, `first`, `thing`, `top`, `half`,
+  // `quarter`, `past`, `one` ... `twelve`, `thirty`, `hundred`, `end`, `beginning`,
+  // `start`, `middle`, `same`, `next`, `available`, `fortnight`. Every one of those
+  // appears in a § 20 leaking phrase, and every one of them is the reason the
+  // phrase is a claim about WHEN. Adding any of them would certify the sentence.
+  //
+  // `next` is worth its own line because it looks harmless. It is not: the detector
+  // reads `for next Thursday` as isoWeekday 4 and this Thursday's booking would
+  // then AGREE with a sentence naming the Thursday after it. Leaving `next`
+  // unlisted makes that phrase unresolved, which is the correct answer.
+  // The engine pools this locale's determiners, domain objects, completion forms,
+  // identifier markers, negators, conditionals, blockers, clause joiners and
+  // suppression carriers in as well - and then DROPS any of them the scheduling
+  // lexicon reads as naming a when, which is what stops `one` from accounting for
+  // `at one`. `../detector.ts` (`temporalIndex`) holds that filter.
+  temporalCarriers: [
+    // ---- object and demonstrative pronouns --------------------------------
+    'you', 'me', 'us', 'him', 'her', 'them', 'it', 'both', 'yourself',
+    // ---- the furniture of a temporal phrase -------------------------------
+    'of', "o'clock", 'oclock', 'sharp', 'exactly', 'prompt', 'local', 'time', 'zone', 'timezone',
+    // `at long last` is an idiom, not a clock reading, and it is in the committed
+    // release texts (`Your meeting has, at long last, finally been booked for
+    // Friday.`). Declared as the WHOLE phrase so that `last` on its own stays
+    // unlisted - `booked for last Thursday` must still be unresolved, because the
+    // detector reads a bare `Thursday` out of it and would otherwise agree with
+    // THIS Thursday's booking.
+    'long last',
+    // ---- politeness and discourse particles -------------------------------
+    'please', 'then', 'now', 'ok', 'okay', 'sure', 'thanks',
+    // ---- the two articles, RE-PERMITTED on purpose ------------------------
+    // `a` and `an` are `relativeOffset.quantities` in `src/scheduling/lexicon/en.ts`
+    // (they are the `a` of `in a couple of hours`), so the engine's filter would
+    // drop them out of the pooled `frameDeterminers`. Alone they name no hour -
+    // `booked for a meeting at 2pm` - so the locale re-permits them here, which is
+    // the considered answer the filter is written to defer to. `at a quarter past
+    // two` is unaffected: `quarter` is what is unread there, not `a`.
+    'a', 'an',
+    // ---- the reassurance nouns --------------------------------------------
+    // These are deliberately ABSENT from `suppressionCarriers` above, and that
+    // must not change - it is what makes `Don't worry your meeting is booked for
+    // Thursday at 2pm.` a DETECTED claim. They are permitted HERE because the two
+    // lists answer different questions: there, the question is whether a negator
+    // governs a predicate, and a noun ending its reach is the safe answer; here,
+    // the question is whether a word could be a day or an hour, and `worry` could
+    // not. Measured: without them, `Nothing to worry about ...` and its family
+    // reported `worry` as an unresolved day in the corpus.
+    'worry', 'worries', 'trouble', 'problem', 'problems', 'bother', 'panic', 'stress', 'fear',
+    'help', 'reach', 'anything', 'everything', 'nothing else', 'contact', 'account', 'record',
+  ],
+
+  // What ENDS a temporal phrase by introducing something else. `types.ts` argues
+  // the field; `booked for Thursday at 2pm WITH Jordan Miller.` is the sentence.
+  //
+  // `after` and `before` are here rather than in `temporalOpeners` above, and the
+  // opener comment says why: they introduce an anchor this gate has no way to
+  // resolve, so opening a slot on one would regenerate every sentence that used
+  // them. Ending on one is the same decision the opener list makes by omission,
+  // written where a reader will look for it.
+  temporalSlotEnders: [
+    'with',
+    // `that has been recorded AGAINST your account.` - a preposition taking an
+    // account, never an hour. Found by the corpus measurement, not by reading.
+    'against',
+    'about',
+    'regarding',
+    'concerning',
+    'via',
+    'using',
+    'per',
+    'after',
+    'before',
+    'if',
+    'unless',
+  ],
 };

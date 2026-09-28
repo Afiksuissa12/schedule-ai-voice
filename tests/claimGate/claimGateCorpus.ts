@@ -43,7 +43,7 @@
  *    say. Precision is not a nice-to-have here: a gate that regenerates truthful
  *    turns is a gate somebody switches off, and then the § 6.5.4 defect is back.
  *  - `LEDGER_CASES`: the VERIFIER half. A hand-built `ActionLedger` and a text,
- *    with the expected verdict. Every one of the six `UNSUPPORTED_CLAIM_REASONS`
+ *    with the expected verdict. Every one of the `UNSUPPORTED_CLAIM_REASONS`
  *    must be produced by something, and a supported claim must come back
  *    supported and byte-identical.
  *  - `DOCUMENTED_MISSES`: texts that DO assert an effect and that the detector
@@ -3716,7 +3716,7 @@ const BOOKED_THURSDAY_1400: LedgerEffect = {
 };
 
 /**
- * Every one of the six `UNSUPPORTED_CLAIM_REASONS`, plus the supported cases.
+ * Every one of the `UNSUPPORTED_CLAIM_REASONS`, plus the supported cases.
  *
  * The ledger is hand-built rather than read from a database, which keeps these
  * pure and fast. That is a stated boundary, not a hidden one: it proves the
@@ -3809,6 +3809,76 @@ export const LEDGER_CASES: readonly LedgerCase[] = [
     text: 'הפגישה נקבעה בהצלחה למחר אחרי הצהריים בשעה 14:00.',
     ledger: ledger({}),
     expect: 'NO_MATCHING_EFFECT',
+  },
+
+  // ---- § 20: the hour and the day named in a phrase nothing can read ------
+  // These are QA's own rows T1 and D1, against the booking that really exists.
+  // Before § 20 both came back SUPPORTED with a `matchedEffect` named in the
+  // audit - not missed, AFFIRMATIVELY CERTIFIED - and were released byte-identical
+  // and persisted as spoken AGENT turns. The whole generated cross is
+  // `TEMPORAL_PHRASE_MATRIX`; these two are here so the reason is proven by a
+  // sentence QA drove end to end and not only by a generator.
+  {
+    name: 'the hour named as a person says it, which the readers cannot parse - QA row T1',
+    text: 'Your meeting is booked for Thursday at half past four.',
+    ledger: ledger({ effects: [BOOKED_THURSDAY_1400] }),
+    expect: 'UNREADABLE_WHEN',
+  },
+  {
+    name: 'the day named as a period the readers cannot parse - QA row D1',
+    text: 'Your meeting is booked for this weekend at 2pm.',
+    ledger: ledger({ effects: [BOOKED_THURSDAY_1400] }),
+    expect: 'UNREADABLE_WHEN',
+  },
+  {
+    name: 'the same hole in Hebrew, where a fix in en.ts alone would be § 16.6 again',
+    text: 'הפגישה נקבעה ליום חמישי בשתיים וחצי.',
+    ledger: ledger({ effects: [BOOKED_THURSDAY_1400] }),
+    expect: 'UNREADABLE_WHEN',
+  },
+  {
+    // THE PARSE SUCCEEDS AND IS WRONG, which is a different thing from a parse
+    // that fails, and QA asked for it to be checked separately. The detector
+    // reads `Thursday` out of `next Thursday` - the RIGHT weekday for the wrong
+    // week - so the day comparison AGREES and nothing else would have stopped it.
+    // It is caught because `next` is left over inside the slot, which is the
+    // leftover rule doing exactly what `src/scheduling/naturalLanguage.ts` does
+    // with the same word.
+    name: 'a mis-parse rather than a non-parse: `next Thursday` reads as THIS Thursday',
+    text: 'Your meeting is booked for next Thursday at 2pm.',
+    ledger: ledger({ effects: [BOOKED_THURSDAY_1400] }),
+    expect: 'UNREADABLE_WHEN',
+  },
+  {
+    // THE OTHER DIRECTION of the same mis-parse, and QA flagged it as the one to
+    // check on its own: `a fortnight today` has `today` inside it, so the reader
+    // takes the WRONG token out of the phrase rather than failing to take one.
+    // That happens to be fail-SAFE - the day it reads disagrees with the booking -
+    // and the verdict is therefore WRONG_DAY rather than UNREADABLE_WHEN, because
+    // `reconcile` compares what the text DID name before it reports what it could
+    // not read. Recorded so the distinction is proven rather than argued.
+    name: 'a mis-parse that is fail-SAFE: `a fortnight today` reads the `today` out of it',
+    text: 'Your meeting is booked for a fortnight today at 2pm.',
+    ledger: ledger({ effects: [BOOKED_THURSDAY_1400] }),
+    expect: 'WRONG_DAY',
+  },
+
+  // ---- § 20.6: the null path, which the fix may not flip -----------------
+  {
+    name: 'SUPPORTED: a truthful confirmation that names no day and no hour at all',
+    text: 'Your meeting is booked.',
+    ledger: ledger({ effects: [BOOKED_THURSDAY_1400] }),
+    expect: null,
+  },
+  {
+    // `sharp` is a declared `temporalCarrier`: it stands inside the hour phrase
+    // and is no part of the hour, so the slot rule must permit it. Here as a
+    // named row because it is the precision half of the § 20 leftover rule -
+    // every word the rule does NOT permit costs a regeneration.
+    name: 'SUPPORTED: a permitted word standing inside the hour phrase',
+    text: 'Your meeting is booked for Thursday at 2pm sharp.',
+    ledger: ledger({ effects: [BOOKED_THURSDAY_1400] }),
+    expect: null,
   },
 
   // ---- the supported side, which must be released byte-identical --------
@@ -4188,6 +4258,307 @@ export const DOCUMENTED_OVERREACH: readonly DocumentedOverreach[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// § 20: THE TEMPORAL-PHRASE AXIS, which is the axis that was never crossed.
+// ---------------------------------------------------------------------------
+
+/**
+ * ONE WAY OF NAMING A DAY, OR AN HOUR, WITH WHAT IT MEANS WRITTEN BESIDE IT.
+ *
+ * WHY THIS AXIS EXISTS, AND WHY ITS ABSENCE IS A DIFFERENT FAILURE FROM § 19.7's
+ * ---------------------------------------------------------------------------
+ * § 19.7 recorded the lesson that an axis nobody declared is as invisible as a
+ * fixture nobody wrote, and it was about a MISSING axis - there was no
+ * whitespace-inside-the-frame axis anywhere in the generator. This is a different
+ * failure and a subtler one. The temporal axis WAS present in every matrix above:
+ * `CROSS_CLAUSE_MATRIX`, `ADVERB_FRAME_MATRIX`, `SUPPRESSION_MATRIX` and
+ * `SPLIT_FRAME_MATRIX` all carry a day and an hour in every row. But every value
+ * any of them uses - `Thursday`, `tomorrow`, `2pm`, `15:00`, `the 15th`, `noon`,
+ * `in the afternoon`, `ליום חמישי`, `בשעה 14:00` - is a value THE DETECTOR CAN
+ * ALREADY READ, because whoever wrote the row wrote a time the gate understood.
+ *
+ * An axis whose values are drawn from the lexicon under test cannot falsify that
+ * lexicon. It is a self-fulfilling axis: every row of it agrees with the code by
+ * construction, and the whole class of phrase the readers cannot parse was as
+ * untested after four generated matrices as it was before the first one.
+ * Independent QA grepped `tests/`, `src/` and `docs/` for `half past`, `quarter
+ * past`, `this weekend`, `two days from now`, `lunchtime`, `top of the hour` and
+ * `two thirty` and found ZERO hits in any fixture, corpus, matrix or
+ * documented-miss list, while eleven sentences built out of them were certified
+ * SUPPORTED against a real booking that said something else.
+ *
+ * So the values here are drawn from HOW A PERSON SAYS A DAY AND AN HOUR, and
+ * deliberately not from `src/scheduling/lexicon`. The PARSED values are kept
+ * beside them as controls, because a matrix of only-unreadable phrasings would
+ * pass if the gate started refusing every sentence that names a time.
+ */
+export interface TemporalWording {
+  readonly text: string;
+  /**
+   * What the gate must make of it against a real Thursday 14:00 booking.
+   *
+   * `AGREES` / `DISAGREES` are the PARSED controls. `UNREADABLE` is the § 20
+   * class: a phrase a person reads without effort and the detector cannot.
+   */
+  readonly reads: 'AGREES' | 'DISAGREES' | 'UNREADABLE';
+  readonly language: 'en' | 'he';
+  /** Why a person reading it says that, so a wrong row can be reviewed. */
+  readonly why: string;
+}
+
+/**
+ * DAY WORDINGS. Every `UNREADABLE` entry is a phrase QA drove end to end.
+ *
+ * `for next Thursday` is the one to read twice: the detector DOES get a weekday
+ * out of it - Thursday, which AGREES with the booking - and `next` makes it a
+ * different Thursday entirely. That is the sharpest form of the § 20 defect,
+ * because the parse succeeds and is wrong rather than failing.
+ */
+export const TEMPORAL_DAY_WORDINGS: readonly TemporalWording[] = [
+  // ---- English, parsed: the controls ------------------------------------
+  { text: 'for Thursday', reads: 'AGREES', language: 'en', why: 'the weekday the booking really has' },
+  { text: 'on Thursday', reads: 'AGREES', language: 'en', why: 'the same day behind a different preposition' },
+  { text: 'for tomorrow', reads: 'AGREES', language: 'en', why: 'Wednesday + 1 is the Thursday booked' },
+  { text: 'for the 5th', reads: 'AGREES', language: 'en', why: '5 March 2026 is the booked date' },
+  { text: 'for Saturday', reads: 'DISAGREES', language: 'en', why: 'a real Thursday booking called Saturday' },
+  { text: 'for Friday', reads: 'DISAGREES', language: 'en', why: 'the § 8.3 wrong-day harm, one day out' },
+  // ---- English, unreadable: the § 20 class -------------------------------
+  { text: 'for the weekend', reads: 'UNREADABLE', language: 'en', why: 'names a period, and not the one booked' },
+  { text: 'for this weekend', reads: 'UNREADABLE', language: 'en', why: 'Thursday is not the weekend' },
+  { text: 'for the end of the week', reads: 'UNREADABLE', language: 'en', why: 'end_of_week is a resolver anchor the gate never reads' },
+  { text: 'for the beginning of next week', reads: 'UNREADABLE', language: 'en', why: 'a week away from the booking' },
+  { text: 'for two days from now', reads: 'UNREADABLE', language: 'en', why: 'the booking is TOMORROW, not the day after' },
+  { text: 'for the same day as last time', reads: 'UNREADABLE', language: 'en', why: 'names a day by reference to history the gate has no view of' },
+  { text: 'for the first available day', reads: 'UNREADABLE', language: 'en', why: 'names a day by a property rather than a date' },
+  { text: 'for next Thursday', reads: 'UNREADABLE', language: 'en', why: 'the detector reads THIS Thursday out of it and `next` makes it the one after' },
+  // ---- Hebrew, parsed: the controls --------------------------------------
+  { text: 'ליום חמישי', reads: 'AGREES', language: 'he', why: 'the weekday frame with the ל- preposition fused on' },
+  { text: 'ביום חמישי', reads: 'AGREES', language: 'he', why: 'the same weekday with ב-, which is a whole declared form' },
+  { text: 'למחר', reads: 'AGREES', language: 'he', why: 'tomorrow, a declared day anchor, which is the Thursday that was booked' },
+  { text: 'ליום שבת', reads: 'DISAGREES', language: 'he', why: 'Saturday named for a Thursday booking' },
+  { text: 'ליום שישי', reads: 'DISAGREES', language: 'he', why: 'Friday named for a Thursday booking' },
+  // ---- Hebrew, unreadable -------------------------------------------------
+  { text: 'לסוף השבוע', reads: 'UNREADABLE', language: 'he', why: 'the end of the week - the Hebrew form of the English row above' },
+  { text: 'לתחילת השבוע הבא', reads: 'UNREADABLE', language: 'he', why: 'the beginning of next week' },
+  { text: 'לסוף החודש', reads: 'UNREADABLE', language: 'he', why: 'the end of the month - a period, and the booking is a single Thursday inside it' },
+];
+
+/**
+ * HOUR WORDINGS. The empty string is the axis value that must NOT regenerate.
+ *
+ * It is the § 20.6 constraint made into a row: `Your meeting is booked for
+ * Thursday.` names no hour and must pass with no regeneration, and a fix that
+ * simply flipped the null branch to unsupported would fail every row carrying it.
+ */
+export const TEMPORAL_TIME_WORDINGS: readonly TemporalWording[] = [
+  // ---- the no-hour control, which must stay clean ------------------------
+  { text: '', reads: 'AGREES', language: 'en', why: 'names no hour at all, so there is nothing to contradict' },
+  { text: '', reads: 'AGREES', language: 'he', why: 'the same as the row above, in Hebrew: no hour is named, so nothing can contradict one' },
+  // ---- English, parsed ---------------------------------------------------
+  { text: 'at 2pm', reads: 'AGREES', language: 'en', why: '14:00, which is what was booked' },
+  { text: 'at 14:00', reads: 'AGREES', language: 'en', why: 'the 24-hour spelling of the same hour' },
+  { text: 'at 2', reads: 'AGREES', language: 'en', why: 'a bare 12-hour reading, which verifier.ts accepts by name' },
+  { text: 'at 2 in the afternoon', reads: 'AGREES', language: 'en', why: 'the bare hour pinned by a day part' },
+  { text: 'at 4:30pm', reads: 'DISAGREES', language: 'en', why: '16:30 for a 14:00 booking - QA control C1' },
+  { text: 'at 9am', reads: 'DISAGREES', language: 'en', why: 'five hours early - a morning hour for an afternoon booking' },
+  // ---- English, unreadable: the § 20 class -------------------------------
+  { text: 'at half past four', reads: 'UNREADABLE', language: 'en', why: '16:30 said the way a person says it - QA row T1' },
+  { text: 'at a quarter past two', reads: 'UNREADABLE', language: 'en', why: '14:15, which is not 14:00 - QA row T2' },
+  { text: 'at ten to five', reads: 'UNREADABLE', language: 'en', why: '16:50, counted backwards from the hour - QA row T3' },
+  { text: 'at two thirty', reads: 'UNREADABLE', language: 'en', why: '14:30, the bare two-number spelling - QA row T4' },
+  { text: 'at lunchtime', reads: 'UNREADABLE', language: 'en', why: 'midday, an hour named by the meal rather than by the clock - QA row T5' },
+  { text: 'first thing', reads: 'UNREADABLE', language: 'en', why: 'the start of the day, and no preposition at all - QA row T6' },
+  { text: 'at fourteen hundred', reads: 'UNREADABLE', language: 'en', why: 'the hour spelled out in words' },
+  { text: 'at the top of the hour', reads: 'UNREADABLE', language: 'en', why: 'an hour named by a property' },
+  // ---- Hebrew, parsed ----------------------------------------------------
+  { text: 'בשעה 14:00', reads: 'AGREES', language: 'he', why: 'the standing clock preposition and a digit time' },
+  { text: 'ב-14:00', reads: 'AGREES', language: 'he', why: 'the fused ב- prefix with a maqaf, the § 8.3 spelling' },
+  { text: 'בשעה 16:30', reads: 'DISAGREES', language: 'he', why: '16:30 for a 14:00 booking' },
+  // ---- Hebrew, unreadable -------------------------------------------------
+  { text: 'בשתיים וחצי', reads: 'UNREADABLE', language: 'he', why: 'half past two, spelled in letters - src/scheduling/lexicon/he.ts refuses these by name' },
+  { text: 'ברביע לשלוש', reads: 'UNREADABLE', language: 'he', why: 'a quarter to three, spelled in letters like the row above it' },
+  { text: 'בארבע וחצי', reads: 'UNREADABLE', language: 'he', why: 'half past four, which is not the 14:00 that was booked' },
+];
+
+/** One way of asserting the effect the day and the hour are attached to. */
+export interface TemporalClaimFrame {
+  readonly text: string;
+  readonly family: ClaimEffectFamily;
+  readonly language: 'en' | 'he';
+}
+
+/**
+ * The claim wordings the temporal phrases hang off.
+ *
+ * Crossed rather than hand-paired so the § 20 rule is exercised against every
+ * family that has an INSTANT to compare - which is what `reconcile` is about -
+ * in both registered languages and in both assertion modes.
+ */
+export const TEMPORAL_CLAIM_FRAMES: readonly TemporalClaimFrame[] = [
+  { text: 'Your meeting is booked', family: 'MEETING', language: 'en' },
+  { text: 'Your meeting is confirmed', family: 'MEETING', language: 'en' },
+  { text: 'I have booked your meeting', family: 'MEETING', language: 'en' },
+  { text: 'Your meeting has been moved', family: 'RESCHEDULE', language: 'en' },
+  { text: 'Your callback is arranged', family: 'CALLBACK', language: 'en' },
+  { text: 'הפגישה נקבעה', family: 'MEETING', language: 'he' },
+  { text: 'הפגישה אושרה', family: 'MEETING', language: 'he' },
+  { text: 'קבעתי לך פגישה', family: 'MEETING', language: 'he' },
+  { text: 'הפגישה הועברה', family: 'RESCHEDULE', language: 'he' },
+  { text: 'אתקשר אליך', family: 'CALLBACK', language: 'he' },
+];
+
+/**
+ * ONE ledger carrying a real MEETING and a real CALLBACK, both Thursday 14:00.
+ *
+ * Both, so the matrix can cross the FAMILY axis without the verdict turning on
+ * which effect happened to be on the ledger: a CALLBACK claim has a
+ * `CALLBACK_SCHEDULED` to be judged against and a MEETING claim has a
+ * `MEETING_SCHEDULED`, and every row therefore fails or passes on its day and
+ * hour wording rather than on `NO_MATCHING_EFFECT`. That is the whole point of the
+ * matrix, and without it half the rows would be measuring something else.
+ */
+const TEMPORAL_MATRIX_LEDGER: ActionLedger = ledger({
+  effects: [BOOKED_THURSDAY_1400, BOOKED_CALLBACK_THURSDAY_1400],
+});
+
+export interface TemporalPhraseSample {
+  readonly name: string;
+  readonly text: string;
+  readonly language: 'en' | 'he';
+  readonly family: ClaimEffectFamily;
+  /** What the VERIFIER must say about it, against a real Thursday 14:00 ledger. */
+  readonly expect: 'SUPPORTED' | 'WRONG_DAY' | 'WRONG_TIME' | 'UNREADABLE_WHEN';
+}
+
+/**
+ * CLAIM WORDING x DAY WORDING x HOUR WORDING, within a language.
+ *
+ * THE EXPECTED VERDICT IS DERIVED FROM THE AXIS VALUES, not written per row, and
+ * the derivation is the oracle. It follows `reconcile`'s own order for a reason
+ * that is itself a decision: what the text DID name is compared first, so a
+ * sentence that names Saturday AND an unreadable hour is reported as the flat
+ * contradiction rather than as an unreadable phrase, because the flat
+ * contradiction is the one a model can act on.
+ *
+ * Not crossed BETWEEN languages. A Hebrew day wording with an English hour
+ * wording is a real shape and it is covered by the code-switched rows asserted by
+ * name in `MUST_FLAG` and `LEDGER_CASES`; generating the full cross would
+ * quadruple the matrix to say the same thing, and `SUPPRESSION_MATRIX_CAPS`'s
+ * rule is that a cap gets written down rather than taken silently.
+ */
+export const TEMPORAL_PHRASE_MATRIX: readonly TemporalPhraseSample[] = (() => {
+  const rows: TemporalPhraseSample[] = [];
+  for (const frame of TEMPORAL_CLAIM_FRAMES) {
+    for (const day of TEMPORAL_DAY_WORDINGS) {
+      if (day.language !== frame.language) continue;
+      for (const time of TEMPORAL_TIME_WORDINGS) {
+        if (time.language !== frame.language) continue;
+        const expect =
+          day.reads === 'DISAGREES'
+            ? 'WRONG_DAY'
+            : time.reads === 'DISAGREES'
+              ? 'WRONG_TIME'
+              : day.reads === 'UNREADABLE' || time.reads === 'UNREADABLE'
+                ? 'UNREADABLE_WHEN'
+                : 'SUPPORTED';
+        rows.push({
+          name: `${frame.text} | ${day.text} | ${time.text === '' ? '(no hour)' : time.text}`,
+          text: `${frame.text} ${day.text}${time.text === '' ? '' : ` ${time.text}`}.`,
+          language: frame.language,
+          family: frame.family,
+          expect,
+        });
+      }
+    }
+  }
+  return rows;
+})();
+
+export interface DocumentedVerifierMiss {
+  readonly name: string;
+  readonly text: string;
+  readonly ledger: ActionLedger;
+  readonly cause: string;
+  readonly consequence: string;
+}
+
+/**
+ * SENTENCES THE DETECTOR SEES, THAT SAY SOMETHING FALSE, AND THAT THE VERIFIER
+ * STILL CERTIFIES.
+ *
+ * WHY THIS TABLE IS NEW, AND WHY NONE OF THE THREE EXISTING ONES FITS
+ * ---------------------------------------------------------------------------
+ * `DOCUMENTED_MISSES` is "asserts something, the DETECTOR does not flag it".
+ * `KNOWN_FALSE_POSITIVES` is "asserts something TRUE and the verifier rejects it".
+ * `DOCUMENTED_OVERREACH` is "asserts nothing and the detector fires anyway". § 20
+ * is the first finding in this gate that is none of those: the claim is DETECTED,
+ * the ledger is read, and the CHECK fails open - so the shape needs a home of its
+ * own, asserted in the same uncomfortable direction as the misses.
+ *
+ * Each entry is asserted to STILL be fully supported. If one of them starts being
+ * rejected that is good news and this table says so by name, rather than letting a
+ * fix land silently and leave the published residual list wrong.
+ */
+export const DOCUMENTED_VERIFIER_MISSES: readonly DocumentedVerifierMiss[] = [
+  {
+    // § 20.6. The residual the opener list pays for, named rather than left to be
+    // found. `to` was TRIED as a `temporalOpener` and measured out: as an opener it
+    // read the verb after every English infinitive as an unresolved day, on 854
+    // committed rows of `nothing to worry about`, `no need to do anything`, `happy
+    // to help` and `unable to reach them`. Those are honest reassurances, and
+    // regenerating them is the precision cost § 20.6 of the fix request forbids.
+    name: 'a RESCHEDULE whose hour hangs off `to`, which is also the English infinitive marker',
+    text: 'I have moved it to half past four.',
+    ledger: ledger({ effects: [BOOKED_THURSDAY_1400] }),
+    cause:
+      'the § 20 leftover rule applies only inside a TEMPORAL SLOT, and a slot is opened by a word in ' +
+      "`ClaimLexicon.temporalOpeners`. English declares `for`, `at`, `on`, `in`, `by`, `from`, `until`, " +
+      '`till` and `starting`, and deliberately NOT `to` - because `to` is the infinitive marker and opening a ' +
+      'slot on it reported the verb after every `to` in the corpus as an unresolved day. So `half past four` ' +
+      'here stands in no slot at all and nothing reads it. It is the one enumeration in § 20 that is not ' +
+      'inverted, and `lexicon/types.ts` (`TemporalOpenerEntry`) argues why that is acceptable for a closed ' +
+      'class of prepositions where it would not be for an open class of hour spellings.',
+    consequence:
+      'A contact told their meeting moved to 16:30 when it is at 14:00 turns up two and a half hours late. ' +
+      'The same sentence with `at` (`I have moved it to Friday at half past four.`) IS caught, and so is ' +
+      'every wording in the § 20 table, because all of them reach their phrase through `for`, `at` or `on`. ' +
+      'Closing this needs a way to tell an English infinitive from a preposition, which needs a verb list, ' +
+      'which is § 16.6 pattern again.',
+  },
+];
+
+/**
+ * The sentences a fix that simply flipped the null branch would regenerate.
+ *
+ * § 20.6 of the fix request is explicit that the null path is LOAD-BEARING: a
+ * truthful reply that does not restate the slot must pass with no regeneration,
+ * and turning `day === null && time === null` into `ok: false` would cost one
+ * provider round trip on every one of these. Asserted by name and by their own
+ * bytes, in both languages, so that cost cannot be paid quietly later.
+ */
+export const TEMPORAL_NULL_PATH_CONTROLS: readonly { readonly text: string; readonly why: string }[] = [
+  {
+    text: 'Your meeting is booked.',
+    why: 'names no day and no hour. The commonest truthful confirmation there is, and the § 20.6 constraint.',
+  },
+  {
+    text: "You're all set.",
+    why: 'an ANY-family completion naming nothing at all',
+  },
+  {
+    text: "I'll call you back.",
+    why: 'a CALLBACK promise with no time on it',
+  },
+  {
+    text: 'הפגישה נקבעה.',
+    why: 'the Hebrew form of the first one, which is one inflected word and still names nothing',
+  },
+  {
+    text: 'הכל מסודר.',
+    why: 'the Hebrew ANY completion',
+  },
+];
+
+// ---------------------------------------------------------------------------
 // The runner.
 // ---------------------------------------------------------------------------
 
@@ -4218,6 +4589,12 @@ export interface ClaimGateSelfTestResult {
   readonly honestPrecisionChecked: number;
   /** Every splitter x position x wording / filler / joiner row, all of which must flag. */
   readonly splitFrameChecked: number;
+  /** § 20: every claim wording x day wording x hour wording row, verifier verdict and all. */
+  readonly temporalPhraseChecked: number;
+  /** The § 20 rows whose phrasing the readers CANNOT parse, counted separately. */
+  readonly temporalUnreadableChecked: number;
+  /** § 20: claims the detector sees, that are false, and that the verifier still certifies. */
+  readonly documentedVerifierMissesChecked: number;
 }
 
 function describe(claim: DetectedClaim): string {
@@ -4588,6 +4965,109 @@ export function runClaimGateSelfTest(): ClaimGateSelfTestResult {
     }
   }
 
+  // ---- § 20: TEMPORAL_PHRASE_MATRIX --------------------------------------
+  // Two directions, reported separately, because they are two different defects
+  // and a reader has to know which one landed. A row that should be UNREADABLE_WHEN
+  // and comes back SUPPORTED is the § 20 fail-open itself: a wrong day or a wrong
+  // hour certified against a real booking. A row that should be SUPPORTED and comes
+  // back anything else is the precision cost, which is the half that gets a gate
+  // switched off.
+  const temporalLeaks: string[] = [];
+  const temporalOverreach: string[] = [];
+  const temporalBlind: string[] = [];
+  for (const sample of TEMPORAL_PHRASE_MATRIX) {
+    const claims = detectMaterialClaims(sample.text);
+    for (const claim of claims) {
+      exercised.add(describe(claim));
+      families.add(claim.family);
+      locales.add(claim.locale);
+      modes.add(claim.mode);
+    }
+    if (claims.length === 0) {
+      temporalBlind.push(sample.name);
+      continue;
+    }
+    const verdict = verifyClaims({ text: sample.text, ledger: TEMPORAL_MATRIX_LEDGER });
+    for (const entry of verdict.unsupported) reasons.add(entry.reason);
+    const got = verdict.unsupported.map((entry) => entry.reason);
+    if (sample.expect === 'SUPPORTED') {
+      if (got.length > 0) temporalOverreach.push(`${sample.name} -> ${got.join(', ')}`);
+      continue;
+    }
+    if (!got.includes(sample.expect)) {
+      temporalLeaks.push(`${sample.name} -> ${got.length === 0 ? 'SUPPORTED' : got.join(', ')}`);
+    }
+  }
+  if (temporalBlind.length > 0) {
+    failures.push(
+      `TEMPORAL_PHRASE_MATRIX: ${temporalBlind.length} of ${TEMPORAL_PHRASE_MATRIX.length} rows produce no claim ` +
+        'at all, so the verifier never sees them. Every row is a completion frame with a day and an hour on ' +
+        'it; the DETECTOR half of this matrix is a precondition for the verifier half meaning anything.\n' +
+        temporalBlind.slice(0, 20).map((row) => `      ${row}`).join('\n'),
+    );
+  }
+  if (temporalLeaks.length > 0) {
+    failures.push(
+      `TEMPORAL_PHRASE_MATRIX: ${temporalLeaks.length} of ${TEMPORAL_PHRASE_MATRIX.length} rows do not get the ` +
+        'verdict their day and hour wording requires. This is the § 20 fail-open: a wrong day or a wrong hour ' +
+        'asserted in a phrase the detector cannot parse used to be certified SUPPORTED, released byte-identical ' +
+        'and persisted against a booking that said something else. Each failing row names the claim wording, ' +
+        'the day wording and the hour wording.\n' +
+        temporalLeaks.slice(0, 20).map((row) => `      ${row}`).join('\n') +
+        (temporalLeaks.length > 20 ? `\n      ... and ${temporalLeaks.length - 20} more` : ''),
+    );
+  }
+  if (temporalOverreach.length > 0) {
+    failures.push(
+      `TEMPORAL_PHRASE_MATRIX: ${temporalOverreach.length} row(s) that the records genuinely SUPPORT are now ` +
+        'rejected. This is the precision half of § 20 and it is the direction the fix can break in: every row ' +
+        'here names the day and the hour the booking really has, in wording the readers parse. A gate that ' +
+        'regenerates the truthful answer is a gate somebody switches off.\n' +
+        temporalOverreach.slice(0, 20).map((row) => `      ${row}`).join('\n') +
+        (temporalOverreach.length > 20 ? `\n      ... and ${temporalOverreach.length - 20} more` : ''),
+    );
+  }
+
+  // ---- § 20.6: the residual the opener list pays for --------------------
+  for (const miss of DOCUMENTED_VERIFIER_MISSES) {
+    const verdict = verifyClaims({ text: miss.text, ledger: miss.ledger });
+    if (verdict.supported.length === 0) {
+      failures.push(
+        `DOCUMENTED_VERIFIER_MISS "${miss.name}" no longer produces a SUPPORTED claim at all, so it is not ` +
+          'the shape this table records. Either the detector stopped seeing it - in which case it belongs in ' +
+          'DOCUMENTED_MISSES - or the verifier now rejects it, which is the line below.',
+      );
+    }
+    if (verdict.unsupported.length > 0) {
+      failures.push(
+        `DOCUMENTED_VERIFIER_MISS "${miss.name}" is now REJECTED as ` +
+          `${verdict.unsupported.map((entry) => entry.reason).join(', ')}. This is very likely GOOD NEWS - ` +
+          `the recorded cause was: ${miss.cause} Move it to LEDGER_CASES with the reason it now produces, and ` +
+          'update docs/MISSION_2D_CLAIM_GATE.md § 20.6 and § 17.8 residual 20 so the published residuals match ' +
+          'the code.',
+      );
+    }
+  }
+
+  // ---- § 20.6: the null path, which must NOT have been flipped -----------
+  for (const control of TEMPORAL_NULL_PATH_CONTROLS) {
+    const verdict = verifyClaims({ text: control.text, ledger: TEMPORAL_MATRIX_LEDGER });
+    if (verdict.unsupported.length > 0) {
+      failures.push(
+        `TEMPORAL_NULL_PATH_CONTROL ${JSON.stringify(control.text)} must be SUPPORTED (${control.why}) but ` +
+          `produced ${verdict.unsupported.map((entry) => entry.reason).join(', ')}. The § 20 fix may not be ` +
+          'made by turning `day === null && time === null` into `ok: false`: that regenerates every truthful ' +
+          'reply that does not restate the slot, which is a large precision cost for nothing.',
+      );
+    }
+    if (verdict.supported.length === 0) {
+      failures.push(
+        `TEMPORAL_NULL_PATH_CONTROL ${JSON.stringify(control.text)} produced no claim at all, so it proves ` +
+          'nothing about the null path. It is meant to be DETECTED and then SUPPORTED.',
+      );
+    }
+  }
+
   // ---- KNOWN_FALSE_POSITIVES --------------------------------------------
   for (const entry of KNOWN_FALSE_POSITIVES) {
     const verdict = verifyClaims({ text: entry.text, ledger: entry.ledger });
@@ -4678,5 +5158,8 @@ export function runClaimGateSelfTest(): ClaimGateSelfTestResult {
     suppressionCleanChecked: SUPPRESSION_MATRIX.filter((sample) => sample.expect === 'CLEAN').length,
     honestPrecisionChecked: HONEST_PRECISION_MATRIX.length,
     splitFrameChecked: SPLIT_FRAME_MATRIX.length,
+    temporalPhraseChecked: TEMPORAL_PHRASE_MATRIX.length,
+    temporalUnreadableChecked: TEMPORAL_PHRASE_MATRIX.filter((row) => row.expect === 'UNREADABLE_WHEN').length,
+    documentedVerifierMissesChecked: DOCUMENTED_VERIFIER_MISSES.length,
   };
 }

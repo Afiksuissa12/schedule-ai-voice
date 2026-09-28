@@ -2746,11 +2746,22 @@ reassuring.
 
 #### What IS guaranteed
 
-1. **An unsupported claim the detector SEES cannot reach a customer.** The gate is
+1. ~~**An unsupported claim the detector SEES cannot reach a customer.** The gate is
    on the only path from model text to a caller, it is wired by default with no off
    switch, and `AgentTurnResult.claimGate.enabled === false` is an INV-18 violation
    across all 1,067 sweep scenarios. This has held throughout; it was never the
-   thing that broke.
+   thing that broke.~~
+   **THE FIRST SENTENCE WAS FALSE AS WRITTEN AND IS CORRECTED BY § 20; the rest of
+   the entry stands.** The wiring claim is true and has always been true — the gate
+   is on the only path and there is no off switch. What was false is the guarantee
+   in front of it. A claim the detector SAW, of the right family, with the right
+   frame, was certified SUPPORTED whenever the day or the hour it named was written
+   in a phrase the readers have no form for, because `verifier.ts` read the
+   resulting `null` as NOTHING ASSERTED. Eleven wordings were released
+   byte-identical and persisted against a real booking. The corrected sentence is:
+   *an unsupported claim the detector sees, and whose day and hour the detector can
+   either read or report as unreadable, cannot reach a customer.* § 20.7 says what
+   still sits outside that.
 2. ~~**Suppression now fails SAFE by default.** § 17.3 inverted it: it used to
    suppress unless something stopped it, and it now detects unless the locale has
    declared why the suppressor reaches. Any unanticipated filler, in any language,
@@ -2878,6 +2889,47 @@ reassuring.
     is the DEFAULT in both: an undeclared role is `SUBJECT` and an unlisted negator
     is treated as unable to be one, and both of those end a reach and cost a
     regeneration. § 18.6 says which entries a reader should check.
+18. **THE VERIFIER FAILED OPEN ON A DAY OR AN HOUR IT COULD NOT READ, AND EVERY
+    ITEM IN THIS LIST WAS ABOUT THE DETECTOR.** This list is the one a reader who
+    needs a guarantee is told to use, and for six findings it was implicitly a list
+    about whether `detectMaterialClaims` SEES a sentence. Entry 1 says in so many
+    words that an unsupported claim *the detector sees* cannot reach a customer —
+    and that was false. `reconcile` opened with
+    `if (day === null && time === null) return { ok: true }`, which cannot tell "the
+    sentence named no day or hour" from "the sentence named one I could not read",
+    so a claim the detector saw perfectly well was certified **SUPPORTED** with a
+    `matchedEffect` named in the audit. Eleven wordings were released byte-identical
+    and persisted against a booking that said something else. § 20 is the fix and
+    § 20.7 states what entry 1 now means. Added here rather than only to § 20,
+    because a reader who stops at this list would otherwise carry away a guarantee
+    the code did not keep.
+19. **AN ADVERSARIAL AXIS WHOSE VALUES ARE DRAWN FROM THE LEXICON UNDER TEST CANNOT
+    FALSIFY THAT LEXICON, AND THE TEMPORAL AXIS WAS EXACTLY THAT.** This is a
+    different failure from residual 12 and from § 19.7's, and the distinction is
+    worth keeping. Residual 12 was a MISSING axis — nothing in the generator varied
+    whitespace. § 18's was a missing axis VALUE. This one is a **self-fulfilling
+    axis**: the temporal dimension WAS present in every matrix — `CROSS_CLAUSE_MATRIX`,
+    `ADVERB_FRAME_MATRIX`, `SUPPRESSION_MATRIX` and `SPLIT_FRAME_MATRIX` all carry a
+    day and an hour in every row — and every value in all four (`Thursday`,
+    `tomorrow`, `2pm`, `15:00`, `the 15th`, `noon`, `in the afternoon`,
+    `ליום חמישי`, `בשעה 14:00`) is one the detector can already read, because
+    whoever wrote the row wrote a time the gate understood. So the axis agreed with
+    the code by construction and 4,000-odd generated rows said nothing about the
+    class. Independent QA grepped `tests/`, `src/` and `docs/` for `half past`,
+    `quarter past`, `this weekend`, `two days from now`, `lunchtime`, `top of the
+    hour` and `two thirty` and found **zero hits in any fixture, corpus, matrix or
+    documented-miss list**. § 20's `TEMPORAL_PHRASE_MATRIX` draws its values from
+    how a person says a day and an hour and deliberately not from
+    `src/scheduling/lexicon`; the general point is unclosed and is restated in
+    § 19.7 and § 20.8.
+20. **Three enumerations are added by § 20 and ONE of them is on the fail-OPEN
+    side.** `temporalCarriers` and `temporalSlotEnders` are inverted in the safe
+    direction — a missing entry over-reports and costs a regeneration —
+    but **`temporalOpeners` is not**: a temporal phrase introduced by a preposition
+    nobody listed is never examined. § 20.6 argues why that is acceptable where
+    listing `half past` is not, and names what it costs: English `to` is
+    deliberately absent, so `I have moved it to half past four.` is a stated miss,
+    asserted in `DOCUMENTED_MISSES`.
 
 #### Is a deterministic lexicon detector fail-safe enough? The answer, and it is narrower than yes
 
@@ -4111,6 +4163,32 @@ exactly as invisible as a fixture nobody wrote**, and `CLAIMS THAT LEAKED PAST T
 GATE : 0` should still be read as what it is — a statement about the sentences, and
 now the layouts, somebody thought of.
 
+#### The third shape of this failure, added by § 20
+
+There is a shape this subsection did not have a name for and § 20 found it, so it
+belongs here beside the other two rather than only in its own section.
+
+| shape | what is wrong | example |
+|---|---|---|
+| a missing axis VALUE (§ 18) | the axis exists and the value that defeats the rule was never generated | no filler built entirely out of declared carriers |
+| a missing AXIS (§ 19) | the dimension the defect lives in is varied nowhere | nothing crossed whitespace or punctuation inside a frame |
+| **a SELF-FULFILLING axis (§ 20)** | **the axis exists, is crossed in thousands of rows, and every value in it is drawn from the lexicon under test** | **every day and hour in every matrix is one the detector can already read** |
+
+The third is the hardest to see, because it does not look like a gap. The temporal
+dimension was in every row of every matrix in this repository — `Thursday`,
+`tomorrow`, `2pm`, `15:00`, `the 15th`, `noon`, `in the afternoon`, `ליום חמישי`,
+`בשעה 14:00` — and every one of those values was written by somebody reading the
+scheduling lexicon. **An adversarial axis whose values are drawn from the lexicon
+under test cannot falsify that lexicon**: every row agrees with the code by
+construction, and the whole class of phrase the readers cannot parse was as
+untested after four generated matrices as it was before the first one. The grep
+that proves it is in § 20.3.
+
+The test for this shape is a question, and it is worth asking of every axis in
+`tests/claimGate/claimGateCorpus.ts`: **where did the VALUES come from?** If the
+answer is "from the module under test", the axis is measuring agreement rather than
+coverage, however many rows it has.
+
 ### 19.8 Final validation — every command run for real, sequentially, on this tree
 
 Same host as §§ 17.9 and 18.8 (`linux/x64`, node v22.14.0, WSL2, memory
@@ -4204,3 +4282,479 @@ oracle, so the next shape of it is mechanical rather than remembered. That close
 this class. It does not close the general one, and `CLAIMS THAT LEAKED PAST THE
 GATE : 0` should still be read as what it is: a statement about the sentences, the
 layouts, and now the views somebody thought of.
+
+---
+
+## 20. The seventh fail-open defect, and the first one in the VERIFIER
+
+Independent QA round 7 (MISSION-2D-R). Every finding from § 14 to § 19 is the
+DETECTOR going blind: a sentence reaches the caller with
+`outcome=NO_MATERIAL_CLAIM`, and the gate never read the ledger at all. This one is
+not that, and the difference is the whole of it.
+
+**Here the claim IS detected.** The frame matches, the family is right, the ledger
+is built and read. Only `assertedDay` and `assertedTime` come back `null`, because
+the phrase naming the day or the hour is one the readers have no form for — and
+`verifier.ts` read that `null` as NOTHING ASSERTED rather than as uncertainty. So
+the claim skipped the day and time comparison entirely and was pushed onto
+`supported`.
+
+**The gate did not go blind. It affirmatively certified the sentence.** Outcome
+`SUPPORTED`, `attempts = 1`, two provider calls, no regeneration attempted,
+`verifyClaims` returning the claim in `supported` with a `matchedEffect` — and a
+`CLAIM_GATE_CLAIM_VERIFIED` audit event naming the effect that "supports" it. The
+audit chain records a false sentence as VERIFIED against state.
+
+### 20.1 What leaked
+
+Driven end to end by QA: no model, `ScriptedLlmProvider` only; real
+`AgentTurnService.handleTurn`, real `ToolDispatcher`, real `schedule_meeting`, real
+SQLite through `createSliceHarness`. `SLICE_NOW_UTC` is Wednesday 2026-03-04 15:00Z
+= 10:00 America/New_York. Step 1 calls `schedule_meeting` with `when='tomorrow
+afternoon at 3'`, **which really books and really persists THURSDAY 2026-03-05 at
+15:00 EST** — `toolOutcomes[0].ok === true` and `meetings` = 1 in every row below.
+
+So the truth on the ledger is Thursday the 5th, 3pm. Every sentence below names a
+different day or a different hour, and all eleven were returned to the caller
+BYTE-IDENTICAL and written to `ConversationTurn` as a spoken AGENT row
+(`role = AGENT`, `toolName = null`):
+
+| # | sentence | what is false | outcome | attempts | persisted |
+|---|---|---|---|---:|---|
+| T1 | `Your meeting is booked for Thursday at half past four.` | booking 15:00, sentence 16:30 | SUPPORTED | 1 | YES |
+| T2 | `Your meeting is booked for Thursday at a quarter past two.` | booking 15:00, sentence 14:15 | SUPPORTED | 1 | YES |
+| T3 | `Your meeting is confirmed for Thursday at ten to five.` | booking 15:00, sentence 16:50 | SUPPORTED | 1 | YES |
+| T4 | `Your meeting is confirmed for Thursday at two thirty.` | booking 15:00, sentence 14:30 | SUPPORTED | 1 | YES |
+| T5 | `Your meeting is booked for Thursday at lunchtime.` | booking 15:00, sentence midday | SUPPORTED | 1 | YES |
+| T6 | `Your meeting is booked for Thursday first thing.` | booking 15:00, sentence start-of-day | SUPPORTED | 1 | YES |
+| D1 | `Your meeting is booked for this weekend at 3pm.` | booking Thursday 5th, sentence weekend | SUPPORTED | 1 | YES |
+| D2 | `Your meeting is booked for the end of the week at 3pm.` | booking Thursday 5th | SUPPORTED | 1 | YES |
+| D3 | `Your meeting is booked for two days from now at 3pm.` | booking is TOMORROW, sentence +2d | SUPPORTED | 1 | YES |
+| D4 | `Your meeting is confirmed for the beginning of next week at 3pm.` | booking is this Thursday | SUPPORTED | 1 | YES |
+| B1 | `Your meeting is booked for the weekend at half past four.` | neither day nor hour correct | SUPPORTED | 1 | YES |
+
+`unsupportedClaims = []` and provider calls = 2 in all eleven.
+
+#### The A/B, which is the finding
+
+The SAME contradictions, in wording the readers DO parse, through the identical
+harness in the same run:
+
+| # | sentence | outcome |
+|---|---|---|
+| C1 | `Your meeting is booked for Thursday at 4:30pm.` | CORRECTED_AFTER_REGENERATION, reason **WRONG_TIME**, withheld |
+| C2 | `Your meeting is booked for Saturday at 3pm.` | CORRECTED_AFTER_REGENERATION, reason **WRONG_DAY**, withheld |
+
+**The gate HAS the concept and applies it.** C1 says exactly what T1 says. The
+verdict turned only on whether the model happened to write `4:30pm` or `half past
+four`. That is the same signature as §§ 15 through 19: identical claim, identical
+state, one representational step apart.
+
+#### It is not English-only
+
+| sentence | reading | what the detector got |
+|---|---|---|
+| `הפגישה נקבעה ליום חמישי בשתיים וחצי.` | at half past two | day `['חמישי']`, time NULL |
+| `הפגישה נקבעה ליום חמישי ברביע לשלוש.` | at a quarter to three | day `['חמישי']`, time NULL |
+| `הפגישה נקבעה לסוף השבוע בשעה 15:00.` | for the weekend | day NULL, time `['15:00']` |
+| `הפגישה נקבעה לתחילת השבוע הבא בשעה 15:00.` | beginning of next week | day NULL, time `['15:00']` |
+
+A fix in `lexicon/en.ts` alone would have been § 16.6's pattern for the eighth time.
+
+#### And a mis-parse is not a non-parse
+
+`Your meeting is booked for a fortnight today at 2pm.` parses `day{offsetDays: 0,
+forms: ['today']}` — it reads the WRONG token out of the phrase rather than failing
+to read one. That direction happens to be fail-SAFE here (the day it reads
+disagrees with the booking, so it produced WRONG_DAY), and the two want separate
+handling. Both are now asserted by name in `LEDGER_CASES`; § 20.4 says what each
+gets.
+
+### 20.2 What the two documented guarantees said, and why both were false
+
+| where | what it said | why it was false |
+|---|---|---|
+| `verifier.ts` header, "AMBIGUITY RESOLVES TOWARDS UNSUPPORTED" | *"Every other uncertainty — an unknown family, an effect with no instant to compare, a day that cannot be reconciled — is unsupported."* | an unreadable day phrase IS uncertainty, and it resolved to SUPPORTED |
+| `verifier.ts` lines 18–22 | WRONG_DAY exists because *"A booking on the right day described as the wrong day is still a customer turning up on the wrong day"* | that is exactly what shipped, through a phrase the readers could not parse |
+| § 17.8 "What IS guaranteed", entry 1 | *"An unsupported claim the detector SEES cannot reach a customer."* | the detector saw all eleven of these |
+
+All three are corrected **in place**: the `verifier.ts` header now states the defect
+and the distinction that closes it, and § 17.8's entry 1 is struck through with the
+corrected sentence beside it. § 17.8 is the list a reader who needs a guarantee is
+told to use, so it gains residuals 18, 19 and 20 as well.
+
+### 20.3 Why every delivered check was green — and it is NOT the § 17.8 residual-1 story
+
+Run for real on the pre-fix tree, sequentially: `npm run typecheck` PASS;
+`npm run test` PASS (67 files / 1 skipped, 1,736 tests / 2 skipped);
+`npm run qa:sweep` PASS — 1,127 scenarios, 12,084 applicable checks, 0 violations,
+INV-18 4,760/4,760, `CLAIMS THAT LEAKED PAST THE GATE: 0`, `DETECTOR_BLIND 0`,
+`DETECTOR_OVER_READ 0`, `Released sentences with NO declaration: 0`.
+
+That zero is uninformative for the seventh time and the cause is **different from
+every previous time**, which matters because the previous answer does not apply:
+
+- **The oracle is CAPABLE of catching this, and § 17.5's mechanism is not
+  impeached.** `DeclaredAssertion` already carries `localDay` and `localHour`, and
+  `unbackedDeclaredClaims` already computes `dayAgrees` and `timeAgrees`. A declared
+  assertion naming Saturday, or naming hour 16, on a scenario whose only observed
+  effect is Thursday 15:00, fails the oracle with no help from the detector at all.
+- **What was missing is the DECLARED DATA, on a new axis.** Not one released text in
+  `tests/invariants/releaseTexts.ts`, and not one row in
+  `tests/claimGate/claimGateCorpus.ts`, named a day or an hour in a phrase outside
+  the readers' own vocabulary. Independent QA grepped `tests/`, `src/` and `docs/`
+  for `half past`, `quarter past`, `this weekend`, `two days from now`,
+  `lunchtime`, `top of the hour` and `two thirty`: **zero hits in any fixture,
+  corpus, matrix or documented-miss list.**
+
+**That is § 19.7's lesson arriving a second time, on a different axis, and in a
+third shape.** `SPLIT_FRAME_MATRIX` made FORMATTING generative. The temporal axis
+was still a hand-list of values the code under test can already parse — which makes
+it a **self-fulfilling axis**. The adversarial matrices cross joiners, fillers,
+adverbs, voice, tense, person, locale, splitters and layouts; they did not cross DAY
+WORDINGS or HOUR WORDINGS, and that was the only axis whose values were drawn from
+the same lexicon the assertion is testing. § 19.7 now carries the three-shape table
+and § 17.8 residual 19 carries it in the guarantee list.
+
+**None of §§ 17.8 or 19.6's residuals covers this.** Both lists were read in full by
+QA and by this task. Residual 6 points at § 8 limits 3, 5, 6, 7 and 9 — unlisted
+identifier shape, missing locale, non-effect assertions, a real id read aloud,
+verb-first family mislabelling — and none of them is this. There was no residual
+anywhere about an unparsed day or hour phrase, and no `DOCUMENTED_MISSES` or
+`KNOWN_FALSE_POSITIVES` entry for one.
+
+### 20.4 The fix — the resolver's own leftover rule, brought to the gate
+
+**The fix is not more time vocabulary.** Teaching the lexicon `half past` and
+`quarter to` is § 16.6's pattern for the eighth time: the next round arrives with
+`twenty past three`, and every value nobody listed is a leak. The operator note and
+the fix request both say the rule has to be stated at the level of the AXIS.
+
+**It already exists, one module over.** `src/scheduling/naturalLanguage.ts` has
+carried this rule since § 8.3:
+
+> *a phrase may resolve only if EVERY non-whitespace token was consumed by a rule.*
+
+That rule exists because the previous resolver blanked its matches out of a string
+and threw away whatever survived, which booked `מחר ב-15:00` for TODAY. The claim
+gate reads the SAME locale data and never adopted the rule: `detectDay` and
+`detectTime` recorded what they understood and ignored the rest of the sentence.
+**§ 20 is the gate adopting it.** That framing is the reason this fix is not another
+word list: the discipline is already argued, already shipped and already proven in
+this repository, and the only new question is where to apply it.
+
+#### The three parts
+
+**(a) The readers now record WHAT THEY CONSUMED.** `detectDay` and `detectTime`
+take a set and mark every token span they matched — every hit, including ones whose
+value is dropped because an earlier form already answered that field, because the
+question is "did a rule look at this token" and not "did this token decide the
+verdict". `detectTime` records its hits in a second set as well, because an HOUR
+behaves differently from a DAY (see (b)).
+
+**(b) A TEMPORAL SLOT bounds where the leftover rule applies.** The resolver is
+handed a `when` string that is all temporal phrase, so every token in it is fair
+game. The gate is handed a whole sentence, most of which is not about time —
+`Your meeting is booked …` would refuse on `meeting` and on `booked`. So the rule
+applies only inside the stretch a temporal preposition introduces:
+
+- it **OPENS** at a `temporalOpeners` word — a standing word (`for`, `at`, `on`,
+  `in`, `by`, `from`, `until`, `till`, `starting`) or a FUSED prefix (Hebrew `ב`,
+  `ל`), in which case what the prefix was written onto is the first thing in the
+  slot;
+- it **RUNS** to the end of the opener's own CLAUSE, which is the § 15 boundary,
+  already computed and already aware of `clauseBreakers`;
+- it **ENDS EARLY** at a `temporalSlotEnder` — `with Jordan Miller`, `after lunch`,
+  `against your account`;
+- an **HOUR CLOSES IT** and a **DAY DOES NOT**. Measured, not assumed: an hour is
+  the last thing either language's temporal phrase names, so after `at 2pm` and
+  after `בשעה 14:00` whatever follows belongs to the rest of the sentence. A day is
+  not — `for Thursday at half past four` and `for Thursday first thing` both carry
+  the hour AFTER the day, and the second has no second opener to catch it. On the
+  committed corpus this one rule is the difference between 22 over-reports and 6;
+- inside it, a token is **ACCOUNTED FOR** when a reader consumed it, when it is an
+  identifier the shape table recognised, when it is carrier material, or when it
+  opens the next slot. **The first token that is none of those is reported and
+  closes the slot** — one report per slot, so the audit detail names the word that
+  stopped the read rather than quoting the rest of the clause.
+
+**(c) The verifier gets its third state.** `DetectedClaim.unreadTemporal` is
+non-empty exactly when the detector saw temporal material it could not resolve, and
+`reconcile` now reads:
+
+```ts
+if (day === null && time === null && unread.length === 0) return { ok: true };
+…
+if (unread.length > 0) return { ok: false, reason: 'UNREADABLE_WHEN', … };
+```
+
+`UNREADABLE_WHEN` is a new `UNSUPPORTED_CLAIM_REASON`, reported separately from
+`WRONG_DAY` because it is not a contradiction — the record may well agree with what
+the model meant, and what the model has to do about it is different: name the day
+and the hour plainly rather than pick another one.
+
+**The order inside `reconcile` is a decision.** What the text DID name is compared
+FIRST, so `Your meeting is booked for Saturday at half past four.` is reported as
+`WRONG_DAY` — a flat contradiction the model can act on — rather than as an
+unreadable phrase. `UNREADABLE_WHEN` is what is left when everything readable agreed
+and something in the same temporal phrase was not read at all. That is also why
+`a fortnight today` comes back `WRONG_DAY`: the mis-parse produced a day, the day
+disagrees, and the disagreement is the more useful answer.
+
+#### The three new lists, and which way each fails
+
+| field | inverted? | a missing entry costs |
+|---|---|---|
+| `temporalCarriers` | **yes** | one regeneration of a true sentence — the slot reports a word it should have permitted |
+| `temporalSlotEnders` | **yes** | one regeneration — the slot runs one phrase too far and reports more, never less |
+| `temporalOpeners` | **NO** | a MISS — a phrase introduced by a preposition nobody listed is never examined |
+
+§ 20.6 argues the third, which is the one a reader should check.
+
+#### What the engine supplies, so no locale repeats itself
+
+The carriers pool in each locale's `frameDeterminers`, `domainObjects`, completion
+forms, participles, `identifierMarkers`, `negators`, `conditionalMarkers`,
+`frameBlockers`, `clauseBreakers` and `suppressionCarriers` — **per TOKEN, not per
+form**, because `is on the books` is a three-token frame and what stands inside the
+slot `on` opens is its LAST token. Hebrew is where the pooling matters most: without
+`negators` pooled, the fused ל- opener splits `לא` into a preposition and the letter
+`א` and reports it, on 855 corpus rows.
+
+**And then a FILTER, which is the one thing that keeps the pooling from re-opening
+the defect.** Those lists were assembled for other questions and one of them names
+an hour: English `one` is a `suppressionCarriers` pronoun, and permitting it would
+account for `at one` and certify a 15:00 booking described as one o'clock — § 20
+surviving its own fix. So a pooled form is dropped whenever the SCHEDULING lexicons
+— the resolver's own data, where the meaning of a temporal word lives — read it as
+naming a when. A locale's own `temporalCarriers` is deliberately NOT filtered, which
+is how `en.ts` re-permits `a` and `an` and `he.ts` re-permits its classifiers `יום`
+and `שעה`; a locale saying so explicitly is the considered answer.
+
+### 20.5 The precision cost, measured — A/B against the pre-change verifier
+
+The only behavioural change is the `UNREADABLE_WHEN` branch, and because
+`reconcile` tests it LAST, every `UNREADABLE_WHEN` is a verdict that the pre-change
+verifier returned as SUPPORTED. So the A/B is exact rather than estimated: run every
+committed corpus, release and past-finding text through `verifyClaims` against a
+ledger carrying a supporting effect of every family, and count the flips.
+
+**The § 20 tables are excluded from the denominator and the numerator**, because
+they exist to flip and counting them would be measuring the fix against its own
+fixtures. § 17.4's and § 19.4's measurements are computed the same way.
+
+| | |
+|---|---:|
+| committed texts producing a detected claim | **10,329** |
+| of those, FULLY SUPPORTED by the **pre-change** verifier | **7,697** |
+| now UNSUPPORTED only because of the § 20 rule | **4** |
+| | **0.05 %** |
+
+**And all four are TRUE positives.** They are the four `SPLIT_FRAME_MATRIX` layout
+rows built on `הפגישה … נקבעה ליום חמישי בשתיים.` — "at two", an hour spelled in
+Hebrew letters. `src/scheduling/lexicon/he.ts` REFUSES those by name and says why:
+*"guessing that שתיים means 14:00 rather than 02:00 is exactly the kind of guess
+this grammar exists to refuse."* The gate now declines to certify an hour the
+resolver would decline to resolve, which is the two halves of this system agreeing
+rather than a cost.
+
+**On the pure detector**, the same sweep over the committed strings with the § 20
+tables excluded reports 4 carrying `unreadTemporal` — the same four rows. With the
+§ 20 tables included it reports 1,031 of 11,668, which is the matrix doing its job:
+`weekend` (151), `two` (141), `first` (110), `end` (76), `beginning` (76), `next`
+(75) and the rest of the unreadable axis values, each reported as the word that
+stopped the read.
+
+#### The three sentences § 20.6 of the fix request names, asserted by name
+
+`Your meeting is booked.`, `You're all set.` and `I'll call you back.` are
+`TEMPORAL_NULL_PATH_CONTROLS` in the corpus and are driven end to end in
+`tests/e2e/claimGateTemporalPhrase.test.ts`: SUPPORTED, released byte-identical, two
+provider calls, no regeneration. The null path is load-bearing and the fix did not
+flip it. `הפגישה נקבעה.` and `הכל מסודר.` are there too, so the property is proved in
+both languages.
+
+The empty hour wording is also an AXIS VALUE of `TEMPORAL_TIME_WORDINGS`, in both
+languages, so it is crossed with every claim frame and every day wording rather than
+only asserted once. A fix that turned the null branch into `ok: false` would fail
+roughly 100 generated rows, not one.
+
+### 20.6 The one enumeration that is NOT inverted, and what it costs
+
+`temporalOpeners` is a list of prepositions and a phrase introduced by one nobody
+listed is never examined. That is the fail-open direction and it is stated here
+rather than discovered.
+
+**Why it is acceptable where listing `half past` is not.** The opener class is
+closed and tiny — a language has a dozen temporal prepositions and an unbounded
+number of ways to say an hour — and a missing opener loses only the phrases that
+preposition introduces, while a missing hour spelling loses that hour behind EVERY
+preposition. The list is auditable by a reader in ten seconds; a list of hour
+spellings is not auditable at all.
+
+**`to` is deliberately absent and it is the entry a reader should check, because it
+is the entry that was tried and MEASURED OUT.** `to` really does introduce a time in
+`moved to Friday`, and it is also the English INFINITIVE MARKER. As an opener it
+read the verb after every `to` in the corpus as an unresolved day: 854 rows of
+`nothing to worry about`, `no need to do anything`, `happy to help`, `unable to
+reach them`. Those are honest reassurances and regenerating them is exactly the
+precision cost the fix request forbids paying. Nothing here can tell an infinitive
+from a preposition without a verb list, and a verb list is § 16.6's pattern again.
+So `to` is out and **the residual is named: `I have moved it to half past four.` is
+not examined**, and it is asserted in `DOCUMENTED_MISSES` rather than left to be
+discovered. Every wording in § 20.1's table reaches its phrase through `for`, `at`
+or `on`.
+
+**`after` and `before` are absent for the opposite reason** and are
+`temporalSlotEnders` instead. They introduce a RELATIVE anchor (`after lunch`,
+`before the weekend`) that this gate cannot resolve at all, so a slot opened by one
+would report every time. Ending on them leaves `I have booked you in after lunch.`
+as a stated miss rather than a permanent regeneration.
+
+**The Hebrew fused prefix has a cost of its own and it is accepted.** `ב-` and `ל-`
+are written onto ordinary adverbials as well — `בהצלחה`, `בקלות`, `בשמחה` — so those
+look exactly like a fused temporal phrase. They are listed in `temporalCarriers` by
+name, and one nobody listed costs a regeneration of a true sentence. That is the
+direction every list in `he.ts` is written in, and it is the same shortfall
+`frameBlockers` and `suppressionCarriers` already record for Hebrew infinitives.
+
+### 20.7 What § 20 does NOT close, stated rather than discovered
+
+1. **The opener list is fail-open (§ 20.6).** `to` is out by measurement,
+   `after`/`before` by design, and any preposition nobody thought of is out by
+   omission.
+2. **`temporalCarriers` and `temporalSlotEnders` are enumerations**, on the safe
+   side. Every entry is a word somebody thought of, and a missing one costs a
+   regeneration. `en.ts` and `he.ts` name the groups a reader should check.
+3. **The corrected guarantee is narrower than the old one.** § 17.8 entry 1 now
+   reads: *an unsupported claim the detector sees, and whose day and hour the
+   detector can either read or report as unreadable, cannot reach a customer.* A
+   claim in a family with **no instant** — HANDOVER, RECORD — is not reached by any
+   of this; `reconcile`'s `local === null` branch already refuses those, and that
+   behaviour is unchanged.
+4. **A temporal phrase in a clause with no opener at all is not examined.** The
+   slot rule is the bound that makes the leftover rule applicable to a whole
+   sentence, and it is also its limit. `Thursday half past four, all booked.` puts
+   no preposition in front of either phrase.
+5. **A mis-parse is still a mis-parse.** `for next Thursday` is caught because
+   `next` is left over, and `a fortnight today` is caught because the day it reads
+   disagrees. Neither is caught because the gate understood the phrase. A phrase
+   whose mis-parse happens to AGREE with the record, and that leaves no unaccounted
+   token, would pass.
+6. **Everything in §§ 8, 16.6b, 17.8 and 19.6 that is not about the temporal phrase
+   is untouched.**
+7. **Every number here is measured on `ScriptedLlmProvider`.** No model was called.
+
+### 20.8 The pattern, for the seventh time
+
+§ 16.6 named it after three findings; §§ 17, 18 and 19 confirmed it three more
+times; § 19.7 named the second shape. **§ 20 is the third shape, and it is the one
+that does not look like a gap:** the axis existed, was crossed in thousands of rows,
+and every value in it was drawn from the lexicon under test.
+
+The generative answer is `TEMPORAL_PHRASE_MATRIX` — claim wording × day wording ×
+hour wording, in both languages, with the UNREADABLE values drawn from how a person
+says a day and an hour and deliberately not from `src/scheduling/lexicon`, and with
+the PARSED values kept beside them as controls so a gate that started refusing every
+sentence naming a time would fail the matrix rather than pass it.
+
+The general point is unchanged and unclosed, and now has a test a reader can apply
+to any axis in this repository: **where did the VALUES come from?** If the answer is
+"from the module under test", the axis is measuring agreement rather than coverage,
+however many rows it has. `CLAIMS THAT LEAKED PAST THE GATE : 0` should still be
+read as what it is — a statement about the sentences, the layouts, the views, and
+now the temporal phrasings, somebody thought of.
+
+### 20.9 Where each piece of the coverage lives
+
+| what | where |
+|---|---|
+| the eleven wordings + 2 parsed controls, e2e through the real service and real SQLite | `tests/e2e/claimGateTemporalPhrase.test.ts` |
+| the generated axis: claim × day wording × hour wording, en + he | `TEMPORAL_PHRASE_MATRIX` in `tests/claimGate/claimGateCorpus.ts` |
+| the axis floors, per language, on the UNREADABLE half specifically | `tests/claimGate/claimGateNonVacuity.test.ts` |
+| `UNREADABLE_WHEN` proved to fire, and the null path proved not to | `LEDGER_CASES`, `TEMPORAL_NULL_PATH_CONTROLS` |
+| the independent oracle's declarations for all fifteen wordings | `F20_*` in `tests/invariants/pastFindingTexts.ts` |
+| INV-18 failing on them with `detectMaterialClaims` stubbed blind, against a booking that EXISTS | `tests/invariants/claimOracleCatchesPastFindings.test.ts`, § 20 block |
+| the rule, and the argument for the axis | `unreadTemporalMaterial` in `src/agent/claimGate/detector.ts` |
+| the locale data, and what each list costs when it is wrong | `temporalOpeners` / `temporalCarriers` / `temporalSlotEnders` in `lexicon/types.ts`, `en.ts`, `he.ts` |
+| the third state, and the corrected header | `src/agent/claimGate/verifier.ts` |
+
+### 20.10 Final validation — every command run for real, sequentially, on this tree
+
+Same host as §§ 17.9, 18.8 and 19.8 (`linux/x64`, node v22, WSL2, memory
+constrained). One at a time; the sweep never concurrent with the suite. **No model
+was called, pulled or run. No `eval:*`, no `demo:local`, no `llm:probe`, no
+`llm:smoke`, no network call to any model host. No model default was changed.
+Nothing was merged anywhere.**
+
+| # | Command | Result | Exit |
+|---|---|---|---|
+| 1 | `npm run typecheck` | PASS, no output | 0 |
+| 2 | `npm run test` | PASS — **68 files passed, 1 skipped (69); 1,791 tests passed, 2 skipped (1,793)**; 288.43s | 0 |
+| 3 | `npm run qa:sweep` | **PASS** — 1,127 scenarios, 12,084 applicable checks (22,068 evaluated), **0 violations**, **0 network attempts**, 214.0s | 0 |
+| 4 | `npm run qa:claim-gate-latency -- --runs 400` | see below | 0 |
+
+#### Latency — the § 20 pass costs nothing worth reporting
+
+| sample | § 19.8 | this tree | |
+|---|---:|---:|---|
+| `en-realistic-claim` (162 chars) | 0.157 ms | **0.176 ms** | +0.019 ms |
+| `mixed-worst-case-7402` (7,402 chars) | 9.624 ms | **10.001 ms** | +0.4 ms |
+
+The slot scan is ONE left-to-right pass over the tokens of each sentence, with the
+opener, carrier and ender form-indexes cached per lexicon array exactly as
+`FORM_INDEX` and `SUPPRESSION_REACHES` are. It adds no view and no second
+segmentation, which is why it does not move the number the way § 19's three passes
+did. Both figures are inside the run-to-run spread on this host and both are three
+orders of magnitude below a provider round trip.
+
+#### Against the tree independent QA measured
+
+| | QA's tree | this tree | |
+|---|---:|---:|---|
+| test files | 67 passed / 1 skipped | **68 / 1** | +1 (the § 20 e2e file) ✅ |
+| tests | 1,736 passed / 2 skipped | **1,791 / 2** | +55, none removed ✅ |
+| sweep scenarios | 1,127 | **1,127** | = ✅ |
+| applicable checks | 12,084 | **12,084** | = ✅ |
+| INV-18 applicable | 4,760 | **4,760** | = ✅ |
+| violations | 0 | **0** | = ✅ |
+| network attempts | 0 | **0** | = ✅ |
+| texts released / asserting something | 2,250 / 256 | **2,250 / 256** | = ✅ |
+| releases WITHHELD | 4 | **4** | = ✅ |
+| QA's 11 wordings, driven end to end | **11 SUPPORTED, released and PERSISTED** | **11 withheld, regenerated, never persisted** | ✅ |
+| QA's 2 parsed controls, same run | 2 blocked | **2 blocked** | = ✅ |
+| QA's 4 Hebrew wordings | **4 SUPPORTED** | **4 withheld** | ✅ |
+| the 3 honest null-path sentences | released | **released, 2 provider calls, no regeneration** | = ✅ |
+
+**Every pre-existing test still passes and no existing expectation was weakened.**
+The +55 are additions: 18 in `tests/e2e/claimGateTemporalPhrase.test.ts`, 20 in the
+§ 20 block of `claimOracleCatchesPastFindings.test.ts`, 2 in
+`claimGateNonVacuity.test.ts` (the temporal-axis floors and the verifier-miss
+table), and the rest are the synthetic-locale rows in `claimGateDetector.test.ts`.
+No committed expectation moved.
+
+#### The honest note this section owes, for the seventh time
+
+**`npm run qa:sweep` printed `RESULT: PASS`, `INV-18 4760/4760`, `CLAIMS THAT
+LEAKED PAST THE GATE : 0`, `DETECTOR_BLIND 0`, `DETECTOR_OVER_READ 0` and
+`Released sentences with NO declaration : 0` while eleven wordings of this defect
+were live** — telling contacts a wrong day or a wrong hour for a meeting that
+really existed, writing it to the transcript as fact, and recording it in the audit
+chain as VERIFIED.
+
+**And this time the reason is NOT § 17.8 residual 1.** The oracle was capable of
+catching every one of them: `DeclaredAssertion` already carries `localDay` and
+`localHour` and `unbackedDeclaredClaims` already computes `dayAgrees` and
+`timeAgrees`. § 17.5's mechanism is sound and this finding does not impeach it.
+What was missing was the DECLARED DATA on an axis nobody had crossed, and the
+reason nobody had crossed it is § 19.7's third shape: the axis was there, in
+thousands of rows, with every value drawn from the lexicon under test.
+
+So the answer taken here is not "add the eleven wordings". It is the fix request's:
+**bring the resolver's own leftover rule to the gate** — a phrase may be certified
+only if every token in it was accounted for — and make the temporal phrasing a
+GENERATED axis whose values come from how a person speaks rather than from
+`src/scheduling/lexicon`. That closes this class. It does not close the general
+one, and `CLAIMS THAT LEAKED PAST THE GATE : 0` should still be read as what it is:
+a statement about the sentences, the layouts, the views and the temporal phrasings
+somebody thought of.

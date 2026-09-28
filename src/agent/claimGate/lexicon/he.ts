@@ -306,4 +306,112 @@ export const HE_CLAIM_LEXICON: ClaimLexicon = {
   // Hebrew writes the day of the month in digits or in letters, not with an
   // ordinal suffix, so there is nothing to declare here.
   ordinalSuffixes: [],
+
+  // THE § 20 AXIS IN HEBREW, AND IT IS NOT THE SAME SHAPE AS ENGLISH'S.
+  //
+  // English announces a time with a standing preposition - `at`, `for`, `on`.
+  // Hebrew fuses it: ב- and ל- are one-letter prefixes written onto the front of
+  // the word they introduce, so `בשתיים` ("at two"), `ליום חמישי` ("for Thursday")
+  // and `לסוף השבוע` ("for the end of the week") carry no separate token at all.
+  // A standing-word opener list would find NOTHING in any of them, which is
+  // precisely how § 16.6 went wrong: a fix written in English shape and declared
+  // done.
+  //
+  // So the prefixes are declared as ATTACHING, exactly as
+  // `src/scheduling/lexicon/he.ts` declares the same two letters as attaching
+  // `clockPrefixes` for `ב-15:00`. The engine strips the prefix and asks whether
+  // what is left is something a rule read or something `temporalCarriers` permits.
+  // `בשתיים` leaves `שתיים` - an hour spelled in letters, which this system
+  // deliberately does not resolve (that file says so) - so the claim is
+  // unresolved, which is the right answer for a phrase whose hour nothing here
+  // can check.
+  //
+  // `בשעה`, `בתאריך` and `במועד` are declared as STANDING forms as well, because a
+  // model writes them whole and the longest match at a position should take the
+  // whole word rather than splitting `ב` off it.
+  //
+  // THE COST OF THE FUSED PREFIX IS REAL AND IT IS ACCEPTED. Hebrew writes
+  // ordinary adverbials the same way - `בהצלחה` ("successfully"), `בקלות`,
+  // `בשמחה` - so those look exactly like a fused temporal phrase and are
+  // unresolvable by the same rule. They are listed in `temporalCarriers` below by
+  // name. One that nobody listed costs a regeneration of a true sentence, which is
+  // the direction every list in this file is written in.
+  temporalOpeners: [
+    { forms: ['בשעה', 'בתאריך', 'במועד', 'בסביבות', 'סביב', 'עד'], attaches: false },
+    { forms: ['ב', 'ל'], attaches: true, attachedSeparators: ['', '-'] },
+  ],
+
+  // What may stand inside a Hebrew temporal phrase without being the day or the
+  // hour. `types.ts` argues the inversion; what follows is what Hebrew needs.
+  //
+  // THE FUSED-PREFIX REMAINDERS are the bulk of it and they are the price of the
+  // opener rule above: `לך` and `לכם` ("to you") are a preposition and a pronoun in
+  // one token, `בהצלחה` and `בהחלט` are adverbials, `בבקשה` is "please". Each is a
+  // word the ב-/ל- rule will strip a prefix off, and each names no time.
+  //
+  // THE CLASSIFIERS are the second group. Hebrew says `ליום חמישי` - "for the day
+  // Thursday" - so `יום` stands between the opener and the weekday; `שעה` does the
+  // same for a clock time. Both are listed because the weekday and the hour beside
+  // them ARE read, and the classifier is the only leftover.
+  //
+  // DELIBERATELY ABSENT, exactly as in `en.ts`: `סוף`, `תחילת`, `אמצע`, `השבוע`,
+  // `שבוע`, `חודש`, `חצי`, `רבע`, `רביע`, and every hour spelled in letters -
+  // `אחת`, `שתיים`, `שלוש`, `ארבע` ... Those are the words that make
+  // `לסוף השבוע` and `בשתיים וחצי` assertions about WHEN, and they are the reason
+  // those two sentences must not be certified. `וחצי` ("and a half") is absent for
+  // the same reason.
+  // The engine pools this locale's determiners, domain objects, completion forms,
+  // identifier markers, negators, conditionals, blockers, clause joiners and
+  // suppression carriers in as well, and Hebrew is where that matters most:
+  // without `negators` pooled, the fused ל- opener would split `לא` into a
+  // preposition and the letter `א` and report it, on 855 corpus rows. The engine
+  // then DROPS any pooled form the scheduling lexicon reads as naming a when, which
+  // is why `אחת` and `שתיים` are not permitted by the back door.
+  temporalCarriers: [
+    // ---- the classifiers a day or an hour stands behind --------------------
+    // `יום` and `שעה` are `relativeOffset.units` in `src/scheduling/lexicon/he.ts`,
+    // so the engine's filter would drop them; they are re-permitted here because
+    // Hebrew says `ליום חמישי` ("for the day Thursday") and `בשעה 14:00`, where the
+    // classifier is the only leftover beside a weekday and an hour that ARE read.
+    'יום', 'ליום', 'ביום', 'שעה', 'השעה', 'תאריך', 'מועד',
+    // ---- fused pronouns: preposition and person in one token ---------------
+    'ך', 'כם', 'כן', 'י', 'נו', 'ו', 'ה', 'הם', 'לך', 'לכם', 'לי', 'לנו', 'לו', 'לה', 'להם', 'אליך', 'אליכם',
+    // ---- the ordinary ב- adverbials, which look like a fused time ----------
+    'הצלחה', 'החלט', 'קלות', 'שמחה', 'בקשה', 'וודאי', 'ודאי', 'סדר', 'דיוק', 'זמן', 'כלל',
+    'בהצלחה', 'בהחלט', 'בקלות', 'בשמחה', 'בבקשה', 'בוודאי', 'בדיוק', 'בזמן', 'בסדר', 'בכלל',
+    // ---- the reassurance nouns, and the infinitives of worrying -----------
+    // DELIBERATELY ABSENT from `suppressionCarriers` above, and that must not
+    // change: `אין בעיה הפגישה נקבעה למחר.` is a DETECTED claim precisely because
+    // `בעיה` ends the negator's reach. They are permitted HERE because the two
+    // lists answer different questions - there, whether a negator governs a
+    // predicate; here, whether a word could be an hour. `בעיה` could not.
+    // Measured: without them the ב-/ל- rule reported `עיה`, `דאוג` and `התקשר` on
+    // 900 corpus rows, all of them honest Hebrew reassurance wording.
+    'בעיה', 'עיה', 'דאגה', 'אגה', 'צורך', 'ורך', 'נורא', 'מה',
+    'לדאוג', 'דאוג', 'להתקשר', 'התקשר', 'לשלוח', 'שלוח', 'לבדוק', 'בדוק', 'לקבוע', 'קבוע',
+    // ---- the frame adverbs, which are the corpus's own Hebrew adverb axis ---
+    // `ADVERB_FRAME_MATRIX` crosses these with every Hebrew frame, so a slot that
+    // runs into one of them reports on 48 committed rows. None of them is a time.
+    'כבר', 'עכשיו', 'סופית', 'רשמית', 'שוב',
+    // ---- nouns a ב- prefix is written onto in this system's own traffic ------
+    // `במערכת` ("in the system"), `בדוא"ל` ("by e-mail" - the token is `דוא`
+    // because `readTokens` splits on the quote).
+    // `ל` stands alone here because `readTokens` splits `בדוא"ל` on the quote,
+    // leaving the ־ל as its own token.
+    'מערכת', 'דוא', 'ל',
+    // ---- politeness ---------------------------------------------------------
+    'תודה', 'אוקיי', 'מעולה', 'סבבה',
+  ],
+
+  // What ends a Hebrew temporal phrase by introducing something else: the
+  // companion (`עם`), the subject-matter prepositions, and `אחרי`/`לפני` - which
+  // are the direct counterparts of English `after` and `before` and are here for
+  // the same reason `en.ts` gives, namely that they introduce an anchor this gate
+  // cannot resolve at all.
+  //
+  // `אחרי הצהריים` ("afternoon") is NOT lost to this: it is a `dayPart` form in
+  // `src/scheduling/lexicon/he.ts`, so `detectTime` consumes both its tokens
+  // before the slot rule ever looks at them, and a consumed token is never an
+  // ender. `tests/claimGate/claimGateCorpus.ts` asserts that sentence by name.
+  temporalSlotEnders: ['עם', 'לגבי', 'בנוגע', 'בקשר', 'אחרי', 'לפני', 'אם'],
 };

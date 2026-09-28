@@ -295,6 +295,17 @@ describe('the detector holds no language-specific literal', () => {
     frameDeterminers: ['dez'],
     months: [{ forms: ['zzmarch'], month: 3 }],
     ordinalSuffixes: ['xx'],
+    // § 20, in a language the engine has never heard of. `zat` is this locale's
+    // standing temporal preposition and `zo-` is its FUSED one, which is the
+    // shape Hebrew's ב- and ל- have; `zug` is the particle that may stand inside
+    // a temporal phrase without naming an hour; `mitt` is the preposition that
+    // ENDS one. Nothing in `detector.ts` has heard of any of the four.
+    temporalOpeners: [
+      { forms: ['zat'], attaches: false },
+      { forms: ['zo'], attaches: true, attachedSeparators: ['', '-'] },
+    ],
+    temporalCarriers: ['zug'],
+    temporalSlotEnders: ['mitt'],
   };
 
   it('detects a claim in a language it was told about one line ago', () => {

@@ -765,6 +765,252 @@ export const QA3_FIVE_WORDINGS: readonly DeclaredText[] = [
   F17_EIN_TZORECH_MEETING,
 ];
 
+// ---------------------------------------------------------------------------
+// FINDING 7 - § 20. A WRONG DAY OR HOUR IN A PHRASE THE READERS CANNOT PARSE.
+// ---------------------------------------------------------------------------
+//
+// THE ONE THAT IS NOT A DETECTOR FINDING. Every finding above is the detector
+// going blind. This one is the VERIFIER certifying the sentence: the claim IS
+// detected, the frame matches, the family is right, and only the temporal fields
+// come back `null` - which `verifier.ts` read as NOTHING ASSERTED. So the gate
+// did not merely miss these eleven sentences, it returned them in `supported`
+// with a `matchedEffect`, and the audit chain recorded the false sentence as
+// VERIFIED and named the effect that "supports" it.
+//
+// THE BOOKING THEY WERE DRIVEN AGAINST WAS REAL. QA's harness booked
+// `tomorrow afternoon at 3` - THURSDAY 5 MARCH 2026 AT 15:00 LOCAL - and it
+// really persisted, `toolOutcomes[0].ok === true` and one `meetings` row in every
+// case. So every declaration below is judged against state that EXISTS, which is
+// what makes this class different from the six above: the oracle has to disagree
+// about the day or the hour rather than about whether anything happened.
+//
+// `Thursday at 4:30pm` and `Saturday at 3pm` - the same contradictions in wording
+// the readers parse - were blocked in the same run, and are declared at the end
+// as the controls.
+
+/** The Friday, Saturday and Monday these wordings name, as absolute dates. */
+export const FINDING_FRIDAY = '2026-03-06';
+export const FINDING_SATURDAY = '2026-03-07';
+export const FINDING_NEXT_MONDAY = '2026-03-09';
+
+function meetingAt(day: string, hour: number, minute: number | null, note: string): DeclaredAssertion {
+  return { family: 'MEETING', mode: 'COMPLETED', localDay: day, localHour: hour, localMinute: minute, note };
+}
+
+export const F20_THURSDAY_HALF_PAST_FOUR: DeclaredText = {
+  text: 'Your meeting is booked for Thursday at half past four.',
+  declares: assertsEffects(
+    'QA row T1. A person hearing "half past four" writes 16:30 in their diary and arrives an hour and a half ' +
+      'after a meeting that started at 15:00. There is nothing ambiguous about the English; the only thing ' +
+      'that cannot read it is the gate.',
+    [meetingAt(FINDING_TOMORROW, 16, 30, 'is booked, naming Thursday and half past four')],
+  ),
+};
+
+export const F20_THURSDAY_QUARTER_PAST_TWO: DeclaredText = {
+  text: 'Your meeting is booked for Thursday at a quarter past two.',
+  declares: assertsEffects(
+    'QA row T2. 14:15 for a 15:00 booking - forty-five minutes early, which is a person sitting in a car park ' +
+      'wondering whether they have the right day.',
+    [meetingAt(FINDING_TOMORROW, 14, 15, 'is booked, naming Thursday and a quarter past two')],
+  ),
+};
+
+export const F20_THURSDAY_TEN_TO_FIVE: DeclaredText = {
+  text: 'Your meeting is confirmed for Thursday at ten to five.',
+  declares: assertsEffects(
+    'QA row T3. The hour counted BACKWARDS from the next one, which is the ordinary spoken form and the one ' +
+      'no digit-shaped rule can reach. 16:50 against a 15:00 booking.',
+    [meetingAt(FINDING_TOMORROW, 16, 50, 'is confirmed, naming Thursday and ten to five')],
+  ),
+};
+
+export const F20_THURSDAY_TWO_THIRTY: DeclaredText = {
+  text: 'Your meeting is confirmed for Thursday at two thirty.',
+  declares: assertsEffects(
+    'QA row T4. Two bare numbers side by side, which is how most people say a half hour out loud. 14:30.',
+    [meetingAt(FINDING_TOMORROW, 14, 30, 'is confirmed, naming Thursday and two thirty')],
+  ),
+};
+
+export const F20_THURSDAY_LUNCHTIME: DeclaredText = {
+  text: 'Your meeting is booked for Thursday at lunchtime.',
+  declares: assertsEffects(
+    'QA row T5. An hour named by the meal rather than by the clock. A person hears the middle of the day and ' +
+      'turns up around noon, three hours before the booking.',
+    [meetingAt(FINDING_TOMORROW, 12, null, 'is booked, naming Thursday and lunchtime')],
+  ),
+};
+
+export const F20_THURSDAY_FIRST_THING: DeclaredText = {
+  text: 'Your meeting is booked for Thursday first thing.',
+  declares: assertsEffects(
+    'QA row T6, and the only one with no preposition in front of the hour at all. "First thing" is the start ' +
+      'of the working day, which for the seeded business hours is 09:00 - and the declaration says 9 rather ' +
+      'than "early" because an oracle that declared a vague value could not be checked. If the booking were ' +
+      'at 9 this row would correctly PASS, which is the property that keeps it honest.',
+    [meetingAt(FINDING_TOMORROW, 9, null, 'is booked, naming Thursday and first thing')],
+  ),
+};
+
+export const F20_THIS_WEEKEND_3PM: DeclaredText = {
+  text: 'Your meeting is booked for this weekend at 3pm.',
+  declares: assertsEffects(
+    'QA row D1, and the DAY half of the class. The hour is right and the day is a period the booking is not ' +
+      'in: Thursday is not the weekend in any reading. A contact who hears this does not turn up on Thursday.',
+    [meetingAt(FINDING_SATURDAY, 15, null, 'is booked, naming this weekend and 3pm')],
+  ),
+};
+
+export const F20_END_OF_THE_WEEK_3PM: DeclaredText = {
+  text: 'Your meeting is booked for the end of the week at 3pm.',
+  declares: assertsEffects(
+    'QA row D2. `end of the week` is a DECLARED anchor in src/scheduling/lexicon/en.ts - the resolver knows ' +
+      'exactly what it means, and resolves it to the Friday - and the gate\'s day reader skips it, because it ' +
+      'only reads anchors of kind RELATIVE_DAY. The two halves of this system disagree about a phrase they ' +
+      'read from the same table.',
+    [meetingAt(FINDING_FRIDAY, 15, null, 'is booked, naming the end of the week and 3pm')],
+  ),
+};
+
+export const F20_TWO_DAYS_FROM_NOW_3PM: DeclaredText = {
+  text: 'Your meeting is booked for two days from now at 3pm.',
+  declares: assertsEffects(
+    'QA row D3. The booking is TOMORROW and the sentence says the day after that. A relative offset stated in ' +
+      'words is the commonest way a person names a near day and the gate reads none of it.',
+    [meetingAt(FINDING_FRIDAY, 15, null, 'is booked, naming two days from now and 3pm')],
+  ),
+};
+
+export const F20_BEGINNING_OF_NEXT_WEEK_3PM: DeclaredText = {
+  text: 'Your meeting is confirmed for the beginning of next week at 3pm.',
+  declares: assertsEffects(
+    'QA row D4. Five days out from the booking. A contact who hears this misses the meeting entirely and then ' +
+      'waits at home on the Monday.',
+    [meetingAt(FINDING_NEXT_MONDAY, 15, null, 'is confirmed, naming the beginning of next week and 3pm')],
+  ),
+};
+
+export const F20_WEEKEND_HALF_PAST_FOUR: DeclaredText = {
+  text: 'Your meeting is booked for the weekend at half past four.',
+  declares: assertsEffects(
+    'QA row B1: BOTH halves wrong at once, which is the row that shows the two are one class rather than two. ' +
+      'Neither the day nor the hour is anything the readers can parse, and neither is what was booked.',
+    [meetingAt(FINDING_SATURDAY, 16, 30, 'is booked, naming the weekend and half past four')],
+  ),
+};
+
+/** QA's control C1: the same wrong hour, spelled the way the readers parse. */
+export const F20_CONTROL_THURSDAY_430PM: DeclaredText = {
+  text: 'Your meeting is booked for Thursday at 4:30pm.',
+  declares: assertsEffects(
+    'THE CONTROL, and it is the finding. This says exactly what T1 says - 16:30 on Thursday - and it was ' +
+      'CORRECTED_AFTER_REGENERATION with reason WRONG_TIME in the same run in which T1 was released ' +
+      'byte-identical. The gate HAS the concept and applies it; the verdict turned on whether the model wrote ' +
+      '`4:30pm` or `half past four`.',
+    [meetingAt(FINDING_TOMORROW, 16, 30, 'is booked, naming Thursday and 4:30pm')],
+  ),
+};
+
+/** QA's control C2: the same wrong day, spelled the way the readers parse. */
+export const F20_CONTROL_SATURDAY_3PM: DeclaredText = {
+  text: 'Your meeting is booked for Saturday at 3pm.',
+  declares: assertsEffects(
+    'THE DAY CONTROL. Blocked as WRONG_DAY in the same run in which `for this weekend at 3pm` - which names ' +
+      'the same two days - was certified SUPPORTED.',
+    [meetingAt(FINDING_SATURDAY, 15, null, 'is booked, naming Saturday and 3pm')],
+  ),
+};
+
+export const F20_HE_THURSDAY_HALF_PAST_TWO: DeclaredText = {
+  text: 'הפגישה נקבעה ליום חמישי בשתיים וחצי.',
+  declares: assertsEffects(
+    'THE SAME HOLE IN HEBREW, which is what stops a fix in en.ts alone from being § 16.6 for the eighth time. ' +
+      '"בשתיים וחצי" is half past two; the day is read and the hour is not. ' +
+      'src/scheduling/lexicon/he.ts REFUSES hours spelled in letters by name, and the gate silently ignored ' +
+      'them instead.',
+    [meetingAt(FINDING_TOMORROW, 14, 30, 'הפגישה נקבעה, naming Thursday and half past two')],
+  ),
+};
+
+export const F20_HE_THURSDAY_QUARTER_TO_THREE: DeclaredText = {
+  text: 'הפגישה נקבעה ליום חמישי ברביע לשלוש.',
+  declares: assertsEffects(
+    'A quarter to three, counted backwards from the hour exactly as the English row does. 14:45.',
+    [meetingAt(FINDING_TOMORROW, 14, 45, 'הפגישה נקבעה, naming Thursday and a quarter to three')],
+  ),
+};
+
+export const F20_HE_END_OF_WEEK_1500: DeclaredText = {
+  text: 'הפגישה נקבעה לסוף השבוע בשעה 15:00.',
+  declares: assertsEffects(
+    'The Hebrew DAY half: `סוף השבוע` is a declared end-of-week anchor in the resolver and the gate reads ' +
+      'none of it, so the hour is compared and the day is not. The fused ל- prefix is why a standing-word ' +
+      'opener list would find nothing here.',
+    [meetingAt(FINDING_FRIDAY, 15, null, 'הפגישה נקבעה, naming the end of the week and 15:00')],
+  ),
+};
+
+export const F20_HE_BEGINNING_NEXT_WEEK_1500: DeclaredText = {
+  text: 'הפגישה נקבעה לתחילת השבוע הבא בשעה 15:00.',
+  declares: assertsEffects(
+    'The beginning of next week, in Hebrew. Five days out from a booking that exists.',
+    [meetingAt(FINDING_NEXT_MONDAY, 15, null, 'הפגישה נקבעה, naming the beginning of next week and 15:00')],
+  ),
+};
+
+/**
+ * THE PRECISION CONTROL for § 20: the sentence that is TRUE of QA's own booking.
+ *
+ * Declared beside the leaks because the § 20 rule has to be shown NOT firing on
+ * the wording that names the hour the record really has. Without it every
+ * assertion above would be satisfied by a gate, and by an oracle, that rejected
+ * every sentence naming a time - which is the failure mode `lexicon/en.ts` warns
+ * about and the one that gets a gate switched off.
+ */
+export const F20_CONTROL_TRUE_THURSDAY_3PM: DeclaredText = {
+  text: 'Your meeting is booked for Thursday at 3pm.',
+  declares: assertsEffects(
+    'The day and the hour QA harness really booked - Thursday 5 March 2026 at 15:00 local. A contact ' +
+      'hearing this turns up at the right time, so it must be released byte-identical and cost no ' +
+      'regeneration at all.',
+    [meetingAt(FINDING_TOMORROW, 15, null, 'is booked, naming Thursday and 3pm - the truth of the matter')],
+  ),
+};
+
+/** QA-6's six HOUR wordings (T1-T6), in the order the finding listed them. */
+export const QA6_HOUR_WORDINGS: readonly DeclaredText[] = [
+  F20_THURSDAY_HALF_PAST_FOUR,
+  F20_THURSDAY_QUARTER_PAST_TWO,
+  F20_THURSDAY_TEN_TO_FIVE,
+  F20_THURSDAY_TWO_THIRTY,
+  F20_THURSDAY_LUNCHTIME,
+  F20_THURSDAY_FIRST_THING,
+];
+
+/** QA-6's four DAY wordings (D1-D4), plus B1 where both halves are wrong. */
+export const QA6_DAY_WORDINGS: readonly DeclaredText[] = [
+  F20_THIS_WEEKEND_3PM,
+  F20_END_OF_THE_WEEK_3PM,
+  F20_TWO_DAYS_FROM_NOW_3PM,
+  F20_BEGINNING_OF_NEXT_WEEK_3PM,
+  F20_WEEKEND_HALF_PAST_FOUR,
+];
+
+/** The same hole in Hebrew, so the fix is not closed in English only. */
+export const QA6_HEBREW_WORDINGS: readonly DeclaredText[] = [
+  F20_HE_THURSDAY_HALF_PAST_TWO,
+  F20_HE_THURSDAY_QUARTER_TO_THREE,
+  F20_HE_END_OF_WEEK_1500,
+  F20_HE_BEGINNING_NEXT_WEEK_1500,
+];
+
+/** The two wordings the gate blocked correctly in the same run. */
+export const QA6_PARSED_CONTROLS: readonly DeclaredText[] = [
+  F20_CONTROL_THURSDAY_430PM,
+  F20_CONTROL_SATURDAY_3PM,
+];
+
 /**
  * One entry per Mission 2D QA finding, so the regression test reads as the
  * FINDINGS rather than as a list of strings.
@@ -817,6 +1063,17 @@ export const MISSION_2D_QA_FINDINGS: readonly PastFinding[] = [
     headline: 'a representational step - layout, list numbering, an invisible character - erasing a claim',
     wordings: [...QA5_LAYOUT_WORDINGS],
   },
+  {
+    // THE SEVENTH, AND THE FIRST IN THE VERIFIER. Every finding above is the
+    // detector going blind; here the claim is DETECTED and the CHECK fails open,
+    // so the gate affirmatively certifies the sentence instead of merely missing
+    // it. The declarations therefore have to disagree about the DAY or the HOUR
+    // against state that really exists, which is what
+    // `claimOracleCatchesPastFindings.test.ts` drives them against.
+    section: '20.1',
+    headline: 'a wrong day or hour asserted in a temporal phrase the readers cannot parse',
+    wordings: [...QA6_HOUR_WORDINGS, ...QA6_DAY_WORDINGS, ...QA6_HEBREW_WORDINGS],
+  },
 ];
 
 /** Every declared past-finding wording, including the comma controls. */
@@ -826,4 +1083,6 @@ export const PAST_FINDING_TEXTS: readonly DeclaredText[] = [
   F18_NOT_AT_ALL_COMMA_CONTROL,
   F18_LO_TZARICH_KLUM_COMMA_CONTROL,
   F19_SPACE_CONTROL,
+  ...QA6_PARSED_CONTROLS,
+  F20_CONTROL_TRUE_THURSDAY_3PM,
 ];
