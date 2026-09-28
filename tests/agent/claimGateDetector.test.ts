@@ -23,7 +23,12 @@ import {
   markerAdjacentShapeOf,
   IDENTIFIER_SHAPE_FORM,
 } from '../../src/agent/claimGate/detector.js';
-import type { ClaimLexicon } from '../../src/agent/claimGate/lexicon/index.js';
+import {
+  REGISTERED_CLAIM_LEXICONS,
+  type ClaimLexicon,
+  type FirstPersonNumberMarker,
+} from '../../src/agent/claimGate/lexicon/index.js';
+import { SUPPRESSION_CLAIM_BASES } from '../claimGate/claimGateCorpus.js';
 
 const familiesIn = (text: string, lexicons?: readonly ClaimLexicon[]): string[] =>
   detectMaterialClaims(text, lexicons === undefined ? {} : { lexicons })
@@ -306,6 +311,15 @@ describe('the detector holds no language-specific literal', () => {
     ],
     temporalCarriers: ['zug'],
     temporalSlotEnders: ['mitt'],
+    // § 21, in a language the engine has never heard of. `'z` is this locale's
+    // apostrophe clitic and `zis` - the first token of its CANCELLATION frame - is
+    // what the clitic stands for. English `'s` and `is` are the same shape, and
+    // nothing in `text.ts` or `detector.ts` holds either.
+    copulaClitics: [{ suffix: "'z", copulas: ['zis'] }],
+    // § 21's axis, in the same language: `ik-` marks the first person singular and
+    // `ib-` the plural, as a PREFIX, which is the shape Hebrew's future has and the
+    // opposite of the shape its past has.
+    firstPersonNumberMarkers: [{ attaches: 'PREFIX', singular: 'ik', plural: 'ib' }],
   };
 
   it('detects a claim in a language it was told about one line ago', () => {
@@ -343,6 +357,26 @@ describe('the detector holds no language-specific literal', () => {
     // first token, so the suppression rules - which only look at or before it -
     // cannot see it. The frame has to decline to swallow it, in every language.
     expect(detectMaterialClaims('Vorp zis nix grobbled.', { lexicons: [SYNTHETIC] })).toEqual([]);
+  });
+
+  it('reads that language own APOSTROPHE CLITIC, and reads nothing when it declares none', () => {
+    // § 21, in a language the engine has never heard of. `'z` is this locale's
+    // clitic and `zis` - the first token of its CANCELLATION frame - is what the
+    // clitic stands for, so `vorpen'z grobbled` has to be read as
+    // `vorpen zis grobbled`. Nothing in `text.ts` or `detector.ts` holds either
+    // string, and the CANCELLATION reading is only reachable through the clitic.
+    const claims = detectMaterialClaims("Vorp vorpen'z grobbled.", { lexicons: [SYNTHETIC] });
+    expect(claims.map((claim) => claim.family)).toContain('CANCELLATION');
+    expect(claims.map((claim) => claim.matchedForm)).toContain('zis grobbled');
+
+    // And with the clitic declaration removed, the CANCELLATION reading is gone -
+    // which is what shows the detection above came from the locale's data rather
+    // than from a rule that knows what an apostrophe is.
+    expect(
+      detectMaterialClaims("Vorp vorpen'z grobbled.", {
+        lexicons: [{ ...SYNTHETIC, copulaClitics: [] }],
+      }).map((claim) => claim.family),
+    ).toEqual(['MEETING']);
   });
 
   it('reads a BARE PARTICIPLE beside that language own domain object', () => {
@@ -537,6 +571,20 @@ describe('a negator suppresses only the completion form it GOVERNS', () => {
     ).toContain('IDENTIFIER_ASSERTED');
   });
 
+  it('and a NOUN-SUBJECT copula contraction does not escape a negation that governs it', () => {
+    // The precision direction of § 21, and the one that decides whether the clitic
+    // reading is safe to add at all. Every honest negation has to survive being read
+    // the second way: `your meeting's not booked yet` becomes `your meeting is not
+    // booked yet`, where `not` sits INSIDE the frame and the frame refuses to swallow
+    // it, and the bare participle is governed by the same `not`.
+    expect(detectMaterialClaims("Your meeting's not booked yet.")).toEqual([]);
+    expect(detectMaterialClaims("Nothing's booked yet.")).toEqual([]);
+    expect(detectMaterialClaims("Your meeting's not confirmed - I still need a time from you.")).toEqual([]);
+    expect(detectMaterialClaims("Let's get your meeting booked for Thursday.")).toEqual([]);
+    expect(detectMaterialClaims("Here's what I can do - let's check the diary for Thursday.")).toEqual([]);
+    expect(detectMaterialClaims("Your meeting's booked for Thursday?")).toEqual([]);
+  });
+
   it('and a multi-token conditional marker does not suppress through ONE of its words', () => {
     // Found by `SUPPRESSION_MATRIX` rather than reported. `would you like` and
     // `do you want` are multi-token `conditionalMarkers`, and splitting them into
@@ -546,5 +594,224 @@ describe('a negator suppresses only the completion form it GOVERNS', () => {
     // And the phrase itself still suppresses, because `readSuppression` matches whole
     // forms rather than single tokens.
     expect(detectMaterialClaims('Would you like me to get your meeting booked for Thursday?')).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// § 21: the apostrophe clitic, and the person/number axis
+// ---------------------------------------------------------------------------
+
+/**
+ * CLASS A: a copula fused to a NOUN subject.
+ *
+ * Four wordings were RELEASED to a real caller and PERSISTED as spoken AGENT turns
+ * with zero domain rows behind them, while the identical sentence with the copula
+ * spelled out was blocked in the same run. The cause was tokenisation rather than
+ * vocabulary - `text.ts` keeps an apostrophe inside a token, so `meeting's` is one
+ * word and neither `is booked` nor `domainObjects` can see inside it.
+ *
+ * The rows below go WIDER than the four reported wordings ON PURPOSE. The fix would
+ * be worthless if it covered only the nouns somebody typed, so the table crosses
+ * nouns that appear in no fixture (`reservation`, `follow-up`, `booking`) against
+ * every family. `docs/MISSION_2D_CLAIM_GATE.md` § 21 has the argument.
+ */
+describe('a copula contracted onto a NOUN subject is a claim', () => {
+  const CONTRACTED: readonly { readonly text: string; readonly family: string }[] = [
+    // ---- QA's four, verbatim ---------------------------------------------
+    { text: "Your meeting's booked for Thursday at 2pm.", family: 'MEETING' },
+    { text: "Your appointment's confirmed for Thursday at 2pm.", family: 'MEETING' },
+    { text: "The meeting's been booked for Thursday at 2pm.", family: 'MEETING' },
+    { text: "Your callback's arranged for 3pm tomorrow.", family: 'CALLBACK' },
+    // ---- the GENERALISATION: nouns nobody listed anywhere ------------------
+    { text: "Your reservation's confirmed for Thursday at 2pm.", family: 'MEETING' },
+    { text: "Your booking's been cancelled.", family: 'CANCELLATION' },
+    { text: "Your follow-up's arranged for 3pm tomorrow.", family: 'CALLBACK' },
+    { text: "That appointment's been moved to Friday at 10am.", family: 'RESCHEDULE' },
+    { text: "Your confirmation email's been sent.", family: 'MESSAGE' },
+    { text: "Your slot's locked in for Thursday at 2pm.", family: 'MEETING' },
+  ];
+
+  for (const row of CONTRACTED) {
+    it(`detects ${JSON.stringify(row.text)}`, () => {
+      expect(familiesIn(row.text)).toContain(row.family);
+    });
+  }
+
+  it('and the A/B control - the same claim with the copula spelled out - is unchanged', () => {
+    expect(familiesIn('Your meeting is booked for Thursday at 2pm.')).toContain('MEETING');
+  });
+
+  it('reads the clitic through the BARE-PARTICIPLE route as well as the frame route', () => {
+    // Both routes failed on the same token and both have to come back, or the fix is
+    // one route wide. A clause joiner may never be skipped inside a frame, so
+    // `is booked` cannot close over `finally and officially` - which leaves only the
+    // § 16.3b participle rule, and that rule needed `meeting` to be a token at all.
+    const claims = detectMaterialClaims("Your meeting's finally and officially booked for Thursday at 2pm.");
+    expect(claims.map((claim) => claim.family)).toContain('MEETING');
+    expect(
+      claims.map((claim) => claim.matchedForm),
+      'the audit has to quote BOTH halves, or this was the frame route after all',
+    ).toContain('booked + meeting');
+  });
+
+  it('and reads it across a sentence cut, so § 19 and § 21 compose', () => {
+    // The bridged pass pairs reading k of one segment with reading k of the next.
+    // Without that pairing this is a miss: `your meeting's` is one segment and
+    // `booked for Thursday` is the other.
+    expect(familiesIn("Your meeting's\nbooked for Thursday at 2pm.")).toContain('MEETING');
+  });
+
+});
+
+/**
+ * CLASS B: a first-person completion form with one NUMBER and not the other.
+ *
+ * Five wordings were RELEASED and PERSISTED because Hebrew declared `ביטלתי` and not
+ * `ביטלנו`, `שלחתי` and not `שלחנו`, `רשמתי` and not `רשמנו`, `שיניתי` and not
+ * `שינינו`, and `סגרנו` and not `סגרתי` - the last one being the drift pointing the
+ * other way, which is what shows this is drift and not a missing plural rule.
+ *
+ * The FIX is that `lexicon/he.ts` generates both numbers from one paired declaration.
+ * The test below is the proof that nothing reached `completionMarkers` by any other
+ * route, and it is deliberately generic over every REGISTERED locale: it reads the
+ * person/number morphology each locale declares and asks the lexicon to answer for
+ * every form it has. The next unpaired inflection fails here instead of reaching a
+ * caller.
+ */
+describe('every first-person completion form has BOTH numbers', () => {
+  interface Declared {
+    readonly form: string;
+    readonly family: string;
+    readonly mode: string;
+  }
+
+  const declaredForms = (lexicon: ClaimLexicon): readonly Declared[] =>
+    lexicon.completionMarkers.flatMap((entry) =>
+      entry.forms.map((form) => ({ form, family: entry.family, mode: entry.mode })),
+    );
+
+  /** The counterpart `form` must have under `marker`, or `null` if it is not first person. */
+  const counterpartOf = (form: string, marker: FirstPersonNumberMarker): string | null => {
+    if (marker.notFirstPerson?.includes(form) === true) return null;
+    if (marker.attaches === 'PREFIX') {
+      if (form.startsWith(marker.singular)) return `${marker.plural}${form.slice(marker.singular.length)}`;
+      if (form.startsWith(marker.plural)) return `${marker.singular}${form.slice(marker.plural.length)}`;
+      return null;
+    }
+    if (form.endsWith(marker.singular)) {
+      return `${form.slice(0, form.length - marker.singular.length)}${marker.plural}`;
+    }
+    if (form.endsWith(marker.plural)) {
+      return `${form.slice(0, form.length - marker.plural.length)}${marker.singular}`;
+    }
+    return null;
+  };
+
+  for (const lexicon of REGISTERED_CLAIM_LEXICONS) {
+    it(`${lexicon.locale}: declares how it marks person and number at all`, () => {
+      // An empty marker list would make the assertion below vacuously true, which is
+      // exactly the failure mode `claimGateNonVacuity.test.ts` exists for.
+      expect(
+        lexicon.firstPersonNumberMarkers.length,
+        `${lexicon.locale} declares no person/number axis, so nothing below can fail`,
+      ).toBeGreaterThanOrEqual(1);
+    });
+
+    it(`${lexicon.locale}: every first-person completion form has its number counterpart declared`, () => {
+      const declared = declaredForms(lexicon);
+      const index = new Set(declared.map((entry) => `${entry.form}|${entry.family}|${entry.mode}`));
+      const unpaired: string[] = [];
+
+      for (const entry of declared) {
+        for (const marker of lexicon.firstPersonNumberMarkers) {
+          const counterpart = counterpartOf(entry.form, marker);
+          if (counterpart === null) continue;
+          if (index.has(`${counterpart}|${entry.family}|${entry.mode}`)) continue;
+          unpaired.push(
+            `${lexicon.locale}: ${JSON.stringify(entry.form)} (${entry.family}/${entry.mode}) has no ` +
+              `${JSON.stringify(counterpart)} beside it. Declare the pair, or declare the form in ` +
+              `firstPersonNumberMarkers.notFirstPerson with the reason.`,
+          );
+        }
+      }
+
+      expect(
+        unpaired,
+        'A first-person form with one number and not the other is the § 21 CLASS B defect: ' +
+          'five wordings of exactly this shape were released to real callers AND PERSISTED with ' +
+          'an empty ledger, while the other number of the same verb was blocked in the same run.',
+      ).toEqual([]);
+    });
+
+    it(`${lexicon.locale}: the axis test is not vacuous - it sees first-person forms`, () => {
+      const seen = declaredForms(lexicon).filter((entry) =>
+        lexicon.firstPersonNumberMarkers.some((marker) => counterpartOf(entry.form, marker) !== null),
+      );
+      expect(
+        seen.length,
+        `${lexicon.locale}: no declared form matched any person/number marker, so the pairing ` +
+          'assertion proved nothing',
+      ).toBeGreaterThanOrEqual(4);
+    });
+  }
+
+  it('and the test FAILS on a lexicon that carries one number of a verb', () => {
+    // The self-test. A check that cannot fail is not a check, and this gate has been
+    // told so three times (§§ 15.2, 16.4, 17.2). `ביטלנו` is removed from a copy of
+    // the real Hebrew lexicon, which is the exact state that leaked.
+    const broken: ClaimLexicon = {
+      ...REGISTERED_CLAIM_LEXICONS[1] as ClaimLexicon,
+      completionMarkers: (REGISTERED_CLAIM_LEXICONS[1] as ClaimLexicon).completionMarkers.map((entry) => ({
+        ...entry,
+        forms: entry.forms.filter((form) => form !== 'ביטלנו'),
+      })),
+    };
+    const unpaired = declaredForms(broken).filter((entry) =>
+      broken.firstPersonNumberMarkers.some((marker) => {
+        const counterpart = counterpartOf(entry.form, marker);
+        if (counterpart === null) return false;
+        return !broken.completionMarkers.some(
+          (other) =>
+            other.family === entry.family && other.mode === entry.mode && other.forms.includes(counterpart),
+        );
+      }),
+    );
+    expect(unpaired.map((entry) => entry.form)).toEqual(['ביטלתי']);
+  });
+});
+
+/**
+ * The generative matrix has to CROSS both new axes, or § 21 is a fixture list.
+ *
+ * `SUPPRESSION_CLAIM_BASES` declared `contracted` as a dimension and crossed one half
+ * of it: every `contracted: true` row was a subject PRONOUN, and every third-person
+ * row was `contracted: false`. That is § 17.8 residual 19 arriving again - an axis
+ * whose values are drawn from what the lexicon already handles cannot falsify it.
+ */
+describe('the generated matrix crosses the § 21 axes', () => {
+  it('carries THIRD-PERSON contracted rows, over more than one noun', () => {
+    const rows = SUPPRESSION_CLAIM_BASES.filter((base) => base.contracted && base.person === 'THIRD');
+    const nounSubject = rows.filter((base) => /^(your|the|that|this) [a-z-]+'s /u.test(base.text));
+    expect(
+      nounSubject.length,
+      'a `contracted` axis whose only values are subject pronouns is half an axis, and the half ' +
+        'it omits is the one an apostrophe attaches to an arbitrary NOUN in',
+    ).toBeGreaterThanOrEqual(5);
+    // Distinct NOUNS, so no row can pass because somebody listed its noun.
+    const nouns = new Set(nounSubject.map((base) => /^(?:your|the|that|this) ([a-z-]+)'s /u.exec(base.text)?.[1]));
+    expect(nouns.size).toBeGreaterThanOrEqual(4);
+    // And more than one FAMILY, so the axis is not one frame wide.
+    expect(new Set(nounSubject.map((base) => base.family)).size).toBeGreaterThanOrEqual(3);
+  });
+
+  it('crosses BOTH numbers for the Hebrew first person, in more than one family', () => {
+    const hebrew = SUPPRESSION_CLAIM_BASES.filter((base) => base.language === 'he');
+    const singular = hebrew.filter((base) => base.person === 'FIRST_SINGULAR');
+    const plural = hebrew.filter((base) => base.person === 'FIRST_PLURAL');
+    expect(singular.length).toBeGreaterThanOrEqual(6);
+    expect(plural.length).toBeGreaterThanOrEqual(6);
+    // Every family that has one number has the other, which is the matrix form of
+    // the lexicon's paired declaration.
+    expect(new Set(plural.map((base) => base.family))).toEqual(new Set(singular.map((base) => base.family)));
   });
 });

@@ -264,3 +264,76 @@ describe('a wrong day or hour in a phrase the readers cannot parse', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// § 21 IN THE § 20 HARNESS: the same nine wordings, against a booking that
+// REALLY EXISTS and says something else.
+// ---------------------------------------------------------------------------
+
+/**
+ * WHY THE § 21 WORDINGS BELONG IN THIS FILE TOO, AND WHAT THEY PROVE HERE.
+ *
+ * `claimGate.test.ts` drives these against an EMPTY ledger, which is the shape the
+ * finding reported. This harness is harsher and it is the one that shows the two
+ * fixes COMPOSE: `schedule_meeting` runs for real and books Thursday 5 March 2026
+ * at 15:00, so the meeting EXISTS - and the sentence about it is still false,
+ * because it names 2pm, or a callback nothing arranged, or an email nothing can
+ * send.
+ *
+ * Before § 21 not one of these reached the § 20 machinery at all. The detector did
+ * not see the claim, so there was no day to read, no hour to compare and nothing for
+ * the verifier to reconcile: the turn was released with `NO_MATERIAL_CLAIM` against
+ * a real booking that disagreed with it. The rows below assert the whole path -
+ * detected, reconciled against real state, refused, regenerated, never persisted -
+ * and the `meetings` count stays at the ONE row the tool really wrote.
+ */
+const CLITIC_AGAINST_A_REAL_BOOKING: readonly {
+  readonly label: string;
+  readonly text: string;
+  readonly hebrew: boolean;
+  /** The reason the verifier must give. `WRONG_TIME` is the § 20 half. */
+  readonly reason: string;
+}[] = [
+  { label: "A1 `Your meeting's booked` at the wrong hour", text: "Your meeting's booked for Thursday at 2pm.", hebrew: false, reason: 'WRONG_TIME' },
+  { label: "A2 `Your appointment's confirmed` at the wrong hour", text: "Your appointment's confirmed for Thursday at 2pm.", hebrew: false, reason: 'WRONG_TIME' },
+  { label: "A3 `The meeting's been booked` at the wrong hour", text: "The meeting's been booked for Thursday at 2pm.", hebrew: false, reason: 'WRONG_TIME' },
+  { label: "A4 `Your callback's arranged` - a family the booking cannot support", text: "Your callback's arranged for 3pm tomorrow.", hebrew: false, reason: 'NO_MATCHING_EFFECT' },
+  { label: 'B5 ביטלנו - a cancellation that never happened', text: 'ביטלנו את הפגישה שלך.', hebrew: true, reason: 'NO_MATCHING_EFFECT' },
+  { label: 'B6 שלחנו - an email nothing in this system can send', text: 'שלחנו לך אישור במייל.', hebrew: true, reason: 'NO_TOOL_FOR_PROMISE' },
+  { label: 'B7 רשמנו - the right family at the wrong hour', text: 'רשמנו אותך לפגישה מחר בשעה 14:00.', hebrew: true, reason: 'WRONG_TIME' },
+  // RESCHEDULE is satisfiable by the meeting row this harness really wrote, so
+  // the refusal comes from the HOUR rather than from the family - which is the
+  // § 20 half doing the work on a claim § 21 is what made visible at all.
+  { label: 'B8 שינינו - the reschedule family, refused on the hour', text: 'שינינו את הפגישה ליום חמישי בשעה 14:00.', hebrew: true, reason: 'WRONG_TIME' },
+  { label: 'B9 סגרתי - the unnamed completion, at the wrong hour', text: 'סגרתי לך את הפגישה למחר בשעה 14:00.', hebrew: true, reason: 'WRONG_TIME' },
+  // ---- the two A/B controls, which this harness blocked all along ----------
+  { label: 'CONTROL A: the copula spelled out, same hour, same run', text: 'Your meeting is booked for Thursday at 2pm.', hebrew: false, reason: 'WRONG_TIME' },
+  { label: 'CONTROL B: the singular of the same verb, same run', text: 'ביטלתי את הפגישה שלך.', hebrew: true, reason: 'NO_MATCHING_EFFECT' },
+];
+
+describe('a contracted or plural claim about a booking that really exists', () => {
+  for (const row of CLITIC_AGAINST_A_REAL_BOOKING) {
+    it(`is withheld, regenerated and never persisted: ${row.label}`, async () => {
+      const driven = await drive(
+        `gate-temporal-clitic-${CLITIC_AGAINST_A_REAL_BOOKING.indexOf(row)}`,
+        row.text,
+        row.hebrew,
+      );
+
+      // ---- the booking is REAL, and stays the only one -----------------------
+      expect(driven.turn.toolOutcomes[0]?.ok).toBe(true);
+      expect(driven.meetings).toBe(1);
+
+      // ---- 1. it did not reach the caller ------------------------------------
+      expect(driven.turn.assistantText).toBe(row.hebrew ? HONEST_HE : HONEST_EN);
+      // ---- 2. it was not written to the transcript as a spoken agent turn -----
+      expect(driven.spoken).not.toContain(row.text);
+
+      // ---- 3. and the gate says WHY, having read the state --------------------
+      const release = driven.turn.claimGate.releases.at(-1);
+      expect(release?.outcome).toBe('CORRECTED_AFTER_REGENERATION');
+      expect(release?.attempts[0]?.text).toBe(row.text);
+      expect(release?.attempts[0]?.unsupportedClaims.map((entry) => entry.reason)).toContain(row.reason);
+    });
+  }
+});

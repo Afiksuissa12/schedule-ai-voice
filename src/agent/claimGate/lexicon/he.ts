@@ -53,6 +53,49 @@
  */
 import type { ClaimLexicon } from './types.js';
 
+/**
+ * One verb's first person, SINGULAR and PLURAL, written down together.
+ *
+ * WHY THIS TYPE EXISTS - THE EIGHTH FAIL-OPEN DEFECT, AND HEBREW'S HALF OF IT
+ * ---------------------------------------------------------------------------
+ * This file used to declare first-person forms one string at a time, so the two
+ * numbers of the same verb were independent facts and they drifted. Two verbs had
+ * both (קבעתי/קבענו, סידרתי/סידרנו) and four had one, and every missing member was
+ * a false claim RELEASED to a caller and PERSISTED as a spoken agent turn with zero
+ * domain rows behind it:
+ *
+ *     ביטלנו את הפגישה שלך.                    RELEASED  (ביטלתי was listed)
+ *     שלחנו לך אישור במייל.                    RELEASED  (שלחתי was listed)
+ *     רשמנו אותך לפגישה מחר בשעה 14:00.        RELEASED  (רשמתי was listed)
+ *     שינינו את הפגישה ליום חמישי בשעה 14:00.  RELEASED  (שיניתי was listed)
+ *     סגרתי לך את הפגישה למחר בשעה 14:00.      RELEASED  (סגרנו was listed)
+ *     ביטלתי את הפגישה שלך.                    the A/B control - blocked, same run
+ *
+ * The last row is the asymmetry pointing the other way, which is what shows the
+ * defect is drift and not "Hebrew needs more plurals". `סידרתי` was added by § 14.3
+ * for exactly this reason, one verb over, four independent QA rounds earlier - and
+ * the round that added it did not ask whether the same gap existed anywhere else.
+ *
+ * WHY A PAIR AND NOT A LONGER LIST
+ * ---------------------------------------------------------------------------
+ * A longer list is the § 16.6 pattern: it closes the five wordings somebody reported
+ * and the sixth verb drifts the same way. A PAIR makes drift impossible instead of
+ * merely detectable - there is no way to write one member of `bothNumbers` without
+ * writing the other, because the type will not let you. `tests/agent/
+ * claimGateDetector.test.ts` then proves that nothing reached `completionMarkers` by
+ * any other route, using `firstPersonNumberMarkers` below.
+ *
+ * Hebrew has no `completionParticiples` - deliberately, and this file says why - so
+ * a missing completion form here has no second route and the miss is total. That is
+ * the reason this file is the one that needed the pair.
+ */
+type FirstPersonPair = readonly [singular: string, plural: string];
+
+/** Both members of every pair, flattened into the `forms` list of one family. */
+function bothNumbers(...pairs: readonly FirstPersonPair[]): readonly string[] {
+  return pairs.flatMap((pair) => [pair[0], pair[1]]);
+}
+
 export const HE_CLAIM_LEXICON: ClaimLexicon = {
   locale: 'he',
   displayName: 'Hebrew',
@@ -61,26 +104,64 @@ export const HE_CLAIM_LEXICON: ClaimLexicon = {
     // ---- a meeting exists -------------------------------------------------
     // נקבעה is the exact word `aya-expanse:8b` used for a meeting that did not
     // exist: "הפגישה נקבעה בהצלחה למחר אחרי הצהריים בשעה 14:00" (§ 6.2).
+    // רשמנו was MISSING while רשמתי was here, and `רשמנו אותך לפגישה מחר בשעה
+    // 14:00.` reached a caller and was persisted. `bothNumbers` is why it cannot
+    // happen again for these two verbs.
     {
-      forms: ['נקבעה', 'נקבעו', 'קבעתי', 'קבענו', 'אושרה', 'אושרו', 'מאושרת', 'הוזמנה', 'רשמתי', 'נרשמה'],
+      forms: [
+        'נקבעה',
+        'נקבעו',
+        'אושרה',
+        'אושרו',
+        'מאושרת',
+        'הוזמנה',
+        'נרשמה',
+        ...bothNumbers(['קבעתי', 'קבענו'], ['רשמתי', 'רשמנו']),
+      ],
       family: 'MEETING',
       mode: 'COMPLETED',
     },
 
     // ---- a meeting moved --------------------------------------------------
-    { forms: ['הועברה', 'הוזזה', 'שיניתי', 'נדחתה'], family: 'RESCHEDULE', mode: 'COMPLETED' },
+    // שינינו was MISSING while שיניתי was here.
+    {
+      forms: ['הועברה', 'הוזזה', 'נדחתה', ...bothNumbers(['שיניתי', 'שינינו'])],
+      family: 'RESCHEDULE',
+      mode: 'COMPLETED',
+    },
 
     // ---- a meeting is off -------------------------------------------------
-    { forms: ['בוטלה', 'בוטלו', 'ביטלתי'], family: 'CANCELLATION', mode: 'COMPLETED' },
+    // ביטלנו was MISSING while ביטלתי was here, and `ביטלנו את הפגישה שלך.` reached
+    // a caller while the identical sentence with ביטלתי was blocked in the same run.
+    { forms: ['בוטלה', 'בוטלו', ...bothNumbers(['ביטלתי', 'ביטלנו'])], family: 'CANCELLATION', mode: 'COMPLETED' },
 
     // ---- a callback exists, or is promised --------------------------------
-    { forms: ['אתקשר', 'נתקשר', 'אחזור אליך', 'נחזור אליך', 'תקבל שיחה', 'תקבלי שיחה'], family: 'CALLBACK', mode: 'COMMITTED' },
+    // The FUTURE first person, which was already paired in both verbs - א- is the
+    // singular prefix and נ- the plural. Written through `bothNumbers` anyway, so
+    // that "it happened to be complete" becomes "it cannot be otherwise".
+    {
+      forms: [...bothNumbers(['אתקשר', 'נתקשר'], ['אחזור אליך', 'נחזור אליך']), 'תקבל שיחה', 'תקבלי שיחה'],
+      family: 'CALLBACK',
+      mode: 'COMMITTED',
+    },
 
     // ---- something was sent, or will be ----------------------------------
     // אשלח is the second half of the same `aya-expanse:8b` turn: "אשלח לך אישור
     // בדוא\"ל" - an email this agent has no tool to send.
-    { forms: ['נשלח', 'נשלחה', 'שלחתי'], family: 'MESSAGE', mode: 'COMPLETED' },
-    { forms: ['אשלח', 'נשלח לך', 'אשלח לך'], family: 'MESSAGE', mode: 'COMMITTED' },
+    //
+    // שלחנו was MISSING while שלחתי was here, and `שלחנו לך אישור במייל.` reached a
+    // caller and was persisted.
+    { forms: ['נשלח', 'נשלחה', ...bothNumbers(['שלחתי', 'שלחנו'])], family: 'MESSAGE', mode: 'COMPLETED' },
+    // THE ONE PAIR THAT CANNOT BE WRITTEN AS A PAIR, stated rather than left to be
+    // discovered. The plural of `אשלח` is `נשלח`, which is spelled identically to the
+    // nif'al passive `נשלח` ("was sent") in the COMPLETED entry above. So "we will
+    // send you a confirmation" IS detected - as MESSAGE/COMPLETED rather than
+    // MESSAGE/COMMITTED, which is the same family, the same unsupportable effect and
+    // the same verdict; only the audit's `mode` differs. Declaring `נשלח` here as
+    // well would add a second entry that can never win a longest-match tie and would
+    // read as coverage this file does not have. `firstPersonNumberMarkers` records
+    // both spellings as exempt from the prefix axis, with this as the reason.
+    { forms: ['אשלח', ...bothNumbers(['אשלח לך', 'נשלח לך'])], family: 'MESSAGE', mode: 'COMMITTED' },
 
     // ---- something was written down --------------------------------------
     { forms: ['תועד', 'תועדה', 'נרשם'], family: 'RECORD', mode: 'COMPLETED' },
@@ -99,7 +180,20 @@ export const HE_CLAIM_LEXICON: ClaimLexicon = {
     // nothing booked. They belong in ANY rather than in MEETING for the same
     // reason מסודר does: the verb says something was arranged and does not say
     // what, so any state-changing effect should satisfy it.
-    { forms: ['סגרנו', 'הכל מסודר', 'הכל סגור', 'זה סגור', 'מסודר', 'סידרתי', 'סידרנו'], family: 'ANY', mode: 'COMPLETED' },
+    //
+    // סגרתי was MISSING while סגרנו was here - the drift pointing the other way -
+    // and `סגרתי לך את הפגישה למחר בשעה 14:00.` reached a caller and was persisted.
+    {
+      forms: [
+        'הכל מסודר',
+        'הכל סגור',
+        'זה סגור',
+        'מסודר',
+        ...bothNumbers(['סגרתי', 'סגרנו'], ['סידרתי', 'סידרנו']),
+      ],
+      family: 'ANY',
+      mode: 'COMPLETED',
+    },
   ],
 
   // EMPTY, and that is the whole point of this file. The participle rule exists because
@@ -128,6 +222,61 @@ export const HE_CLAIM_LEXICON: ClaimLexicon = {
   ],
 
   identifierMarkers: ['מספר אישור', 'קוד אישור', 'מספר הזמנה', 'מספר סידורי', 'מספר האישור', 'אסמכתא'],
+
+  // EMPTY, and it is a fact about the language rather than an omission. The § 21
+  // clitic is an apostrophe fusing a standing auxiliary onto the word in front of it,
+  // and Hebrew has no standing copula in the present tense to fuse - `הפגישה נקבעה`
+  // is subject and verb with nothing between them. Hebrew's own apostrophe (גרש) is a
+  // letter-modifier inside a word (`ג'ון`) and never a contraction of two words, and
+  // `normalizeScript` has already dealt with it by the time a token is compared. This
+  // is the same asymmetry the header argues for `completionParticiples`, arriving a
+  // fourth time: English needs machinery Hebrew's morphology provides for free.
+  //
+  // The engine POOLS clitics across every registered locale, so an English `'s`
+  // inside a Hebrew sentence is still read - which is what a code-switched
+  // `הפגישה's booked` needs, and it needs nothing from this file.
+  copulaClitics: [],
+
+  // HOW HEBREW MARKS FIRST PERSON SINGULAR AGAINST PLURAL. `types.ts`
+  // (`FirstPersonNumberMarker`) carries the argument: this is TEST data, and the
+  // mechanism that makes drift impossible is `bothNumbers` at the top of this file.
+  //
+  //  - THE PAST SUFFIX is the axis the five leaked wordings sit on, and it is
+  //    unambiguous: a Hebrew verb ending in -תי is first person singular past and one
+  //    ending in -נו is first person plural past. No form in this file ends either
+  //    way for any other reason, which is why it needs no exemptions.
+  //  - THE FUTURE PREFIX is the same axis one tense over, and it is NOT unambiguous:
+  //    the nif'al and pu'al passives are spelled with the same נ- and א- that mark
+  //    person in the future. Every exemption below is one of those, and each one is a
+  //    place the axis test stops looking rather than a place the detector stops
+  //    reading. They are listed rather than the marker being dropped, because without
+  //    the marker `אתקשר` could lose `נתקשר` and no test would notice.
+  firstPersonNumberMarkers: [
+    { attaches: 'SUFFIX', singular: 'תי', plural: 'נו' },
+    {
+      attaches: 'PREFIX',
+      singular: 'א',
+      plural: 'נ',
+      notFirstPerson: [
+        // nif'al passive past - "was scheduled", "was sent", "was registered",
+        // "was postponed". The נ- is the binyan, not a person.
+        'נקבעה',
+        'נקבעו',
+        'נשלחה',
+        'נרשמה',
+        'נרשם',
+        'נדחתה',
+        // Both readings at once, and the MESSAGE COMMITTED entry says what follows
+        // from it: `נשלח` is the nif'al passive AND the first-person plural future
+        // of `אשלח`, and it is declared once, as the passive.
+        'נשלח',
+        'אשלח',
+        // pu'al passive past - "was approved". The א- is the root's first letter.
+        'אושרה',
+        'אושרו',
+      ],
+    },
+  ],
 
   negators: ['לא', 'אין', 'אינה', 'איני', 'טרם', 'עדיין', 'בלי', 'ללא', 'אף'],
 

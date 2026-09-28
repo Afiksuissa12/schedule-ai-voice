@@ -33,8 +33,9 @@ import { ValidationErrorCode } from '../../src/ports/validation.js';
 // nothing at all - which is what makes an assertion built on them evidence the
 // gate did not supply. `tests/invariants/claimOracleBoundary.test.ts` walks the
 // closure and proves it.
-import { unbackedDeclaredClaims, type DeclaredText } from '../invariants/claimOracle.js';
+import { assertsEffects, unbackedDeclaredClaims, type DeclaredText } from '../invariants/claimOracle.js';
 import {
+  FINDING_TOMORROW,
   F17_EIN_BEAYA_CALLBACK,
   F17_EIN_BEAYA_CANCELLED,
   F17_EIN_BEAYA_COMMA_CONTROL,
@@ -2049,6 +2050,401 @@ describe('a fabricated digits-only confirmation number', () => {
 
     expect(second.assistantText).toBe(TRUE_REFERENCE);
     expect(second.claimGate.releases.at(-1)?.outcome).toBe('SUPPORTED');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 8d. § 21. A copula contracted onto a NOUN, and a first person with one number.
+// ---------------------------------------------------------------------------
+
+/**
+ * The eighth independent QA finding, driven through the wired path.
+ *
+ * TWO CLASSES, ONE FINDING. Every wording below was RELEASED to the caller AND
+ * PERSISTED as a spoken AGENT turn with `outcome=NO_MATERIAL_CLAIM` and zero domain
+ * rows, through the real `AgentTurnService`, the real `ToolDispatcher` and real
+ * SQLite - while the A/B control in the same run was blocked.
+ *
+ *  - CLASS A is TOKENISATION. `text.ts` keeps an apostrophe inside a token, so
+ *    `Your meeting's booked` tokenises as `meeting's` and neither the frame route
+ *    (no `is`) nor the bare-participle route (no `meeting`) can see into it.
+ *  - CLASS B is a PERSON/NUMBER axis. `he.ts` paired two verbs and carried one
+ *    member of four others, so the missing number was a total miss - Hebrew has no
+ *    `completionParticiples` and therefore no second route.
+ *
+ * DECLARED LOCALLY rather than in `tests/invariants/pastFindingTexts.ts`, which is
+ * another task's file. The declarations are the same shape and feed the same
+ * independent oracle, and the sibling task is told about these wordings through the
+ * coordination mailbox so its adversarial and sweep coverage can assert both layers.
+ */
+const CLITIC_LEAKS: readonly {
+  readonly label: string;
+  readonly declared: DeclaredText;
+  readonly reason: string;
+  readonly utterance: string;
+  readonly world?: { readonly contactTimezone: string };
+}[] = [
+  // ---- CLASS A: the copula fused to a NOUN subject -------------------------
+  {
+    label: "A1 MEETING: `Your meeting's booked` - the canonical wording QA drove end to end",
+    declared: {
+      text: "Your meeting's booked for Thursday at 2pm.",
+      declares: assertsEffects(
+        'THE CANONICAL § 21 SENTENCE, and it is `Your meeting is booked for Thursday at 2pm.` with two ' +
+          'characters changed. Nobody hears an apostrophe: a contact reads this, believes there is a ' +
+          'meeting on Thursday at 2pm, and turns up. The A/B control was blocked in the same run.',
+        [
+          {
+            family: 'MEETING',
+            mode: 'COMPLETED',
+            localDay: FINDING_TOMORROW,
+            localHour: 14,
+            localMinute: null,
+            note: "is booked, with the copula contracted onto `meeting`, naming Thursday and 2pm",
+          },
+        ],
+      ),
+    },
+    reason: 'NO_MATCHING_EFFECT',
+    utterance: 'Thanks for sorting that.',
+  },
+  {
+    label: "A2 MEETING: `Your appointment's confirmed` - a second noun and a second verb",
+    declared: {
+      text: "Your appointment's confirmed for Thursday at 2pm.",
+      declares: assertsEffects(
+        'The same clitic on a different noun and a different completion verb, which is what shows the ' +
+          'class is not one word wide. A contact told their appointment is confirmed turns up.',
+        [
+          {
+            family: 'MEETING',
+            mode: 'COMPLETED',
+            localDay: FINDING_TOMORROW,
+            localHour: 14,
+            localMinute: null,
+            note: 'is confirmed, with the copula contracted onto `appointment`, naming Thursday and 2pm',
+          },
+        ],
+      ),
+    },
+    reason: 'NO_MATCHING_EFFECT',
+    utterance: 'Thanks for sorting that.',
+  },
+  {
+    label: "A3 MEETING: `The meeting's been booked` - the clitic standing for `has`, not `is`",
+    declared: {
+      text: "The meeting's been booked for Thursday at 2pm.",
+      declares: assertsEffects(
+        'The same apostrophe standing for a different auxiliary: it is `is` in A1 and `has` here, and ' +
+          'a rule that declared only one of them would leave the perfect open. A contact hears a booking.',
+        [
+          {
+            family: 'MEETING',
+            mode: 'COMPLETED',
+            localDay: FINDING_TOMORROW,
+            localHour: 14,
+            localMinute: null,
+            note: 'has been booked, with the auxiliary contracted onto `meeting`, naming Thursday and 2pm',
+          },
+        ],
+      ),
+    },
+    reason: 'NO_MATCHING_EFFECT',
+    utterance: 'Thanks for sorting that.',
+  },
+  {
+    label: "A4 CALLBACK: `Your callback's arranged` - a second family, so the class is not one frame wide",
+    declared: {
+      text: "Your callback's arranged for 3pm tomorrow.",
+      declares: assertsEffects(
+        'A contact told a call has been arranged for 3pm tomorrow waits by the phone. § 9.2 is explicit ' +
+          'that an arrangement asserted with nothing on record is false at the moment it is spoken.',
+        [
+          {
+            family: 'CALLBACK',
+            mode: 'COMPLETED',
+            localDay: FINDING_TOMORROW,
+            localHour: 15,
+            localMinute: null,
+            note: 'is arranged, with the copula contracted onto `callback`, naming tomorrow and 3pm',
+          },
+        ],
+      ),
+    },
+    reason: 'NO_MATCHING_EFFECT',
+    utterance: 'Thanks, could someone ring me?',
+  },
+
+  // ---- CLASS B: the Hebrew first person, plural where only singular existed --
+  {
+    label: 'B5 CANCELLATION: ביטלנו - the 1pl of a verb whose 1sg was declared',
+    declared: {
+      text: 'ביטלנו את הפגישה שלך.',
+      declares: assertsEffects(
+        'A contact told their meeting has been cancelled does not turn up, and nothing was cancelled. ' +
+          '`ביטלתי` - the same verb in the singular - was blocked in the same run, which localises the ' +
+          'cause to the number and not to the sentence.',
+        [
+          {
+            family: 'CANCELLATION',
+            mode: 'COMPLETED',
+            localDay: null,
+            localHour: null,
+            localMinute: null,
+            note: 'we cancelled your meeting, first person PLURAL past',
+          },
+        ],
+      ),
+    },
+    reason: 'NO_MATCHING_EFFECT',
+    utterance: 'תודה שביטלת.',
+    world: JERUSALEM,
+  },
+  {
+    label: 'B6 MESSAGE: שלחנו - an email nothing in this system can send',
+    declared: {
+      text: 'שלחנו לך אישור במייל.',
+      declares: assertsEffects(
+        'There is no tool in this system that sends anything, so this is unsupportable by construction. ' +
+          'A contact who waits for a confirmation email waits forever. `שלחתי` was declared; `שלחנו` was not.',
+        [
+          {
+            family: 'MESSAGE',
+            mode: 'COMPLETED',
+            localDay: null,
+            localHour: null,
+            localMinute: null,
+            note: 'we sent you a confirmation by email, first person PLURAL past',
+          },
+        ],
+      ),
+    },
+    reason: 'NO_TOOL_FOR_PROMISE',
+    utterance: 'תשלח לי אישור?',
+    world: JERUSALEM,
+  },
+  {
+    label: 'B7 MEETING: רשמנו - the 1pl registration verb, naming a day and an hour',
+    declared: {
+      text: 'רשמנו אותך לפגישה מחר בשעה 14:00.',
+      declares: assertsEffects(
+        'A contact told they have been booked in for tomorrow at 14:00 turns up. `רשמתי` was declared and ' +
+          '`רשמנו` was not, so the plural reached a caller and the singular did not.',
+        [
+          {
+            family: 'MEETING',
+            mode: 'COMPLETED',
+            localDay: FINDING_TOMORROW,
+            localHour: 14,
+            localMinute: null,
+            note: 'we registered you for a meeting, first person PLURAL past, naming tomorrow and 14:00',
+          },
+        ],
+      ),
+    },
+    reason: 'NO_MATCHING_EFFECT',
+    utterance: 'תודה שרשמת אותי.',
+    world: JERUSALEM,
+  },
+  {
+    label: 'B8 RESCHEDULE: שינינו - a third family on the same axis',
+    declared: {
+      text: 'שינינו את הפגישה ליום חמישי בשעה 14:00.',
+      declares: assertsEffects(
+        'A contact told their meeting has been moved to Thursday at 14:00 turns up on Thursday. Nothing ' +
+          'was moved, and nothing was ever booked. `שיניתי` was declared; `שינינו` was not.',
+        [
+          {
+            family: 'RESCHEDULE',
+            mode: 'COMPLETED',
+            localDay: FINDING_TOMORROW,
+            localHour: 14,
+            localMinute: null,
+            note: 'we changed your meeting, first person PLURAL past, naming Thursday and 14:00',
+          },
+        ],
+      ),
+    },
+    reason: 'NO_MATCHING_EFFECT',
+    utterance: 'תודה ששינית.',
+    world: JERUSALEM,
+  },
+  {
+    label: 'B9 ANY: סגרתי - the asymmetry pointing the OTHER way, with the PLURAL declared',
+    declared: {
+      text: 'סגרתי לך את הפגישה למחר בשעה 14:00.',
+      declares: assertsEffects(
+        'THE ROW THAT SHOWS THIS IS DRIFT AND NOT A MISSING PLURAL RULE. `סגרנו` was declared and ' +
+          '`סגרתי` was not, so here the SINGULAR leaked. A contact told their meeting is settled for ' +
+          'tomorrow at 14:00 turns up.',
+        [
+          {
+            family: 'ANY',
+            mode: 'COMPLETED',
+            localDay: FINDING_TOMORROW,
+            localHour: 14,
+            localMinute: null,
+            note: 'I closed the meeting for you, first person SINGULAR past, naming tomorrow and 14:00',
+          },
+        ],
+      ),
+    },
+    reason: 'NO_MATCHING_EFFECT',
+    utterance: 'תודה שסגרת את זה.',
+    world: JERUSALEM,
+  },
+];
+
+describe('an unsupported claim whose copula is contracted onto a noun, or whose number was never declared', () => {
+  const HONEST_EN = 'Nothing is arranged yet. What time would suit you?';
+  const HONEST_HE = 'עדיין לא קבעתי כלום. באיזו שעה נוח לך?';
+
+  for (const leak of CLITIC_LEAKS) {
+    it(`is withheld, regenerated and never persisted: ${leak.label}`, async () => {
+      const honest = leak.world === undefined ? HONEST_EN : HONEST_HE;
+      const ran = await run(
+        `gate-clitic-${CLITIC_LEAKS.indexOf(leak)}`,
+        [{ assistantText: leak.declared.text }, { assistantText: honest }],
+        leak.utterance,
+        leak.world === undefined ? {} : { world: leak.world },
+      );
+
+      const release = ran.turn.claimGate.releases[0];
+      expect(release?.outcome).toBe('CORRECTED_AFTER_REGENERATION');
+      expect(release?.attempts[0]?.unsupportedClaims.map((entry) => entry.reason)).toContain(leak.reason);
+
+      // 1. it did not reach the caller.
+      expect(ran.turn.assistantText).toBe(honest);
+      expect(ran.turn.assistantMessages).toEqual([honest]);
+      // 2. it was not written to the transcript as a spoken agent turn.
+      expect(await persistedAgentText(ran)).toEqual([honest]);
+      // 3. and the thing it claimed still does not exist.
+      const counts = await ran.harness.countDomainRows();
+      expect({ meetings: counts.meetings, futureActions: counts.futureActions }).toEqual({
+        meetings: 0,
+        futureActions: 0,
+      });
+
+      // 4. AND THE INDEPENDENT ORACLE SAYS THE SAME, without the gate.
+      const unbacked = unbackedDeclaredClaims(leak.declared.declares, {
+        effects: [],
+        issuedIdentifiers: new Set([ran.harness.world.contact.id.toLowerCase()]),
+        contactId: ran.harness.world.contact.id,
+        refusals: [],
+      });
+      expect(
+        unbacked.length,
+        `the oracle must independently say this sentence was not safe to say: ${leak.declared.declares.why}`,
+      ).toBeGreaterThanOrEqual(1);
+    });
+  }
+
+  it('and BOTH A/B controls - the spelled-out copula and the singular verb - are blocked in the same way', async () => {
+    // THE OTHER HALF OF THE A/B, and it is what makes this a tokenisation defect and
+    // a paradigm gap rather than two lexicon misses. Both of these were withheld and
+    // regenerated throughout while A1 and B5 were released and persisted. If a
+    // contracted row ever fails again and these still pass, the gate's verdict
+    // depends on an apostrophe and on a verb ending.
+    const CONTROLS: readonly { readonly text: string; readonly utterance: string; readonly hebrew: boolean }[] = [
+      { text: 'Your meeting is booked for Thursday at 2pm.', utterance: 'Thanks for sorting that.', hebrew: false },
+      { text: 'ביטלתי את הפגישה שלך.', utterance: 'תודה שביטלת.', hebrew: true },
+    ];
+
+    for (const control of CONTROLS) {
+      const honest = control.hebrew ? HONEST_HE : HONEST_EN;
+      const ran = await run(
+        `gate-clitic-control-${CONTROLS.indexOf(control)}`,
+        [{ assistantText: control.text }, { assistantText: honest }],
+        control.utterance,
+        control.hebrew ? { world: JERUSALEM } : {},
+      );
+      expect(ran.turn.claimGate.releases[0]?.outcome, control.text).toBe('CORRECTED_AFTER_REGENERATION');
+      expect(ran.turn.assistantText, control.text).toBe(honest);
+      expect(await persistedAgentText(ran), control.text).toEqual([honest]);
+    }
+  });
+
+  it('and a TRUE claim with the contraction still in it is released byte-identical', async () => {
+    // THE PRECISION DIRECTION over the LEAKING shape itself. Closing a fail-open
+    // defect makes the gate see MORE claims, so a claim it now sees has to still go
+    // out untouched - apostrophe and all - when the ledger supports it. The Founder
+    // rule is absolute here: either the model's own bytes go out or nothing does.
+    const TRUE_CLAIM = "Your meeting's booked for tomorrow at 3pm.";
+    const harness = await createSliceHarness({ label: 'gate-clitic-supported' });
+    harnesses.push(harness);
+    const conversation = await harness.startConversation();
+    harness.llm.setScript([
+      {
+        assistantText: 'One moment while I get that in the diary.',
+        toolCalls: [
+          {
+            toolName: 'schedule_meeting',
+            argumentsJson: scriptedArgs({
+              contact_id: harness.world.contact.id,
+              when: 'tomorrow at 3pm',
+              title: 'Intro call',
+            }),
+          },
+        ],
+      },
+      { assistantText: TRUE_CLAIM },
+    ]);
+
+    const turn = await harness.runtime.agent.handleTurn({
+      conversationId: conversation.id,
+      utterance: 'Please book me in for tomorrow at 3pm.',
+    });
+
+    expect(turn.toolOutcomes[0]?.ok).toBe(true);
+    expect(turn.assistantText).toBe(TRUE_CLAIM);
+    expect(turn.claimGate.releases.at(-1)?.outcome).toBe('SUPPORTED');
+    expect(harness.llm.callCount).toBe(2);
+  });
+
+  it('and the § 21 precision controls are released in ONE provider call', async () => {
+    // THE CONSTRAINT THE FINDING NAMED BEFORE IT NAMED A DIRECTION. These are the
+    // fourteen honest controls independent QA re-verified, verbatim, plus the
+    // apostrophe wordings the new reading could plausibly over-read. Every one is a
+    // sentence the prompt clauses ASK the model to produce.
+    //
+    // SCRIPTED WITH NO SECOND ENTRY, so a regeneration fails the run outright rather
+    // than quietly consuming an attempt.
+    const CONTROLS: readonly { readonly text: string; readonly utterance: string; readonly hebrew: boolean }[] = [
+      { text: 'Nothing is booked yet.', utterance: 'Is my meeting booked?', hebrew: false },
+      { text: 'Nothing at all has been booked yet.', utterance: 'Is my meeting booked?', hebrew: false },
+      { text: 'I have not booked anything.', utterance: 'Is my meeting booked?', hebrew: false },
+      { text: 'Let me get that booked for you.', utterance: 'Can you book it?', hebrew: false },
+      { text: 'I cannot give you a confirmation number for that.', utterance: 'What is my reference?', hebrew: false },
+      { text: 'Would you like me to get that booked for Thursday?', utterance: 'Can you book it?', hebrew: false },
+      { text: "Your meeting isn't booked yet.", utterance: 'Is my meeting booked?', hebrew: false },
+      { text: "I haven't put anything in the diary yet.", utterance: 'Is my meeting booked?', hebrew: false },
+      { text: 'Let me get you in the diary for Thursday.', utterance: 'Can you book it?', hebrew: false },
+      { text: 'I will take it out of the diary.', utterance: 'Please cancel it.', hebrew: false },
+      { text: 'הפגישה לא נקבעה עדיין.', utterance: 'הפגישה נקבעה?', hebrew: true },
+      { text: 'אין פגישה ביומן.', utterance: 'הפגישה נקבעה?', hebrew: true },
+      { text: 'לא קבעתי כלום עדיין.', utterance: 'הפגישה נקבעה?', hebrew: true },
+      { text: 'אני יכול לקבוע לך פגישה למחר.', utterance: 'אפשר לקבוע פגישה?', hebrew: true },
+      // ---- and the apostrophe wordings the new reading has to NOT over-read ----
+      { text: "Your meeting's not booked yet.", utterance: 'Is my meeting booked?', hebrew: false },
+      { text: "Nothing's booked yet.", utterance: 'Is my meeting booked?', hebrew: false },
+      { text: "Let's get that booked for you.", utterance: 'Can you book it?', hebrew: false },
+      { text: "Here's what I can do - let me check the diary for Thursday.", utterance: 'Where are we?', hebrew: false },
+      { text: "Your meeting's booked for Thursday?", utterance: 'Where are we?', hebrew: false },
+      { text: "That's not something I can do without a time from you.", utterance: 'Can you book it?', hebrew: false },
+    ];
+
+    for (const control of CONTROLS) {
+      const ran = await run(
+        `gate-clitic-precision-${CONTROLS.indexOf(control)}`,
+        [{ assistantText: control.text }],
+        control.utterance,
+        control.hebrew ? { world: JERUSALEM } : {},
+      );
+      expect(ran.turn.assistantText, control.text).toBe(control.text);
+      expect(ran.turn.claimGate.releases.at(-1)?.outcome, control.text).toBe('NO_MATERIAL_CLAIM');
+      expect(await persistedAgentText(ran), control.text).toEqual([control.text]);
+      expect(ran.harness.llm.callCount, control.text).toBe(1);
+    }
   });
 });
 
