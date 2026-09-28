@@ -1719,7 +1719,7 @@ same per-invariant zeros, the same claim-gate summary block down to `claims ONLY
 | 6 | `npm run check:anti-scripting` | **PASS**, 1 allowance in force | 1.1 s |
 | 7 | `npm run context:prove` | **PASS — 9/9** | 20.8 s |
 | 8 | the four Hebrew parity files | PASS — **235 tests** | 5.6 s |
-| 9 | claim-gate, verifier, corpus, oracle and e2e suites | PASS — 18 files, **986 tests** (the same suites plus `dimensions`, `architectureCounts` and the four `semanticClaim*`/`claimVerifierComposition` files, hence the larger count) | 133.5 s |
+| 9 | claim-gate, verifier, corpus, oracle and e2e suites | 17 files passed / 1 FAILED (18); **986 passed / 2 FAILED (988)** — the 1 file and 2 assertions are `architectureCounts`, § 11.11, deliberately included in this bundle so the bundle cannot look greener than the suite. Every claim-gate, verifier, corpus, oracle and e2e file: **PASS** | 133.5 s |
 
 That a second independent execution of a 1,171-scenario sweep and a 2,286-test suite
 returns the *same* numbers is not a formality in this repository — it is INV-09's
