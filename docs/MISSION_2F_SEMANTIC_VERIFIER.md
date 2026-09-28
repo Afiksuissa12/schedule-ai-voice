@@ -822,3 +822,79 @@ it adds latency** — realtime voice optimisation comes later.
 | The operator protocol | `EVAL_HARNESS.md` § 11 |
 | The Founder directive | `docs/DECISIONS.md` § 0A |
 | The contract | `AGENT_CONTRACT.md` § 10A |
+
+---
+
+## 16. Validation — every command run for real, sequentially, on this tree
+
+Run by `AUTO-EVAL-AND-DOCS` on the integrated tree: the merge of all three sibling branches plus this
+task's own work. In the foreground, one at a time, in this order. **No model was called.**
+
+| # | Command | Result | Wall clock |
+| ---: | --- | --- | ---: |
+| 1 | `npm run typecheck` | **PASS**, clean, no output | 6 s |
+| 2 | `npm run build` | **PASS** | 11 s |
+| 3 | `npm run test` | **PASS** — **80 files passed / 1 skipped (81)**, **2,368 tests passed / 2 skipped (2,370)**, **0 failed** | 374 s |
+| 4 | `npm run qa:sweep` | **PASS** — **1,171 scenarios**, **14,853 applicable checks (25,246 evaluated)**, **0 violations**, **0 network attempts** | 254 s |
+| 5 | `npm run qa:sweep -- --determinism` | **PASS** — same numbers; a second full run produced **byte-identical** classifications for every scenario id | 562 s |
+| 6 | `npm run check:anti-scripting` | **PASS** — no canned dialogue on the customer-facing path; **1 allowance in force**, unchanged; 6 known-bad and 7 known-good self-test samples | 1 s |
+| 7 | `npm run context:prove` | **PASS — 9/9 proofs** | 22 s |
+| 8 | Hebrew scheduling parity — `localeParity`, `hebrewGrammar`, `localeRefusalBreadth`, `localeDateAndTime` | **PASS** — 4 files, **235 tests** | 5 s |
+| 9 | Claim-gate, verifier, oracle, e2e, eval and provider-shape suites | **PASS** — 31 files, **1,067 tests** | 102 s |
+
+**Every invariant's zero, from the sweep report.** All seventeen invariants: **0 violations**.
+INV-18 4,928 / 4,928 applicable, 0 violations. **INV-19 2,322 / 2,322 applicable, 0 violations.**
+INV-09 byte-identical. INV-10 **0** network attempts.
+
+**The claim-gate summary lines, verbatim:**
+
+```
+  CLAIMS THAT LEAKED PAST THE GATE    : 0   (must be 0)
+  TEXTS RELEASED WITHOUT PASSING BOTH LAYERS : 0   (must be 0, INV-19)
+    scenarios with a verifier wired     : 1171
+    scenarios with NO verifier wired    : 0   (must be 0)
+    scenarios where NOBODY SAID         : 0   (must be 0)
+    attempts both layers read           : 2598
+    ...on which the 2nd layer ANSWERED  : 2546
+    ...on which it FAILED CLOSED        : 52
+    unions smaller than deterministic   : 0   (must be 0; the union may only ADD)
+    claims ONLY the 2nd layer saw       : 8
+    CLASSIFIED 2546  MALFORMED 16  EMPTY 12  TIMED_OUT 12  UNAVAILABLE 12
+```
+
+**Against the tree this task started from** (the merge of all three siblings, on which
+`AUTO-ADVERSARIAL-ASSURANCE` reported 2 failures):
+
+| | Before | After |
+| --- | ---: | ---: |
+| Test files | 79 (1 **FAILING**) | **81** |
+| Tests passed | 2,282 (2 **FAILING**) | **2,368** |
+| Tests failing | **2** | **0** |
+| Scenarios / applicable / evaluated | 1,171 / 14,853 / 25,246 | **unchanged** |
+| Violations / network attempts | 0 / 0 | **0 / 0** |
+
+**+86 tests, and the two failures are fixed.** 56 are `tests/eval/verifierEvalReadiness.test.ts`, 28
+are `tests/eval/layeredClaimMeasure.test.ts`, and the remaining 2 are the pre-existing
+`tests/invariants/architectureCounts.test.ts` assertions that were RED because `docs/ARCHITECTURE.md`
+still said 16 invariants and 1,127 scenarios. **That guard was working**, not broken:
+`AUTO-ADVERSARIAL-ASSURANCE` moved the counts and could not edit the document it does not own, and
+asked for the three-line change through the mailbox. It is applied.
+
+**Tests deliberately changed, and why.** Four assertions, all in `tests/eval/**`, all moved by a
+deliberate change in this task and none weakened:
+
+| File | What changed | Why |
+| --- | --- | --- |
+| `tests/eval/unsupportedClaimMeasure.test.ts` | Two `toEqual({ ...literal })` comparisons against `NO_CLAIM_GATE_REPORT` became comparisons **against the exported constant**, plus a new assertion that `layers.observed` is false | `NO_CLAIM_GATE_REPORT` gained an additive `layers` field. The tests were asserting `observed` semantics and were failing on the SHAPE of a record; comparing against the constant restores what they were for and stops the next additive field breaking them again |
+| `tests/eval/environmentReport.test.ts` | `eval-results@3` → `@4` | The shape grew again, on the same superset rule. The **superset property itself** is asserted by the next test and is untouched |
+| `tests/eval/rebenchmarkReadiness.test.ts` | `RUBRIC_VERSION` and `HARNESS_VERSION` 1.2.0 → 1.3.0; **corpus versions left at 1.2.0** | Mission 2F changed the rubric and the harness and changed **no benchmark scenario**. The comment beside it now says why two of the four moved and two deliberately did not |
+
+**No pre-existing test was removed, skipped or weakened.** The one skipped test in the suite is the
+same one that was skipped before.
+
+**Both committed evidence directories are BYTE-IDENTICAL**, verified by `git status` over
+`eval-output/` and `eval-output-fair-20260927/` after the whole sequence: no modifications.
+
+**And `npm run eval:verifier` was exercised only in its REFUSAL paths**, which reach no network: with
+no `EVAL_OUT_DIR` it refuses and prints the export line; with `--out eval-output-fair-20260927` it
+refuses and names the test that asserts why. **It was never run against a model.**
