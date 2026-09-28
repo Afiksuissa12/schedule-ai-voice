@@ -43,7 +43,17 @@
  *     words, because it is the whole reason the layer is safe to add at all.
  */
 
-/** Stable id, recorded in the audit detail so a chain pins the exact instruction used. */
+/**
+ * Stable id, recorded in the audit detail so a chain pins the exact instruction
+ * used.
+ *
+ * NOT DECORATION, and the path is short enough to check: this is read by
+ * `LlmSemanticClaimVerifier.instructionRef`, which `ClaimGate` writes to
+ * `CLAIM_GATE_SEMANTIC_REQUESTED.detail.instructionRef` on every request. BUMP IT
+ * whenever the instruction below changes in a way that could change a
+ * classification, or the chain will pin a version that no longer describes the
+ * words that ran.
+ */
 export const SEMANTIC_VERIFIER_INSTRUCTION_REF = 'semantic-claim-classifier@v1';
 
 /**

@@ -26,10 +26,34 @@ import {
   RuleDrivenSemanticClaimVerifier,
   classifiedWithNoClaims,
 } from '../../src/agent/claimGate/semantic/doubles.js';
+import { LlmSemanticClaimVerifier } from '../../src/agent/claimGate/semantic/llmSemanticClaimVerifier.js';
+import { SEMANTIC_VERIFIER_INSTRUCTION_REF } from '../../src/agent/claimGate/semantic/instruction.js';
 import { detectMaterialClaims } from '../../src/agent/claimGate/detector.js';
 import { SEMANTIC_CLAIM_FAILURE_KINDS, type SemanticClaimVerdict } from '../../src/ports/claimVerifier.js';
+import type { CompleteTurnResult, LlmProvider } from '../../src/ports/llm.js';
 import type { IsoUtcString } from '../../src/ports/clock.js';
 import { DEFAULT_DAY_PARTS } from '../../src/scheduling/policy.js';
+
+/**
+ * The smallest provider a REAL `LlmSemanticClaimVerifier` can be built over.
+ *
+ * Used by one test, which is about the audit detail the gate writes and not
+ * about classification, so the answer is the empty claim list. No network: this
+ * never touches `LocalLlmProvider`.
+ */
+class AlwaysCleanStructuredProvider implements LlmProvider {
+  name(): string {
+    return 'always-clean-structured-provider';
+  }
+
+  supportsStructuredOutput(): boolean {
+    return true;
+  }
+
+  async completeTurn(): Promise<CompleteTurnResult> {
+    return { assistantText: '{"claims":[]}', toolCalls: [] };
+  }
+}
 
 const NOW_UTC = '2026-03-04T15:00:00.000Z' as IsoUtcString;
 const ZONE = 'America/New_York';
@@ -448,6 +472,42 @@ describe('the audit trail explains a blocked turn and says which layer caught it
     expect(kinds.indexOf('SEMANTIC_REQUESTED')).toBeLessThan(kinds.indexOf('SEMANTIC_CLASSIFIED'));
     expect(kinds.indexOf('SEMANTIC_CLASSIFIED')).toBeLessThan(kinds.indexOf('LAYERED'));
     expect(kinds.indexOf('LAYERED')).toBeLessThan(kinds.indexOf('VERIFIED'));
+  });
+
+  it('records the request fields as an OBSERVATION of the object that was sent', async () => {
+    // `requestFields` is read off the very object handed to `classify`, not
+    // written down beside it. The assertion pairs the audit line with what the
+    // verifier actually received, so a field added to the request without being
+    // audited fails here rather than being described by a literal that stayed
+    // accidentally true.
+    const verifier = new ScriptedSemanticClaimVerifier();
+    const ran = await review({ text: NEUTRAL, verifier });
+    const requested = ran.events.find((event) => event.kind === 'SEMANTIC_REQUESTED');
+    const sent = verifier.requests[0];
+    expect(sent).toBeDefined();
+    expect(requested?.detail['requestFields']).toEqual(Object.keys(sent as object).sort());
+    // And it is still the short list the authority boundary depends on: no
+    // ledger, no state, no attempt history.
+    expect(requested?.detail['requestFields']).toEqual(['correlationId', 'text']);
+  });
+
+  it('pins the INSTRUCTION VERSION on the chain, and says null when there is none to pin', async () => {
+    // `SEMANTIC_VERIFIER_INSTRUCTION_REF` is documented as "recorded in the audit
+    // detail so a chain pins the exact instruction used", and for a while nothing
+    // read it - the id existed and no event carried it, so a chain pinned the
+    // class and not the words. A double has no model-facing instruction at all,
+    // so it records `null`: "nothing to pin" and "forgot to pin it" are different
+    // facts and must not share a representation.
+    const double = await review({ text: NEUTRAL, verifier: new ScriptedSemanticClaimVerifier() });
+    expect(double.events.find((e) => e.kind === 'SEMANTIC_REQUESTED')?.detail['instructionRef']).toBeNull();
+
+    const real = await review({
+      text: NEUTRAL,
+      verifier: new LlmSemanticClaimVerifier({ llm: new AlwaysCleanStructuredProvider() }),
+    });
+    expect(real.events.find((e) => e.kind === 'SEMANTIC_REQUESTED')?.detail['instructionRef']).toBe(
+      SEMANTIC_VERIFIER_INSTRUCTION_REF,
+    );
   });
 
   it('records SEMANTIC_FAILED instead of SEMANTIC_CLASSIFIED on a failure, with the consequence named', async () => {

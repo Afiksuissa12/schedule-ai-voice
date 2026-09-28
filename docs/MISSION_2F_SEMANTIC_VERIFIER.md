@@ -292,8 +292,8 @@ when the second layer is unusable.*
 ### 4.2 The audit chain for one blocked attempt
 
 ```
-CLAIM_GATE_SEMANTIC_REQUESTED    detail: attempt, verifier, textChars,
-                                   requestFields ['text','correlationId']
+CLAIM_GATE_SEMANTIC_REQUESTED    detail: attempt, verifier, instructionRef, textChars,
+                                   requestFields ['correlationId','text']
                                    <- the proof ON THE CHAIN that nothing else was sent
 CLAIM_GATE_SEMANTIC_CLASSIFIED   detail: attempt, verifier, modelId,
                                    claims (THE STRUCTURED OUTPUT VERBATIM, post-validation)
@@ -306,6 +306,14 @@ CLAIM_GATE_CLAIM_LAYERED         detail: attempt, layers (the counts), claims[] 
 CLAIM_GATE_CLAIM_REJECTED
 CLAIM_GATE_REGENERATION_REQUESTED
 ```
+
+**Two details on the first event are worth reading as what they are.** `requestFields` is
+`Object.keys()` **of the very object handed to `classify`**, sorted — an observation of what left,
+not a literal list written beside it that would stay green the one day a field is added. And
+`instructionRef` is the version of the model-facing instruction that classified this text
+(`semantic-claim-classifier@v1`), so a chain pins the WORDS and not only the class; it is `null` for
+a verifier that has no instruction at all — every offline double — because *nothing to pin* and
+*forgot to pin it* are different facts.
 
 All on the TURN's own `correlationId`, interleaved in sequence with the existing four `CLAIM_GATE_*`
 events. `AuditEvent.type` is a `String` column, so **no schema migration was needed and
@@ -416,6 +424,26 @@ verifier's own JSON Schema, and its pinned seed, both constants **imported** fro
 `src/agent/claimGate/semantic/` rather than copied. It is a classification and not an identity check
 on a caller: a future caller sending that exact shape would be counted as a verifier call. Nothing in
 the repository does, and a misattribution would move a latency number rather than a correctness one.
+
+**WHY THE THIRD METHOD CAN SEE THE VERIFIER AT ALL — the wiring, stated because it is not
+obvious and because it was once wrong.** The benchmark builds a `LocalLlmProvider`, wraps it in
+`MetricsCapturingProvider`, and hands **the wrapper** to `buildAgentRuntime` as `options.llm`
+(`src/eval/runner/runModel.ts`). The composition root's rung 3 then gives that runtime the real
+`LlmSemanticClaimVerifier` **over the same metered instance** — one model, two roles, which is the
+configuration § 5's VRAM evidence supports. Two consequences follow, and both are load-bearing:
+
+1. the verifier's classification calls pass through the meter, so they are recorded, classified
+   `CLAIM_VERIFIER`, and `verifierMs` is an observation rather than a blank;
+2. rung 3 fires **only** because `MetricsCapturingProvider` forwards `supportsStructuredOutput()`
+   to its inner provider. A decorator that swallowed that capability would answer `false`,
+   `isStructuredOutputLlmProvider` would be false, and the composition root would silently hand the
+   whole benchmark the rule-less offline double — Mission 2F switched off on the one run that exists
+   to measure it, with `verifierWired` still `true` because a verifier object **was** constructed.
+   That is exactly what happened before the fix, and it is why the forwarding has its own tests at
+   two altitudes (`tests/eval/metricsCapturingProviderTransparency.test.ts`): a unit assertion on the
+   wrapper, and an end-to-end assertion through `buildAgentRuntime` on the shape `runModel.ts`
+   actually passes. The pre-existing composition test used a **bare** provider, which is the shape
+   `localBrainDemo.ts` passes and not the benchmark's, which is why it stayed green throughout.
 
 **And what the third method CANNOT separate:** the verifier's own validation and grounding cost, and
 the union, both of which happen inside `ClaimGate` between provider calls. They land inside
@@ -663,6 +691,20 @@ expected artefacts, what would falsify the result, and the new § 9.6 invalidato
 style of § 9.7 and § 9.8. It covers **both** the verifier eval and the full benchmark, for
 `qwen2.5:7b-instruct` and `aya-expanse:8b`, into **fresh** output directories.
 
+**WHAT THE OPERATOR IS ACTUALLY RUNNING IN THE FULL BENCHMARK, said here so a reader does not have
+to derive it from the composition root.** `npm run eval` gives each scenario a `LocalLlmProvider`
+wrapped in `MetricsCapturingProvider`, and hands **the wrapper** to `buildAgentRuntime`. Because that
+wrapper forwards `supportsStructuredOutput()`, the runtime's semantic layer is the **real**
+`LlmSemanticClaimVerifier` running over the **same metered provider** — one resident model serving
+both roles, which is why a second model's VRAM never enters the picture and why `verifierMs` is
+measurable at all (§ 8.1). **The check a reader should make on any produced report:** the verifier
+name in the wiring column must read `llm-semantic-claim-verifier`. If it reads
+`rule-driven-semantic-claim-verifier`, the run measured the offline double and **every**
+semantic-layer figure in it — the semantic-only claim count, `layeredLatency.verifier`, the outcome
+histogram — describes a no-op, regardless of `verifierWired` being `true`. That failure mode is
+guarded by `tests/eval/metricsCapturingProviderTransparency.test.ts`, which exists because it
+happened once and nothing but that one table cell reported it.
+
 **No model was run, pulled or created by the team.**
 
 ---
@@ -753,6 +795,13 @@ and the types keep them so.
     is what eight rounds of fixes were for and is a good outcome — or *the verifier was a rule-less
     double*. The wiring column and the semantic-outcome counts beside it are what tell the two apart,
     and `COMPARISON.md` prints that warning rather than leaving a reader to infer it.
+    **Read the wiring column's NAME, not its boolean.** `verifierWired` is true whenever ANY verifier
+    was constructed, and `buildAgentRuntime` always constructs one, so the boolean cannot distinguish
+    a real verifier from the double and the report's unwired warning cannot fire on this case. The
+    distinguishing cell is the verifier NAME. This is not hypothetical: the benchmark did once wire
+    the double (§ 8.1, § 11), every outcome came back `CLASSIFIED`, `verifierWired` stayed true, and
+    the name was the only surviving signal. It is fixed and tested; the reading discipline stands
+    anyway, because the signal remains a single cell.
 14. **THE PROVIDER-CALL CLASSIFICATION IS STRUCTURAL, NOT AN IDENTITY CHECK.** § 8.1 states the bound.
     A latency table built on it can be wrong about attribution in a way no test here would catch,
     though nothing in the repository produces the ambiguous shape.

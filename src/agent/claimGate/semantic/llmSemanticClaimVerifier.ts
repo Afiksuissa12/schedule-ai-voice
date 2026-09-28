@@ -76,6 +76,7 @@ import type {
 } from '../../../ports/claimVerifier.js';
 import {
   SEMANTIC_VERIFIER_INSTRUCTION,
+  SEMANTIC_VERIFIER_INSTRUCTION_REF,
   wrapTextForClassification,
 } from './instruction.js';
 import { SEMANTIC_VERIFIER_OUTPUT_JSON_SCHEMA, parseSemanticVerifierOutput } from './schema.js';
@@ -139,6 +140,17 @@ export interface LlmSemanticClaimVerifierOptions {
 
 export class LlmSemanticClaimVerifier implements SemanticClaimVerifier {
   readonly verifierName = 'llm-semantic-claim-verifier';
+
+  /**
+   * The instruction version every classification below was produced under.
+   *
+   * `verifierName` pins the CLASS; this pins the WORDS, which is what actually
+   * determines what the model reports. Read by `ClaimGate.classifySemantically`
+   * onto `CLAIM_GATE_SEMANTIC_REQUESTED`, so a chain says which version answered
+   * rather than leaving a reader to assume the version that happens to be on disk
+   * today is the one that ran.
+   */
+  readonly instructionRef = SEMANTIC_VERIFIER_INSTRUCTION_REF;
 
   private readonly llm: LlmProvider;
   private readonly timeoutMs: number;

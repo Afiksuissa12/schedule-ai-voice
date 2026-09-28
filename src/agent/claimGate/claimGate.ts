@@ -102,7 +102,11 @@ import type { ActionLedger } from './ledger.js';
 import { semanticLayerUnsupportedClaim, verifyClaims, type UnsupportedClaim } from './verifier.js';
 import { detectMaterialClaims, type DetectClaimsOptions } from './detector.js';
 import { unionClaims, type ClaimSource, type ClaimUnion, type SemanticLayerOutcome } from './semantic/union.js';
-import type { SemanticClaimVerdict, SemanticClaimVerifier } from '../../ports/claimVerifier.js';
+import type {
+  SemanticClaimVerdict,
+  SemanticClaimVerificationRequest,
+  SemanticClaimVerifier,
+} from '../../ports/claimVerifier.js';
 
 /**
  * How many times the model may be asked to write the turn again.
@@ -609,6 +613,11 @@ export class ClaimGate {
 
     const correlationId = input.correlationId ?? UNATTRIBUTED_CORRELATION_ID;
 
+    // BUILT ONCE, AUDITED AND THEN SENT - the same object, not two that agree
+    // today. `requestFields` below is read off THIS value, so the audit line is an
+    // observation of what left rather than a second statement of intent beside it.
+    const request: SemanticClaimVerificationRequest = { text, correlationId };
+
     await input.record?.({
       kind: 'SEMANTIC_REQUESTED',
       attempt,
@@ -616,17 +625,25 @@ export class ClaimGate {
       detail: {
         attempt,
         verifier: verifier.verifierName,
+        // WHICH INSTRUCTION VERSION CLASSIFIED THIS TEXT. `null` for a verifier
+        // that has no model-facing instruction at all - every offline double - so
+        // a chain can tell "pinned to v1" from "nothing to pin", which are
+        // different facts and must not share a representation.
+        instructionRef: verifier.instructionRef ?? null,
         textChars: text.length,
         // THE PROOF THAT THE REQUEST CARRIED NOTHING ELSE, on the chain. The
         // request type makes a ledger unrepresentable; this records what was
         // actually sent so an auditor does not have to take the type's word.
-        requestFields: ['text', 'correlationId'],
+        // DERIVED, not written down: a literal list here would stay green the day
+        // somebody adds a field, which is the one day it needs to change.
+        // Sorted so the chain does not depend on property insertion order.
+        requestFields: Object.keys(request).sort(),
       },
     });
 
     let verdict: SemanticClaimVerdict;
     try {
-      verdict = await verifier.classify({ text, correlationId });
+      verdict = await verifier.classify(request);
     } catch (error) {
       verdict = {
         kind: 'UNAVAILABLE',

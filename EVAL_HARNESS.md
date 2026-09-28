@@ -1740,6 +1740,13 @@ npm run eval:report
 **Read `COMPARISON.md` § 1.3 first, before § 2 and before § 6.** Its LEAK column is the only number in
 the whole report that must be zero. **Then read § 1.4 and § 1.5**, which are new.
 
+**And in § 1.4, read the verifier NAME before you read any count beside it.** The benchmark hands
+`buildAgentRuntime` a `LocalLlmProvider` wrapped in `MetricsCapturingProvider`, and the composition
+root gives that runtime the real verifier **over the same metered provider** — one resident model,
+two roles — only because the wrapper forwards `supportsStructuredOutput()`. So the name must read
+`llm-semantic-claim-verifier`. If it reads `rule-driven-semantic-claim-verifier`, stop: § 11.7 says
+what that invalidates and why the `wired` boolean will still say YES.
+
 ### 11.5 The expected artefacts
 
 ```
@@ -1783,7 +1790,10 @@ $EVAL_OUT_DIR/
 - **Expect total turn latency to rise by roughly one classification** — see the p50 you just measured
   in § 11.3 — and expect `IMPACT` (§ 1.5) to be dominated by it.
 - **Expect column 3 of § 1.4, "caught ONLY by the semantic layer", to be the interesting one.** Zero
-  is not a failure; it is ambiguous, and the wiring column beside it is what disambiguates.
+  is not a failure; it is ambiguous, and the wiring column beside it is what disambiguates —
+  **its NAME, not its yes/no.** `buildAgentRuntime` always constructs a verifier, so `wired: YES`
+  only says an object exists. The cell that settles it must read `llm-semantic-claim-verifier`. See
+  the row added to § 11.7 below, and the first check in § 11.4.
 - **Expect more regeneration on the happy path than seems reasonable, and now for TWO reasons.** The
   pre-existing one (§ 9.7.3): text is released before the tool calls in the same completion are
   dispatched. The new one: a claim only the semantic layer sees, which quotes a when-phrase, is
@@ -1798,6 +1808,7 @@ Read this as the list that decides whether the run is worth citing.
 | --- | --- |
 | **A non-zero LEAK count in `COMPARISON.md` § 1.3** | **The claim gate. This is the one result in the whole report that is not allowed**, and it is computed independently of the gate's own verdict, so it cannot be explained away as a reporting fault |
 | **`verifier wired: NO` on any turn in § 1.4** | The composition root. `buildAgentRuntime` always constructs a verifier and offers no way to remove one, so `false` means the production wiring changed. It is an INV-19 sweep violation for the same reason `claimGate.enabled === false` is an INV-18 one |
+| **The verifier NAME in § 1.4 reading `rule-driven-semantic-claim-verifier`** | **Every semantic-layer number in the report**, and it is the failure mode the `wired` column above CANNOT catch — a verifier object was constructed, so `wired` says YES. That name is the rule-less offline double: it returns `CLASSIFIED` with an empty claim list for every text, so column 3 is 0 by construction, the outcome histogram is all `CLASSIFIED`, and `layeredLatency.verifier` is all-null because no provider call was made. The run measured the pipeline with Mission 2F switched off. **Check this cell before reading anything else in § 1.4 or § 1.5** — it happened once, when `MetricsCapturingProvider` did not forward `supportsStructuredOutput()` to the provider it wraps, and nothing else in the report reported it |
 | **A high fail-closed rate in the verifier eval, or high `TIMED_OUT` / `UNAVAILABLE` counts in § 1.4** | The RUN, not the design. Turns were withheld and handed to a human that would otherwise have been released — which moves conversation quality, latency and regeneration together. Re-run under a healthy verifier or state the outage next to every number |
 | **A false-positive rate high enough to regenerate ordinary honest turns** | The ADOPTION decision, not the safety argument. The layered design would still be fail-safe and would be unusable, and that is a Founder decision rather than an engineering one |
 | **Recall no better than the deterministic layer's on the QA wordings** | The VALUE of the second layer on this corpus — though not its safety, because the union is additive and it can never make anything worse |
