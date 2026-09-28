@@ -783,7 +783,7 @@ Headings and lists are for your benefit only - a person on a phone call has neve
 
 Name: Jordan Prospect
 Contact id: cmuebk60l0008r2qzt8eept14 - use exactly this id in every tool call, and never any other.
-Timezone: America/New_York. Their local clock right now reads Wednesday 4 March 2026 at 10:00.
+Timezone: America/New_York. Their local clock right now reads Wednesday 4 March at 10:00.
 That clock is context for understanding them, not arithmetic for you to do.
 When a time comes up, pass the words the contact used - their phrasing, unchanged - to the tool.
 Working out a date or a timestamp yourself is not your job and it will be rejected.
@@ -793,7 +793,7 @@ They came to us through inbound_web_form; the lead is QUALIFYING.
 
 ## The last time we spoke
 
-That conversation started Wednesday 11 February 2026 at 10:10 their time and ended COMPLETED.
+That conversation started Wednesday 11 February at 10:10 their time and ended COMPLETED.
 The call itself was recorded as CONNECTED, noted as: Ran out of time mid-question about QuickBooks. Asked to be picked up again in March.
 What it came to: A first conversation three weeks ago. The contact described running fourteen technicians off a whiteboard and a shared calendar, and said same-day reschedules were costing them a job or two a week. They asked how Northwind would handle their QuickBooks setup and never got a full answer before they had to go. They were clear that nothing would change during the summer peak.
 They are not a stranger. Opening as though this is a first contact is the single most obvious way to
@@ -817,7 +817,7 @@ if something here turns out to be wrong or out of date, the person in front of y
 These are saved records, not intentions. They will happen whether or not this call goes well, so
 contradicting one would make us look unreliable in a way the contact can verify:
 
-- Callback, Friday 6 March 2026 at 11:00 their time (PENDING).
+- Callback, Friday 6 March at 11:00 their time (PENDING).
 
 ## Loose ends
 

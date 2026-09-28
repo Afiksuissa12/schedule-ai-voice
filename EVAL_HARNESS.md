@@ -36,18 +36,32 @@ added **61 tests in three files** *for this harness* — covering the claim meas
 and evidence compatibility; every one of them is a pure function of committed data plus a temporary
 directory, so they run inside `npm test` without reaching a model. The rest of Mission 2D — the claim
 gate itself, its assurance suite and the `aya-expanse` tool-shape work — added considerably more, and
-grew the sweep. **In the integrated Mission 2D tree:**
+grew the sweep. Mission 2D-R then grew it again — the suppression-reach redesign and the independent
+INV-18 oracle. **In the integrated Mission 2D-R tree, which is the current figure:**
 
 ```
-npm test          1223 passed | 2 skipped  (62 files passed, 1 skipped)
-npm run qa:sweep  887 scenarios, 6,938 applicable checks (15,294 evaluated), 0 violations, 0 network attempts
+npm test          1594 passed | 2 skipped  (67 files passed, 1 skipped)
+npm run qa:sweep  1027 scenarios, 10,667 applicable checks (19,976 evaluated), 0 violations, 0 network attempts
 ```
 
-Two earlier figures are on record in this repository and are **not** wrong, they are just narrower:
-`1080 / 823 / 4,624` is this harness's own branch measured alone (`docs/MISSION_2D_EVAL_AND_ROUTING.md`
-§ 6), and the sweep half of it is byte-for-byte the pre-Mission-2D figure, because **nothing this
-harness added to the sweep changed it** — the growth to 887 / 6,938 is the claim gate's own INV-18 and
-its family-M scenarios (`docs/MISSION_2D_CLAIM_GATE_ASSURANCE.md` § 5).
+**Every narrower figure on record in this repository is superseded by that pair, and none of them is
+wrong.** Each was measured by one branch on its own tree, which is what makes "nothing else regressed"
+checkable rather than hopeful, and `docs/DECISIONS.md` § 14.4 reconciles them arithmetically:
+
+| Record | `npm test` | `npm run qa:sweep` |
+| --- | --- | --- |
+| This harness's own branch, alone (`docs/MISSION_2D_EVAL_AND_ROUTING.md` § 6) | 1,080 / 2 | 823 · 4,624 — byte-for-byte pre-Mission-2D, because nothing this harness adds runs in the sweep |
+| The earlier integrated Mission 2D tree (the figure this block used to carry) | 1,223 / 2, 62 files | 887 · 6,938 (15,294) |
+| Mission 2D at its close (`docs/MISSION_2D_CLAIM_GATE.md` § 17.2) | 1,403 / 2, 62 files | 983 · 8,086 |
+| `…-AUTO-AYA-PROMPT-AND-TEMPLATE` alone (`docs/MISSION_2D_AYA_ROOT_CAUSE.md` § 19) | 1,424 / 2, 63 files | 983 · 8,086 — unchanged; it adds nothing the sweep runs |
+| `…-AUTO-INDEPENDENT-ORACLE` alone, on top of the suppression redesign | 1,567 / 2, 65 files | **1,027 · 10,667 (19,976)** |
+| **This integrated tree** | **1,594 / 2, 67 files** | **1,027 · 10,667 (19,976)** |
+
+The growth from 887 to 1,027 scenarios is the claim gate's, not this harness's: INV-18's family-M
+scenarios (`docs/MISSION_2D_CLAIM_GATE_ASSURANCE.md` § 5) and then Mission 2D-R's independent oracle
+(`docs/MISSION_2D_CLAIM_GATE.md` § 17.5). The per-branch tables in the mission reports are left exactly
+as their authors measured them — rewriting them would destroy the only evidence that each branch was
+individually green.
 
 The invariant that matters here is the one that has not moved through any of it: **0 network attempts**,
 with the benchmark in the same source tree.

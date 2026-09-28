@@ -646,11 +646,41 @@ comparison informative. Two things are worth the operator knowing in advance:
 
 - The two recorded gate failures (`reschedule-existing-meeting` t2, `vague-next-week` t1) are
   **`day-month-name-with-year`** findings. Those two specifically can no longer be produced by
-  copying, because there is no longer a year anywhere in the window to copy.
+  copying, because that shape is no longer anywhere in the window to copy.
 - The **six newly-visible ISO failures of § 7** are a different reflex — arithmetic, not
   imitation (`disclosed now + 30 minutes`, with an offset derived from the zone name). Nothing in
   this change addresses arithmetic, and § 7's 8/65 figure should **not** be expected to fall to
   zero. Expecting it to would be reading this section as more than it says.
+
+**CORRECTION, AND IT NARROWS THE CLAIM ABOVE.** An earlier draft of this section said there is
+"no longer a year anywhere in the window to copy". **That is true of the prose and false of the
+payload**, and the integration pass measured it rather than taking it: the same
+`schedule_meeting` result whose `summary` now reads *"is booked for Thursday 5 March at 15:00
+(America/New_York)"* still carries
+
+```json
+"start_local": "2026-03-05T15:00", "end_local": "2026-03-05T15:30"
+```
+
+— which is **`iso-datetime`, the FIRST of the five patterns**, and the exact shape the § 7
+failures take. So the window still holds an `OK`-stamped exemplar with a four-digit year in it,
+at the site § 9.1a calls the strongest of the three. Three consequences worth being straight
+about:
+
+- The `day-month-name-with-year` claim above stands unchanged. That shape really is gone.
+- The § 7 ISO figure has **one more reason** not to fall to zero than arithmetic alone: there is
+  still an ISO datetime in the window, so ISO output is not purely derived.
+- **It is not removed, and the reason is not cosmetic.** `start_local` is load-bearing for the
+  claim gate itself — `src/agent/claimGate/ledger.ts`'s `readStartUtcFromOutcome` reconstructs
+  the instant a time-bearing tool committed to from `start_local` plus `timezone`, and
+  `src/eval/runner/runScenario.ts` reads the same pair. A year-less local time is not a
+  resolvable instant, so dropping the year there would trade an imitation risk for a gate that
+  could no longer tell which day it had booked. That is the wrong trade, and making it would be
+  an engine decision rather than the format fix § 9 is.
+
+`tests/agent/spokenDateFormat.test.ts` pins both halves: the prose of all three sites against
+`FABRICATION_PATTERNS` itself, and — in a test named `BOUND:` — the surviving
+`start_local` year, so the gap stays a recorded bound rather than an implied guarantee.
 
 **Not proposed, and worth saying so explicitly:** stop disclosing the local time (the model
 needs it, and all three sites are right to give it); relax the gate; relax the resolver;
