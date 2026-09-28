@@ -3,8 +3,16 @@
  *
  * THE LAYOUT IS A SIBLING OF EVERYTHING ELSE UNDER THE OUTPUT ROOT
  * ---------------------------------------------------------------------------
- *   <outDir>/verifier/<model-slug>.json      one VerifierEvalReport + conditions
- *   <outDir>/verifier/VERIFIER.md            the human-readable summary
+ *   <outDir>/verifier/<model-slug>.<split>.json   one VerifierEvalReport + conditions
+ *   <outDir>/verifier/VERIFIER.<split>.md         the human-readable summary
+ *
+ * THE `<split>` IS MISSION 2G AND IS NOT COSMETIC. `dev` and `heldout` answer
+ * different questions - one is measured on rows the model-facing instruction was
+ * tuned against and the other is not - and under corpus 1.0.0 they wrote the SAME
+ * filename, so the second silently replaced the first and nothing on disk said
+ * which survived. It is in the artefact too (`split`, beside `corpusVersion`); it
+ * is in the NAME as well because a file gets copied out of a directory and whoever
+ * pastes one into a report should not have to open it to know what it measured.
  *
  * Under the SAME root as `runs/`, `transcripts/` and `environment/`, derived from
  * `EVAL_OUT_DIR`, and nothing is hardcoded to `eval-output/`. That is the rule
@@ -106,7 +114,7 @@ export function resolveVerifierOutDir(
  * because a results file is a record of a measurement and not a document that
  * tracks the current code.
  */
-export const VERIFIER_RESULTS_SCHEMA = 'schedule-ai-voice/verifier-eval@1';
+export const VERIFIER_RESULTS_SCHEMA = 'schedule-ai-voice/verifier-eval@2';
 
 /** Named once so the docs, the tests and the CLI cannot disagree with it. */
 export const VERIFIER_DIR_NAME = 'verifier';
@@ -115,13 +123,25 @@ export function verifierDir(outDir: string): string {
   return join(outDir, VERIFIER_DIR_NAME);
 }
 
-/** Same slugging as `runs/`, `transcripts/` and `environment/`, so the four line up by eye. */
-export function verifierResultsPath(outDir: string, modelId: string): string {
-  return join(verifierDir(outDir), `${modelSlug(modelId)}.json`);
+/**
+ * Same slugging as `runs/`, `transcripts/` and `environment/`, so the four line up
+ * by eye - PLUS THE RESOLVED SPLIT, which is Mission 2G and is not cosmetic.
+ *
+ * `<model-slug>.<split>.json`. A dev run and a held-out run of the same model
+ * answer DIFFERENT QUESTIONS - one is measured on rows the instruction was tuned
+ * against and the other is not - and in corpus 1.0.0 they would have written the
+ * same filename, so the second would have silently replaced the first and nothing
+ * on disk would have said which survived. The split is in the artefact too; it is
+ * in the NAME as well because a file gets copied out of a directory and an operator
+ * pasting one into a report should not have to open it to know what it measured.
+ */
+export function verifierResultsPath(outDir: string, modelId: string, split: string): string {
+  return join(verifierDir(outDir), `${modelSlug(modelId)}.${split}.json`);
 }
 
-export function verifierSummaryPath(outDir: string): string {
-  return join(verifierDir(outDir), 'VERIFIER.md');
+/** `VERIFIER.<split>.md`, for the same reason. */
+export function verifierSummaryPath(outDir: string, split: string): string {
+  return join(verifierDir(outDir), `VERIFIER.${split}.md`);
 }
 
 /** The conditions, as they are recorded into the output file. */
@@ -192,6 +212,16 @@ export interface VerifierArtefactInput {
     readonly timeoutMs: number | null;
     readonly localeHintSent: boolean;
     readonly languagesRequested: readonly string[];
+    /**
+     * Mission 2G. The RESOLVED `--split`, and the corpus the run actually read.
+     *
+     * Optional in the TYPE only so that a caller written against `@1` still
+     * compiles; the CLI always supplies all three and `buildJson` falls back to
+     * the report's own values rather than to a silence.
+     */
+    readonly splitRequested?: string;
+    readonly corpusFile?: string | null;
+    readonly corpusSha256?: string | null;
   };
   /** The Ollama version string, when the CLI could read one. */
   readonly runtimeVersion: string | null;
@@ -209,8 +239,8 @@ export function buildVerifierArtefacts(input: VerifierArtefactInput): VerifierAr
 /** Write both. Creates the directory; never touches anything above it. */
 export function writeVerifierArtefacts(outDir: string, input: VerifierArtefactInput): { readonly jsonPath: string; readonly markdownPath: string } {
   const artefacts = buildVerifierArtefacts(input);
-  const jsonPath = verifierResultsPath(outDir, input.report.modelId);
-  const markdownPath = verifierSummaryPath(outDir);
+  const jsonPath = verifierResultsPath(outDir, input.report.modelId, input.report.split);
+  const markdownPath = verifierSummaryPath(outDir, input.report.split);
   writeJson(jsonPath, artefacts.json);
   writeText(markdownPath, artefacts.markdown);
   return { jsonPath, markdownPath };
@@ -225,6 +255,16 @@ function buildJson(input: VerifierArtefactInput): unknown {
     evalVersion: input.report.evalVersion,
     corpusVersion: input.report.corpusVersion,
     corpusSchemaVersion: input.report.corpusSchemaVersion,
+    // ---- MISSION 2G: WHAT WAS MEASURED, not only how -----------------------
+    // AT THE TOP OF THE FILE and not buried in `invocation`, because these three
+    // decide whether two artefacts are comparable at all, exactly as
+    // `corpusVersion` does. An operator's sealed run is attributable by the pair
+    // (corpusSource, corpusSha256): the path says which file and the digest says
+    // which BYTES, and a sealed set that quietly gained a row between two runs is
+    // then a visible difference rather than an unexplained number.
+    split: input.report.split,
+    corpusSource: input.report.corpusSource,
+    corpusSha256: input.report.corpusSha256,
     modelId: input.report.modelId,
     verifierName: input.report.verifierName,
     runtimeVersion: input.runtimeVersion,
@@ -277,6 +317,16 @@ function buildMarkdown(input: VerifierArtefactInput): string {
   );
   lines.push('');
   lines.push(
+    `> **SPLIT: \`${report.split}\`.** Corpus source \`${report.corpusSource}\`` +
+      `${report.corpusSha256 === null ? '' : `, sha256 \`${report.corpusSha256}\``}. ` +
+      '**A `dev` number and a `heldout` number are different claims and must never be quoted as one another.** ' +
+      'The dev half is the half the verifier-tuning task was allowed to read, run and iterate against, so a dev ' +
+      'recall figure is partly a measurement of that iteration. The held-out half was never read by it. ' +
+      '`all` is both halves together and is therefore neither. See ' +
+      '`docs/MISSION_2G_VERIFIER_ROUND.md` §§ 3 and 6.',
+  );
+  lines.push('');
+  lines.push(
     '> **What this measures and what it does not.** It measures whether a MODEL, asked the one question the ' +
       'semantic layer is allowed to ask, recognises a claim. It measures nothing about whether the layered ' +
       'pipeline holds — that is `npm run qa:sweep`, INV-19, and it runs a deterministic double. The two are ' +
@@ -317,6 +367,107 @@ function buildMarkdown(input: VerifierArtefactInput): string {
       `MALFORMED ${kinds['MALFORMED'] ?? 0}, TIMED_OUT ${kinds['TIMED_OUT'] ?? 0}, ` +
       `UNAVAILABLE ${kinds['UNAVAILABLE'] ?? 0}, EMPTY ${kinds['EMPTY'] ?? 0}. ` +
       'The four are named separately because they have completely different fixes.',
+  );
+  lines.push('');
+
+  // ---- 1A. THE LAYERED TABLE, Mission 2G ----------------------------------
+  lines.push('## 1A. Three layers, per language — deterministic, semantic, layered union');
+  lines.push('');
+  lines.push(
+    'The deterministic layer is `detectMaterialClaims` from `src/agent/claimGate/detector.ts`, run over the same ' +
+      'text by this harness. The layered column is the REAL `unionClaims` from ' +
+      '`src/agent/claimGate/semantic/union.ts` — **imported, not reimplemented**, which is what makes this table ' +
+      'evidence about the product rather than about a second copy of the same idea.',
+  );
+  lines.push('');
+  lines.push('| Slice | Claims | Det. recall | Sem. recall | **Layered recall** | Controls | Det. FP | Sem. FP | **Layered FP** |');
+  lines.push('| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |');
+  for (const [label, slice] of [
+    ['**ALL**', report.overall],
+    ['English', report.byLanguage.en],
+    ['Hebrew', report.byLanguage.he],
+    ['Mixed', report.byLanguage.mixed],
+  ] as const) {
+    lines.push(
+      `| ${label} | ${slice.claims} | ${percent(slice.deterministicRecall)} | ${percent(slice.recall)} | ` +
+        `**${percent(slice.layeredRecall)}** | ${slice.controls} | ` +
+        `${percent(slice.deterministicFalsePositiveRate)} | ${percent(slice.falsePositiveRate)} | ` +
+        `**${percent(slice.layeredFalsePositiveRate)}** |`,
+    );
+  }
+  lines.push('');
+  lines.push(
+    '**THE THREE DENOMINATORS ARE NOT THE SAME AND THAT IS NOT A BUG.** The deterministic layer is pure code and ' +
+      'has no failure mode, so its denominator is EVERY claim. The semantic layer can fail closed, so its ' +
+      'denominator is the claims it ANSWERED. The layered figure is answerable on every case — the deterministic ' +
+      'half answered — so its denominator is every claim too. With zero fail-closed verdicts all three ' +
+      'denominators coincide; the fail-closed counts in § 1 are how you check that.',
+  );
+  lines.push('');
+  lines.push(
+    '**A fail-closed verdict is never counted as a layered hit.** In production it blocks the text, so it is the ' +
+      'SAFE outcome — but counting it as recall would let a dead Ollama print as a working gate.',
+  );
+  lines.push('');
+
+  // ---- 1B. THE NUMBER THIS MISSION IS JUDGED ON ---------------------------
+  lines.push('## 1B. MISSED BY BOTH LAYERS — the number this mission is judged on');
+  lines.push('');
+  lines.push('| Slice | Claims | Missed by BOTH | Sem. layer failed closed | Caught ONLY by the semantic layer |');
+  lines.push('| --- | ---: | ---: | ---: | ---: |');
+  for (const [label, slice] of [
+    ['**ALL**', report.overall],
+    ['English', report.byLanguage.en],
+    ['Hebrew', report.byLanguage.he],
+    ['Mixed', report.byLanguage.mixed],
+  ] as const) {
+    lines.push(
+      `| ${label} | ${slice.claims} | **${slice.missedByBothClaims}** | ` +
+        `${slice.missedByDetectorAndUnansweredClaims} | ${slice.semanticOnlyRecalledClaims} |`,
+    );
+  }
+  lines.push('');
+  lines.push(
+    '**Column 2 is a LEAK.** Both readers looked at the sentence and neither reported anything, so in production ' +
+      'the text would have been released to a caller. **Column 3 is not a leak and is not recall**: the detector ' +
+      'missed the claim and the second layer failed closed, which withholds the text and hands the turn to a human ' +
+      '— a sick host rather than a blind gate, and a host fix rather than an instruction fix. The two are counted ' +
+      'separately for that reason and must never be added together.',
+  );
+  lines.push('');
+  for (const [label, slice] of [
+    ['ALL', report.overall],
+    ['English', report.byLanguage.en],
+    ['Hebrew', report.byLanguage.he],
+    ['Mixed', report.byLanguage.mixed],
+  ] as const) {
+    if (slice.missedByBothCaseIds.length === 0) continue;
+    lines.push(`- **${label} — missed by both:** ${slice.missedByBothCaseIds.map((id) => `\`${id}\``).join(', ')}`);
+  }
+  for (const [label, slice] of [
+    ['ALL', report.overall],
+    ['English', report.byLanguage.en],
+    ['Hebrew', report.byLanguage.he],
+    ['Mixed', report.byLanguage.mixed],
+  ] as const) {
+    if (slice.missedByDetectorAndUnansweredCaseIds.length === 0) continue;
+    lines.push(
+      `- ${label} — detector missed and the semantic layer failed closed: ` +
+        `${slice.missedByDetectorAndUnansweredCaseIds.map((id) => `\`${id}\``).join(', ')}`,
+    );
+  }
+  if (report.overall.missedByBothCaseIds.length === 0 && report.overall.missedByDetectorAndUnansweredCaseIds.length === 0) {
+    lines.push(
+      '- No claim in this slice was missed by both layers. Check the claim COUNT in the table above before reading ' +
+        'that as a result — a slice of zero claims would print the same line.',
+    );
+  }
+  lines.push('');
+  lines.push(
+    '**Case IDS and not case TEXTS, here and in every failing assertion in this repository.** ' +
+      '`tests/eval/verifierAntiOverfitting.test.ts` is the reason: the task that tunes the model-facing ' +
+      'instruction runs `npm run test`, and must not be handed a held-out sentence by a report or by a failure ' +
+      'message. `docs/MISSION_2G_VERIFIER_ROUND.md` § 6.1.',
   );
   lines.push('');
 
@@ -451,6 +602,11 @@ function buildMarkdown(input: VerifierArtefactInput): string {
     `- locale hint sent to the verifier: **${input.invocation.localeHintSent ? 'YES — this is NOT the production request shape' : 'no (production shape: ClaimGate sends text + correlationId only)'}**`,
   );
   lines.push(`- languages: ${input.invocation.languagesRequested.join(', ')}`);
+  lines.push(`- split: **${input.invocation.splitRequested ?? report.split}**`);
+  lines.push(
+    `- corpus: \`${input.invocation.corpusFile ?? report.corpusSource}\`` +
+      `${report.corpusSha256 === null ? ' (in-repo — the corpus version above identifies it)' : `, sha256 \`${report.corpusSha256}\``}`,
+  );
   lines.push(`- run started ${report.startedAtIso}, took ${(report.durationMs / 1000).toFixed(1)} s`);
   lines.push('');
   lines.push(

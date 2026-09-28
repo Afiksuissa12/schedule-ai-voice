@@ -16,10 +16,25 @@
  * assert the precedence rules rather than the machine it happens to run on.
  */
 import { resolveVerifierOutDir } from './output.js';
-import type { VerifierCaseLanguage } from './schema.js';
+import {
+  VERIFIER_SPLIT_SELECTORS,
+  type VerifierCaseLanguage,
+  type VerifierSplitSelector,
+} from './schema.js';
 
 /** The languages `--language` accepts, and the order results are reported in. */
 export const VERIFIER_LANGUAGES: readonly VerifierCaseLanguage[] = ['en', 'he', 'mixed'];
+
+/**
+ * `--split`'s default.
+ *
+ * `all`, and not `dev`, because a default of `dev` would make the cheap habitual
+ * command measure the half somebody tuned against - which is the one number in
+ * Mission 2G that must never be produced by accident. `all` is the honest default:
+ * it is the whole corpus, it says so in the artefact and in the file name, and an
+ * operator who wants a half has to ask for it.
+ */
+export const DEFAULT_VERIFIER_SPLIT: VerifierSplitSelector = 'all';
 
 /**
  * `num_ctx` when nothing says otherwise.
@@ -51,6 +66,21 @@ export interface VerifierArgs {
   readonly limit: number | null;
   /** Send `localeHint`. OFF by default: `ClaimGate` does not send one. */
   readonly localeHint: boolean;
+  /**
+   * Which half of the corpus. Mission 2G. Defaults to `all`.
+   *
+   * The RESOLVED value - never undefined - so that every consumer records the same
+   * word the operator will read in the output file name.
+   */
+  readonly split: VerifierSplitSelector;
+  /**
+   * An EXTERNAL corpus JSON file, or `null` for the in-repo corpus.
+   *
+   * Parsed here and LOADED ELSEWHERE, because this module is pure: it reads no
+   * `process.env`, no `process.argv` and no filesystem. `loadExternalVerifierCorpus`
+   * in `./external.ts` owns every refusal that needs the bytes.
+   */
+  readonly corpusFile: string | null;
 }
 
 export type ParsedVerifierArgs =
@@ -60,7 +90,7 @@ export type ParsedVerifierArgs =
 /**
  * Parse, validate, and REFUSE rather than guess.
  *
- * Three refusals, and each one exists because the alternative is a run that
+ * FIVE refusals, and each one exists because the alternative is a run that
  * produces a number nobody can use:
  *
  *  1. NO OUTPUT DIRECTORY, or one inside the committed evidence. See
@@ -71,6 +101,15 @@ export type ParsedVerifierArgs =
  *     `NaN`, and a `NaN` context length reaches Ollama as a request that either
  *     fails strangely or silently uses a default - which would make a latency
  *     comparison meaningless without ever looking wrong.
+ *  4. AN UNKNOWN `--split`, with the known values NAMED in the message. Mission 2G.
+ *     A silent full run here would be worse than the `--language` case: the whole
+ *     point of the split is that a dev number and a held-out number are different
+ *     claims, so `--split devv` falling through to the whole corpus would produce
+ *     the number the mission exists to keep separate, under the operator's belief
+ *     that they had asked for a half.
+ *  5. AN EMPTY `--corpus-file`. Mission 2G. `--corpus-file` with nothing after it
+ *     would otherwise resolve to the repository root as a path and fail later with
+ *     a filesystem error about a directory, which is a worse message than this one.
  */
 export function parseVerifierArgs(
   argv: readonly string[],
@@ -84,6 +123,8 @@ export function parseVerifierArgs(
   let timeoutMs: number | undefined;
   let limit: number | undefined;
   let localeHint = false;
+  let split: VerifierSplitSelector | undefined;
+  let corpusFile: string | undefined;
 
   const numeric = (raw: string | undefined, flag: string): number | { reason: string } => {
     const value = Number(raw);
@@ -137,6 +178,36 @@ export function parseVerifierArgs(
         i += 1;
         break;
       }
+      case '--split': {
+        const raw = argv[i + 1];
+        i += 1;
+        if (raw === undefined || !VERIFIER_SPLIT_SELECTORS.includes(raw as VerifierSplitSelector)) {
+          return {
+            ok: false,
+            reason:
+              `Unknown --split ${raw === undefined ? '(nothing)' : `"${raw}"`}. Known: ` +
+              `${VERIFIER_SPLIT_SELECTORS.join(', ')}. This is a REFUSAL rather than a fall-back to the whole ` +
+              'corpus on purpose: a dev number and a held-out number are different claims, and a typo that ran ' +
+              'everything would produce the one number Mission 2G exists to keep separate.',
+          };
+        }
+        split = raw as VerifierSplitSelector;
+        break;
+      }
+      case '--corpus-file': {
+        const raw = argv[i + 1];
+        i += 1;
+        if (raw === undefined || raw.trim().length === 0) {
+          return {
+            ok: false,
+            reason:
+              '--corpus-file needs a path to a JSON file holding a VerifierCorpus. Omit the flag to use the ' +
+              'in-repo corpus.',
+          };
+        }
+        corpusFile = raw;
+        break;
+      }
       case '--base-url':
         baseUrl = String(argv[(i += 1)]);
         break;
@@ -184,6 +255,8 @@ export function parseVerifierArgs(
       languages: languages.length > 0 ? languages : VERIFIER_LANGUAGES,
       limit: limit ?? null,
       localeHint,
+      split: split ?? DEFAULT_VERIFIER_SPLIT,
+      corpusFile: corpusFile ?? null,
     },
   };
 }

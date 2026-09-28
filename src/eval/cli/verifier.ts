@@ -7,6 +7,21 @@
  *   npm run eval:verifier -- --model aya-expanse:8b --num-ctx 16384
  *   npm run eval:verifier -- --language he                  Hebrew slice only
  *   npm run eval:verifier -- --limit 10                     a smoke run
+ *   npm run eval:verifier -- --split dev                    the TUNING half
+ *   npm run eval:verifier -- --split heldout                the half nobody tuned on
+ *   npm run eval:verifier -- --corpus-file ./sealed.json --split all
+ *
+ * MISSION 2G ADDED `--split` AND `--corpus-file`, AND BOTH REFUSE RATHER THAN
+ * GUESS. An unknown `--split` names the known values and exits non-zero; it never
+ * falls through to the whole corpus, because the whole point of the split is that
+ * a dev number and a held-out number are different claims. `--corpus-file`
+ * validates an external file with the SAME schema and the SAME duplicate checks,
+ * all fatal - and computes the coverage contract WITHOUT making it fatal, because
+ * a sealed evaluation set is a legitimate slice and may not carry every family or
+ * language. EVAL_HARNESS.md § 11.3a is the operator's procedure.
+ *
+ * THE RESOLVED SPLIT IS IN THE OUTPUT FILE NAME as well as in the artefact, so a
+ * dev run can never be mistaken for a held-out run after the fact.
  *
  * WHAT IT IS FOR, IN ONE PARAGRAPH
  * ---------------------------------------------------------------------------
@@ -38,10 +53,15 @@ import { LocalLlmProvider } from '../../llm/localLlmProvider.js';
 import { readEnvironmentRecord } from '../environment/store.js';
 import { DEFAULT_OLLAMA_BASE_URL, getVersion, listModels } from '../models/ollamaAdmin.js';
 import { parseVerifierArgs } from '../verifier/args.js';
-import { casesForLanguage, loadVerifierCorpus } from '../verifier/corpus.js';
+import { casesForLanguage, casesForSplit, loadVerifierCorpus } from '../verifier/corpus.js';
+import {
+  describeExternalCoverage,
+  externalSplitRefusal,
+  loadExternalVerifierCorpus,
+} from '../verifier/external.js';
 import { environmentBlock, writeVerifierArtefacts } from '../verifier/output.js';
 import { runVerifierEval } from '../verifier/run.js';
-import type { VerifierCase } from '../verifier/schema.js';
+import type { VerifierCase, VerifierCorpus } from '../verifier/schema.js';
 
 async function main(): Promise<void> {
   const parsed = parseVerifierArgs(process.argv.slice(2), process.env);
@@ -53,16 +73,50 @@ async function main(): Promise<void> {
   const args = parsed.args;
 
   // ---- the corpus, before anything is dialled -----------------------------
-  // It throws on a malformed case, a duplicate id, a duplicate text or an unmet
-  // coverage rule. Loading it FIRST means a corpus defect costs a second rather
-  // than being discovered after a model has been loaded.
-  const corpus = loadVerifierCorpus();
+  // The in-repo loader throws on a malformed case, a duplicate id, a duplicate
+  // text, a missing in-repo field or an unmet coverage rule. The external loader
+  // returns a refusal for the first five and reports coverage WITHOUT refusing on
+  // it. Either way it happens FIRST, so a corpus defect costs a second rather than
+  // being discovered after a model has been loaded.
+  let corpus: VerifierCorpus;
+  let corpusSource = 'in-repo';
+  let corpusSha256: string | null = null;
+
+  if (args.corpusFile === null) {
+    corpus = loadVerifierCorpus();
+  } else {
+    const external = loadExternalVerifierCorpus(args.corpusFile);
+    if (!external.ok) {
+      console.error(`\neval:verifier: ${external.reason}\n`);
+      process.exitCode = 1;
+      return;
+    }
+    const refusal = externalSplitRefusal(external, args.split);
+    if (refusal !== null) {
+      console.error(`\neval:verifier: ${refusal}\n`);
+      process.exitCode = 1;
+      return;
+    }
+    // PRINTED, NOT ENFORCED. See the header of `../verifier/external.ts`: a sealed
+    // evaluation set is a legitimate slice, and refusing it for not carrying every
+    // family or language would make this flag useless for the purpose it exists for.
+    for (const line of describeExternalCoverage(external)) console.log(line);
+    console.log('');
+    corpus = external.corpus;
+    corpusSource = external.path;
+    corpusSha256 = external.sha256;
+  }
+
+  const inSplit = casesForSplit(corpus.cases, args.split);
   const selected: VerifierCase[] = [];
-  for (const language of args.languages) selected.push(...casesForLanguage(corpus.cases, language));
+  for (const language of args.languages) selected.push(...casesForLanguage(inSplit, language));
   const cases = args.limit === null ? selected : selected.slice(0, args.limit);
 
   if (cases.length === 0) {
-    console.error(`No cases matched languages: ${args.languages.join(', ')}.`);
+    console.error(
+      `No cases matched split "${args.split}" and languages: ${args.languages.join(', ')}. ` +
+        'An empty selection is a refusal rather than a zero-case run reported as a result.',
+    );
     process.exitCode = 1;
     return;
   }
@@ -129,8 +183,9 @@ async function main(): Promise<void> {
   console.log(`Ollama ${runtimeVersion} at ${baseUrl}`);
   console.log(
     `Verifier corpus ${corpus.corpusVersion} (schema ${corpus.schemaVersion}): ${cases.length} of ` +
-      `${corpus.cases.length} case(s), languages ${args.languages.join(', ')}`,
+      `${corpus.cases.length} case(s), split ${args.split}, languages ${args.languages.join(', ')}`,
   );
+  console.log(`Corpus source ${corpusSource}${corpusSha256 === null ? '' : ` (sha256 ${corpusSha256})`}`);
   console.log(`Model ${modelId}, num_ctx ${args.numCtx}, verifier deadline ${timeoutMs} ms`);
   console.log(
     `Locale hint: ${args.localeHint ? 'SENT - NOTE, this is NOT the production request shape' : 'not sent (production shape)'}`,
@@ -143,6 +198,9 @@ async function main(): Promise<void> {
     cases,
     corpusVersion: corpus.corpusVersion,
     corpusSchemaVersion: corpus.schemaVersion,
+    split: args.split,
+    corpusSource,
+    corpusSha256,
     modelId,
     startedAtIso,
     sendLocaleHint: args.localeHint,
@@ -164,6 +222,9 @@ async function main(): Promise<void> {
       timeoutMs,
       localeHintSent: args.localeHint,
       languagesRequested: args.languages,
+      splitRequested: args.split,
+      corpusFile: args.corpusFile,
+      corpusSha256,
     },
     runtimeVersion,
   });
@@ -174,6 +235,19 @@ async function main(): Promise<void> {
   console.log(`FALSE POSITIVES         : ${overall.falsePositives}/${overall.controls - overall.controlsNotAnswered} answered (${format(overall.falsePositiveRate)})`);
   console.log(`MALFORMED OUTPUT RATE   : ${format(overall.malformedRate)} (${overall.malformedOutputs} of ${overall.cases})`);
   console.log(`FAIL-CLOSED RATE        : ${format(overall.failClosedRate)}`);
+  // ---- MISSION 2G: the three layers, on one screen ------------------------
+  console.log(
+    `RECALL det/sem/layered  : ${format(overall.deterministicRecall)} / ${format(overall.recall)} / ` +
+      `${format(overall.layeredRecall)}`,
+  );
+  console.log(
+    `FALSE POS det/sem/layer : ${format(overall.deterministicFalsePositiveRate)} / ` +
+      `${format(overall.falsePositiveRate)} / ${format(overall.layeredFalsePositiveRate)}`,
+  );
+  console.log(
+    `MISSED BY BOTH LAYERS   : ${overall.missedByBothClaims} of ${overall.claims} claim(s)` +
+      `${overall.missedByDetectorAndUnansweredClaims > 0 ? `, plus ${overall.missedByDetectorAndUnansweredClaims} where the semantic layer FAILED CLOSED (blocked, not leaked)` : ''}`,
+  );
   console.log(
     `LATENCY p50/p95/p99     : ${round(overall.latency.p50Ms)} / ${round(overall.latency.p95Ms)} / ${round(overall.latency.p99Ms)} ms`,
   );
