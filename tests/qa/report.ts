@@ -90,25 +90,25 @@ export const KNOWN_COVERAGE_GAPS: readonly string[] = [
   'INV-18 HAS TWO WITNESSES SINCE SECTION 17.5, AND THE FIRST ONE IS NOT THE DETECTOR. It always ' +
     're-derived SUPPORT independently - from rows read back through the repositories and from the turn\'s ' +
     'own ToolOutcome values, with Luxon doing the timezone arithmetic - but it used to find the CLAIMS by ' +
-    "calling the gate's own detectMaterialClaims, and that circle certified four live fail-open defects as " +
-    'zero leaks (docs/MISSION_2D_CLAIM_GATE.md sections 14.1, 15.1, 16.1, 17.1). Now every scripted model ' +
+    "calling the gate's own detectMaterialClaims, and that circle certified five live fail-open defects as " +
+    'zero leaks (docs/MISSION_2D_CLAIM_GATE.md sections 14.1, 15.1, 16.1, 17.1, 18.1). Now every scripted model ' +
     'text in this sweep declares, as hand-authored data beside the sentence in ' +
     'tests/invariants/releaseTexts.ts, whether it asserts a material effect and of which kind; the ' +
     'declaration is judged against observed state; and a released sentence that no declaration covers is a ' +
     'VIOLATION rather than an inapplicable case. tests/invariants/claimOracleBoundary.test.ts asserts ' +
     'structurally that neither the oracle nor the declarations reach src/agent/claimGate, directly or ' +
-    'transitively, and tests/invariants/claimOracleCatchesPastFindings.test.ts drives all four historical ' +
-    'findings through INV-18 with the detector stubbed to see nothing and requires all four to fail. ' +
+    'transitively, and tests/invariants/claimOracleCatchesPastFindings.test.ts drives all five historical ' +
+    'findings through INV-18 with the detector stubbed to see nothing and requires every one to fail. ' +
     'WHAT IS STILL NOT INDEPENDENT, AND WHAT THAT COSTS: the detector is kept as a SECOND witness, ' +
     'deliberately, because the declaration only covers sentences somebody wrote down. The oracle is not a ' +
     'second detector and cannot read an arbitrary sentence - so for this sweep it covers everything (every ' +
     'released text is declared or the run fails), and for any FUTURE text nobody declares it covers ' +
     'nothing. That bound is stated in section 17.8 rather than implied. Disagreement between the two ' +
     'witnesses is printed under INV-18 rather than resolved quietly, because a sentence a person reads as ' +
-    'a booking and the detector reads as nothing is the exact signature of all four findings. The thing ' +
+    'a booking and the detector reads as nothing is the exact signature of all five findings. The thing ' +
     'that proves the DETECTOR sees a class at all is still tests/claimGate/claimGateCorpus.ts, a corpus ' +
     'with the answers written down: MUST_FLAG, MUST_NOT_FLAG, DOCUMENTED_MISSES, DOCUMENTED_OVERREACH, a ' +
-    '1,430-row cross-clause matrix, a 144-row adverb-by-frame matrix, a 2,739-row suppression matrix ' +
+    '1,870-row cross-clause matrix, a 144-row adverb-by-frame matrix, a 3,891-row suppression matrix ' +
     'carrying both directions, and a 1,262-row generated honest corpus.',
   'BOUNDED DELIBERATELY: family M crosses its claim texts with FOUR zones (America/New_York, Europe/London, ' +
     'Asia/Jerusalem, Asia/Kolkata) at ONE `now` instant, under ONE policy and one free diary. Australia/Sydney ' +
@@ -520,10 +520,12 @@ export function renderReport(sweep: SweepResult, options: RenderOptions = {}): s
   // in exactly the same way and a reader is entitled to know that before quoting
   // the zero.
   lines.push('  WHAT THIS ZERO IS BOUNDED BY');
-  lines.push('    THIS ZERO WAS WRONG FOUR TIMES, AND THE REASON DIFFERED EACH TIME: fixtures one punctuation');
+  lines.push('    THIS ZERO WAS WRONG FIVE TIMES, AND THE REASON DIFFERED EACH TIME: fixtures one punctuation');
   lines.push('    mark wide, an escape check filtered through the detector it was policing, specs that did not');
-  lines.push('    name a wording of the failing shape, and a GENERATED matrix whose joiner axis never included');
-  lines.push('    the empty joiner. See docs/MISSION_2D_CLAIM_GATE.md sections 15.2, 15.4, 16.4 and 17.2.');
+  lines.push('    name a wording of the failing shape, a GENERATED matrix whose joiner axis never included the');
+  lines.push('    empty joiner, and - the fifth time - a generated matrix whose FILLER axis had 26 values and');
+  lines.push('    not one of them built only out of tokens the locale declares as crossable. See');
+  lines.push('    docs/MISSION_2D_CLAIM_GATE.md sections 15.2, 15.4, 16.4, 17.2 and 18.2.');
   lines.push('    The common cause was one thing: INV-18 found its claims with the gate\'s OWN detector, so a');
   lines.push('    sentence the detector could not see was a sentence this line could not count.');
   lines.push('');
@@ -534,16 +536,18 @@ export function renderReport(sweep: SweepResult, options: RenderOptions = {}): s
   lines.push('    transitive import closure and fails if it ever does - and INV-18 judges it against what this');
   lines.push('    sweep actually persisted and dispatched. So a declared claim released over an empty ledger');
   lines.push('    fails REGARDLESS OF WHAT THE DETECTOR SAYS.');
-  lines.push('    tests/invariants/claimOracleCatchesPastFindings.test.ts drives all four findings above');
-  lines.push('    through INV-18 with detectMaterialClaims stubbed to return nothing, and all four fail.');
+  lines.push('    tests/invariants/claimOracleCatchesPastFindings.test.ts drives all five findings above');
+  lines.push('    through INV-18 with detectMaterialClaims stubbed to return nothing, and every one fails.');
   lines.push('');
   lines.push('    WHAT IS STILL BOUNDED. The oracle is not a second detector: it can only judge a sentence');
   lines.push('    somebody declared. For the sweep that is every sentence - an UNDECLARED released text is an');
   lines.push('    INV-18 violation, counted below - but it is a real limit on what this mechanism generalises');
-  lines.push('    to, and docs/MISSION_2D_CLAIM_GATE.md section 17.8 states it rather than implying more.');
+  lines.push('    to, and docs/MISSION_2D_CLAIM_GATE.md sections 17.8 and 18.7 state it rather than implying');
+  lines.push('    more. Section 18 is the case in point: DETECTOR_BLIND read 0 on the tree that leaked it,');
+  lines.push('    honestly, because nobody had declared the sentence.');
   lines.push('      - tests/claimGate/claimGateCorpus.ts is still the thing that proves the DETECTOR sees a');
   lines.push('        class at all: MUST_FLAG, MUST_NOT_FLAG, DOCUMENTED_MISSES, DOCUMENTED_OVERREACH, a');
-  lines.push('        1,430-row cross-clause matrix, a 144-row adverb-by-frame matrix, a 2,739-row suppression');
+  lines.push('        1,870-row cross-clause matrix, a 144-row adverb-by-frame matrix, a 3,891-row suppression');
   lines.push('        matrix carrying both directions, and a 1,262-row generated honest corpus.');
   lines.push('        Read it beside this number, not after it.');
   lines.push('');

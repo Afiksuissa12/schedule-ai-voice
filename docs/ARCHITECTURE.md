@@ -467,7 +467,7 @@ UTTERANCE_RECEIVED -> AGENT_TURN_STARTED -> PROVIDER_INVOKED -> AGENT_DECISION
 | `tests/scheduling/` | Resolver grammar, the nine ordered checks, DST, policy from the persisted row, provider boundary, runner restart/backoff, and the locale regression net: Hebrew/English parity, timezone and DST boundaries in Israel and the US, date-only vs date-plus-time, refusals across thirteen scripts |
 | `tests/agent/` | Prompt composition, the nine-tool contract, dispatcher ordering, conversation durability, qualification rubric |
 | `tests/e2e/` | The slice end to end, 13 adversarial turns, the bounded turn loop |
-| `tests/invariants/` | **The sweep**: 1,027 generated scenarios x 16 per-scenario invariants, plus determinism and the network trap |
+| `tests/invariants/` | **The sweep**: 1,067 generated scenarios x 16 per-scenario invariants, plus determinism and the network trap |
 
 ### The invariant sweep
 
@@ -479,7 +479,7 @@ writing one test per example.
 |---|---|
 | `dimensions.ts` | The axes: 5 contact timezones (plus 3 locale zones for family L), 7 model-ASSERTED timezones, 10 `now` instants (plus 5 sub-minute ones for the lead-time boundary and 2 for family L), 35 expressions of which 19 are Hebrew, code-switched or in a language no lexicon covers, 10 Hebrew/English parity pairs, 4 policies, 4 availability states. Pure data. |
 | `dimensions.test.ts` | Re-derives every factual claim the dimensions make (that a local time really is in a DST gap, that Kolkata really has a half-hour offset) so a comment can never quietly become a lie |
-| `scenarios.ts` | Crosses them into **1,027** scenarios in 13 named families. Pure function, fixed seed, stable ids |
+| `scenarios.ts` | Crosses them into **1,067** scenarios in 13 named families. Pure function, fixed seed, stable ids |
 | `runner.ts` | Drives each scenario through `AgentTurnService.handleTurn` - the real front door |
 | `invariants.ts` | The 16 per-scenario properties. INV-15/16/17 are the locale-aware ones: no accepted resolution ignores an unconsumed token; a translated Hebrew/English pair resolves to the same instant; the resolved calendar day is the day the phrase named, read in the contact's zone. INV-18 is the claim gate's: no customer-facing text the system released asserts an effect absent from the action ledger, and family `M-claim-release` is the axis that stops it being vacuous |
 | `claimOracle.ts` | **The independent oracle for INV-18.** Every scripted model text declares, as hand-authored data, whether it asserts a material effect and of which kind; INV-18 judges the declaration against observed rows. It imports NOTHING, so it cannot consult the detector it is policing - which is what stops the assurance layer certifying a detector gap as zero leaks. `docs/MISSION_2D_CLAIM_GATE.md` § 17.5 |

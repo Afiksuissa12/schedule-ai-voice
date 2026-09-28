@@ -1975,7 +1975,7 @@ function declaredClaimsAreBackedByObservedState(
           `detectMaterialClaims found ${detectorClaimCount} claim(s) in the same text` +
           (agreement === 'DETECTOR_BLIND'
             ? ' - SO THE DETECTOR NEVER SAW THIS AT ALL. That is a DETECTOR gap rather than a gate gap, and ' +
-              'it is the signature of all four Mission 2D fail-open findings: add the wording to ' +
+              'it is the signature of all five Mission 2D fail-open findings: add the wording to ' +
               'tests/claimGate/claimGateCorpus.ts MUST_FLAG and fix the rule that misses it.'
             : '.') +
           ' Released text: ' +

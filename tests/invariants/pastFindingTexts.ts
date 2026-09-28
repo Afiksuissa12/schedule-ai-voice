@@ -1,5 +1,5 @@
 /**
- * THE FOUR FAIL-OPEN WORDINGS INDEPENDENT QA FOUND IN MISSION 2D, VERBATIM, EACH
+ * THE FIVE FAIL-OPEN FINDINGS INDEPENDENT QA FOUND IN MISSION 2D, VERBATIM, EACH
  * WITH ITS GROUND TRUTH DECLARED.
  *
  * WHY THIS FILE IS SEPARATE FROM `releaseTexts.ts`
@@ -10,7 +10,7 @@
  * `npm run typecheck` and `npm run qa:sweep` were all green. They are declared
  * here for one purpose, and it is the deliverable § 17.5 exists for:
  *
- *   PROVE THE ORACLE WOULD HAVE CAUGHT ALL FOUR, ON ITS OWN EVIDENCE - with the
+ *   PROVE THE ORACLE WOULD HAVE CAUGHT EVERY ONE, ON ITS OWN EVIDENCE - with the
  *   detector's verdict stubbed to "no claim", so the invariant is shown to fail
  *   for a reason the detector did not supply.
  *
@@ -25,7 +25,7 @@
  * imports `claimOracle.ts` and nothing else, and `claimOracleBoundary.test.ts`
  * walks the closure.
  *
- * That matters here more than anywhere: in all four cases the DETECTOR said the
+ * That matters here more than anywhere: in every one of them the DETECTOR said the
  * sentence asserted nothing. If the declarations were derived from it they would
  * say the same, and the proof would be circular in exactly the way the sweep was.
  *
@@ -278,6 +278,258 @@ export const F17_EIN_BEAYA_CALLBACK: DeclaredText = {
   ),
 };
 
+// ---------------------------------------------------------------------------
+// FINDING 5 - QA-4, § 18.1. A FILLER BUILT ENTIRELY OUT OF DECLARED CARRIERS.
+// ---------------------------------------------------------------------------
+//
+// § 17 made a negator suppress only what it REACHES, and defined reach as
+// "everything between is `suppressionCarriers` material". A filler made of
+// NOTHING BUT that material therefore passed the test that was supposed to stop
+// it. `not` is a declared negator; `at` and `all` are declared carriers; `i` is
+// a declared carrier. `לא` is a declared negator, `צריך` a declared
+// `frameBlocker`, `כלום` a declared carrier and `הפגישה` a declared
+// `domainObject`.
+//
+// All thirteen wordings below were RETURNED to the caller and PERSISTED as
+// spoken AGENT rows, gate outcome NO_MATERIAL_CLAIM, `toolOutcomes` 0,
+// `meetings` 0, `futureActions` 0. The COMMA version of each was blocked in the
+// same run - the third time this gate's verdict has turned on a punctuation
+// mark, after § 15.1 and § 17.1 each wrote down that punctuation is not a safety
+// property.
+//
+// Every declaration below says what a listener hears. `Not at all` is a reply to
+// "thank you" and governs nothing but itself; `לא צריך כלום` is "no need for
+// anything" and governs nothing but itself. There is no reading on which either
+// negates the booking behind it.
+
+export const F18_NOT_AT_ALL_I_HAVE_BOOKED: DeclaredText = {
+  text: 'Not at all I have booked your meeting for Thursday at 2pm.',
+  declares: assertsEffects(
+    'THE CANONICAL ONE. `Not at all` is the single most ordinary English answer to "thank you" and it is a ' +
+      'complete utterance on its own - `not` governs the adverbial `at all` and nothing else. A caller hears ' +
+      'that there is a meeting on Thursday at 2pm and puts it in their diary. Every token of the filler is ' +
+      'one the English lexicon declares as crossable, which is exactly why the § 17 reach rule passed it.',
+    [meeting(14, 'Not at all, then `i have booked` naming Thursday and 2pm')],
+  ),
+};
+
+export const F18_NOT_AT_ALL_WE_HAVE_BOOKED: DeclaredText = {
+  text: 'Not at all we have booked your meeting for Thursday at 2pm.',
+  declares: assertsEffects(
+    'The FIRST-PERSON PLURAL behind the same filler. A caller hears the same completed arrangement; `we` ' +
+      'makes it sound more authoritative, not less.',
+    [meeting(14, 'Not at all, then `we have booked` naming Thursday and 2pm')],
+  ),
+};
+
+export const F18_NOT_AT_ALL_I_WILL_CALL: DeclaredText = {
+  text: 'Not at all I will call you tomorrow at 3pm.',
+  declares: assertsEffects(
+    'A COMMITTED callback, so the class is not one mode wide. A contact told a call is coming at 3pm ' +
+      'tomorrow arranges their afternoon around it - which is why the brief names `will call` as material.',
+    [
+      {
+        family: 'CALLBACK',
+        mode: 'COMMITTED',
+        localDay: FINDING_TOMORROW,
+        localHour: 15,
+        localMinute: null,
+        note: 'Not at all, then `i will call you` naming tomorrow and 3pm',
+      },
+    ],
+  ),
+};
+
+export const F18_NOT_AT_ALL_I_HAVE_CANCELLED: DeclaredText = {
+  text: 'Not at all I have cancelled your meeting.',
+  declares: assertsEffects(
+    'A CANCELLATION, so the class is not one family wide. A contact told their meeting is cancelled does ' +
+      'not turn up, which is the § 6.5.4 harm in the other direction. It names no day and no time.',
+    [
+      {
+        family: 'CANCELLATION',
+        mode: 'COMPLETED',
+        localDay: null,
+        localHour: null,
+        localMinute: null,
+        note: 'Not at all, then `i have cancelled`, no day or time named',
+      },
+    ],
+  ),
+};
+
+export const F18_NOTHING_ELSE_MEETING_IS_BOOKED: DeclaredText = {
+  text: 'Nothing else your meeting is booked for Thursday at 2pm.',
+  declares: assertsEffects(
+    'A DIFFERENT FILLER AND A DIFFERENT NEGATOR. `nothing else` is "nothing further", and `else` is a ' +
+      'declared quantifier carrier exactly as `at all` is. A listener hears a booking on Thursday at 2pm. ' +
+      'This one matters separately because `nothing` CAN be a subject - `Nothing at all has been booked ' +
+      'yet.` is honest and must stay clean - so the two wordings have to be told apart by what follows the ' +
+      'filler rather than by the filler itself.',
+    [meeting(14, 'Nothing else, then `is booked` naming Thursday and 2pm')],
+  ),
+};
+
+export const F18_NOT_AT_ALL_ALL_SET: DeclaredText = {
+  text: 'Not at all you are all set for Thursday at 2pm.',
+  declares: assertsEffects(
+    'The ANY family, where the completion form names no object at all. `you are all set for Thursday at ' +
+      '2pm` is a claim that SOMETHING was arranged for that slot, and a caller acts on it identically. It ' +
+      'is satisfied by any state-changing effect and by nothing else.',
+    [
+      {
+        family: 'ANY',
+        mode: 'COMPLETED',
+        localDay: FINDING_TOMORROW,
+        localHour: 14,
+        localMinute: null,
+        note: 'Not at all, then `all set` naming Thursday and 2pm',
+      },
+    ],
+  ),
+};
+
+/**
+ * QA-4's ENGLISH COMMA CONTROL, declared IDENTICALLY to A1.
+ *
+ * The same property § 17's control pinned, a section later: this spelling was
+ * blocked while A1 was being released and persisted, and a person reading the
+ * two sees no difference in what is asserted, because there is none.
+ */
+export const F18_NOT_AT_ALL_COMMA_CONTROL: DeclaredText = {
+  text: 'Not at all, I have booked your meeting for Thursday at 2pm.',
+  declares: assertsEffects(
+    'A1 WITH the comma - the control that was always blocked. Declared identically to the no-comma ' +
+      'spelling, because a listener hears the same assertion. If these two ever needed different ' +
+      'declarations, the oracle would have inherited the defect it exists to catch.',
+    [meeting(14, 'Not at all, then `i have booked` naming Thursday and 2pm')],
+  ),
+};
+
+export const F18_LO_TZARICH_KLUM_MEETING: DeclaredText = {
+  text: 'לא צריך כלום הפגישה נקבעה למחר בשעה 14:00.',
+  declares: assertsEffects(
+    'לא צריך כלום is "no need for anything" - a complete impersonal clause, which is what Hebrew pro-drop ' +
+      'makes of it. It governs `כלום` and stops. A Hebrew speaker hears that the meeting is set for ' +
+      'tomorrow at 14:00 and turns up. Every token of the filler is declared: `לא` a negator, `צריך` a ' +
+      'frameBlocker, `כלום` a suppressionCarrier.',
+    [meeting(14, 'לא צריך כלום then נקבעה, no punctuation, naming למחר and 14:00')],
+  ),
+};
+
+export const F18_LO_HAYA_KLUM_MEETING: DeclaredText = {
+  text: 'לא היה כלום הפגישה נקבעה למחר בשעה 14:00.',
+  declares: assertsEffects(
+    'לא היה כלום is "there was nothing to it" - the same shape over the copular past rather than the ' +
+      'modal, so it reaches the reach rule through a different declared field. The booking is asserted ' +
+      'exactly as firmly.',
+    [meeting(14, 'לא היה כלום then נקבעה, naming למחר and 14:00')],
+  ),
+};
+
+export const F18_LO_TZARICH_YOTER_MEETING: DeclaredText = {
+  text: 'לא צריך יותר הפגישה נקבעה למחר בשעה 14:00.',
+  declares: assertsEffects(
+    'לא צריך יותר is "no need for more" - a quantifier where the wording above has a pronoun, which is the ' +
+      'axis that defeats an enumeration of collocations. The booking is asserted.',
+    [meeting(14, 'לא צריך יותר then נקבעה, naming למחר and 14:00')],
+  ),
+};
+
+export const F18_EIN_YOTER_KLUM_MEETING: DeclaredText = {
+  text: 'אין יותר כלום הפגישה נקבעה למחר בשעה 14:00.',
+  declares: assertsEffects(
+    'אין יותר כלום is "there is nothing more" - built on the EXISTENTIAL negator rather than the verbal ' +
+      'one, so the class spans both words `lexicon/he.ts` cannot omit from `negators`. The booking is ' +
+      'asserted.',
+    [meeting(14, 'אין יותר כלום then נקבעה, naming למחר and 14:00')],
+  ),
+};
+
+export const F18_LO_TZARICH_KLUM_FIRST_PERSON: DeclaredText = {
+  text: 'לא צריך כלום קבעתי לך פגישה למחר בשעה 14:00.',
+  declares: assertsEffects(
+    'THE PRO-DROP SPELLING, and the one no subject-hunting rule alone can read. קבעתי is "I scheduled" - ' +
+      'subject, tense and person all inside one inflected word - so there is no subject TOKEN between the ' +
+      'filler and the claim for anything to find. A Hebrew speaker hears a meeting booked for tomorrow at ' +
+      '14:00.',
+    [meeting(14, 'לא צריך כלום then קבעתי לך פגישה, naming למחר and 14:00')],
+  ),
+};
+
+export const F18_LO_TZARICH_KLUM_CANCELLED: DeclaredText = {
+  text: 'לא צריך כלום הפגישה בוטלה.',
+  declares: assertsEffects(
+    'The same filler in the CANCELLATION family. A contact told the meeting is cancelled does not turn up. ' +
+      'It names no day and no time.',
+    [
+      {
+        family: 'CANCELLATION',
+        mode: 'COMPLETED',
+        localDay: null,
+        localHour: null,
+        localMinute: null,
+        note: 'לא צריך כלום then בוטלה ("was cancelled"), no punctuation, no day or time named',
+      },
+    ],
+  ),
+};
+
+export const F18_LO_TZARICH_KLUM_CALLBACK: DeclaredText = {
+  text: 'לא צריך כלום אתקשר אליך מחר בשעה 15:00.',
+  declares: assertsEffects(
+    'The CALLBACK spelling, where the filler is followed STRAIGHT by the verb with no noun phrase between ' +
+      'them at all. A contact told they will be called at 15:00 waits by the phone.',
+    [
+      {
+        family: 'CALLBACK',
+        mode: 'COMMITTED',
+        localDay: FINDING_TOMORROW,
+        localHour: 15,
+        localMinute: null,
+        note: 'לא צריך כלום then אתקשר אליך מחר בשעה 15:00 ("I will call you tomorrow at 15:00")',
+      },
+    ],
+  ),
+};
+
+/** QA-4's HEBREW COMMA CONTROL, declared identically to H1. */
+export const F18_LO_TZARICH_KLUM_COMMA_CONTROL: DeclaredText = {
+  text: 'לא צריך כלום, הפגישה נקבעה למחר בשעה 14:00.',
+  declares: assertsEffects(
+    'H1 WITH the comma - the control that was blocked while H1 leaked. Declared identically, because a ' +
+      'Hebrew speaker hears the same assertion either way.',
+    [meeting(14, 'לא צריך כלום, then נקבעה, naming למחר and 14:00')],
+  ),
+};
+
+/**
+ * QA-4's SIX ENGLISH WORDINGS (A1-A6), in the order the finding listed them.
+ *
+ * Kept as its own array for the reason `QA3_FIVE_WORDINGS` is: the deliverable
+ * owes a demonstration that ALL of them are caught, not that a representative
+ * subset is.
+ */
+export const QA4_ENGLISH_WORDINGS: readonly DeclaredText[] = [
+  F18_NOT_AT_ALL_I_HAVE_BOOKED,
+  F18_NOT_AT_ALL_WE_HAVE_BOOKED,
+  F18_NOT_AT_ALL_I_WILL_CALL,
+  F18_NOT_AT_ALL_I_HAVE_CANCELLED,
+  F18_NOTHING_ELSE_MEETING_IS_BOOKED,
+  F18_NOT_AT_ALL_ALL_SET,
+];
+
+/** QA-4's SEVEN HEBREW WORDINGS (H1-H7), in the order the finding listed them. */
+export const QA4_HEBREW_WORDINGS: readonly DeclaredText[] = [
+  F18_LO_TZARICH_KLUM_MEETING,
+  F18_LO_HAYA_KLUM_MEETING,
+  F18_LO_TZARICH_YOTER_MEETING,
+  F18_EIN_YOTER_KLUM_MEETING,
+  F18_LO_TZARICH_KLUM_FIRST_PERSON,
+  F18_LO_TZARICH_KLUM_CANCELLED,
+  F18_LO_TZARICH_KLUM_CALLBACK,
+];
+
 /**
  * THE FIVE WORDINGS THE FINDING LISTED, in the order it listed them.
  *
@@ -324,10 +576,17 @@ export const MISSION_2D_QA_FINDINGS: readonly PastFinding[] = [
     headline: 'a Hebrew pre-verbal negator-built reassurance with no punctuation',
     wordings: [...QA3_FIVE_WORDINGS, F17_EIN_BEAYA_CANCELLED, F17_EIN_BEAYA_CALLBACK],
   },
+  {
+    section: '18.1',
+    headline: 'a reassurance filler built ENTIRELY out of tokens the locale declares as crossable',
+    wordings: [...QA4_ENGLISH_WORDINGS, ...QA4_HEBREW_WORDINGS],
+  },
 ];
 
-/** Every declared past-finding wording, including the comma control. */
+/** Every declared past-finding wording, including the comma controls. */
 export const PAST_FINDING_TEXTS: readonly DeclaredText[] = [
   ...MISSION_2D_QA_FINDINGS.flatMap((finding) => finding.wordings),
   F17_EIN_BEAYA_COMMA_CONTROL,
+  F18_NOT_AT_ALL_COMMA_CONTROL,
+  F18_LO_TZARICH_KLUM_COMMA_CONTROL,
 ];

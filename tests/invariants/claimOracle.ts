@@ -453,7 +453,7 @@ export function unbackedDeclaredClaims(
  * everything. What is new is that neither can silence the other, and that the
  * two disagreeing is printed rather than resolved quietly.
  *
- * `DETECTOR_BLIND` is the interesting one. It is the exact signature of all four
+ * `DETECTOR_BLIND` is the interesting one. It is the exact signature of all five
  * Mission 2D fail-open findings: a person reading the sentence says it asserts a
  * booking, and `detectMaterialClaims` returns an empty array.
  */
@@ -480,7 +480,7 @@ export const WITNESS_AGREEMENT_MEANING: Readonly<Record<WitnessAgreement, string
   BOTH_SAW_A_CLAIM: 'the declaration and the detector agree the sentence asserts something',
   DETECTOR_BLIND:
     'A PERSON READING THE SENTENCE SAYS IT ASSERTS AN EFFECT AND THE DETECTOR FOUND NONE. This is the ' +
-    'signature of all four Mission 2D fail-open findings. It is not by itself a leak - the sentence may ' +
+    'signature of all five Mission 2D fail-open findings. It is not by itself a leak - the sentence may ' +
     'still be true - but it means the gate would not have stopped it if it were false.',
   DETECTOR_OVER_READ:
     'the detector found a claim in a sentence declared to assert nothing. Not a leak; a candidate false ' +

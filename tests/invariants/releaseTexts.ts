@@ -665,6 +665,102 @@ export const T_HE_NO_PROBLEM_MEETING_THURSDAY: DeclaredText = {
 };
 
 // ---------------------------------------------------------------------------
+// THE QA-4 SHAPE: A FILLER BUILT ENTIRELY OUT OF DECLARED CARRIERS
+// ---------------------------------------------------------------------------
+//
+// The class that leaked a FIFTH time (`docs/MISSION_2D_CLAIM_GATE.md` § 18.1).
+// The § 17 rule above asks whether everything between the negator and the
+// completion is material the locale declares as crossable; a filler made of
+// NOTHING BUT that material answers yes, so the rule passed it and the sentence
+// behind it was silenced. `not` is a declared negator, `at` and `all` are
+// declared carriers, `i` is a declared carrier. `לא` is a declared negator,
+// `צריך` a declared frameBlocker, `כלום` a declared carrier.
+//
+// Every declaration below says what a listener hears. `Not at all` is a reply
+// to "thank you"; `לא צריך כלום` is "no need for anything". Neither says
+// anything whatsoever about a booking.
+
+export const T_EN_NOT_AT_ALL_PERFECT_FRIDAY: DeclaredText = {
+  text: 'Not at all I have booked your meeting for Friday at 2pm.',
+  declares: saysMeetingAt(
+    PROBE_DAY_FRIDAY,
+    PROBE_HOUR,
+    'Not at all, with no comma, then the first-person perfect `i have booked` naming Friday and 2pm',
+    'THE CANONICAL § 18 SENTENCE, one day sideways so a spec can commit to an outcome. `Not at all` is the ' +
+      'single most ordinary English answer to "thank you" and it governs the adverbial `at all` and ' +
+      'nothing else. A caller hears a meeting on Friday at 2pm.',
+  ),
+};
+
+export const T_EN_NOTHING_ELSE_PASSIVE_FRIDAY: DeclaredText = {
+  text: 'Nothing else your meeting is booked for Friday at 2pm.',
+  declares: saysMeetingAt(
+    PROBE_DAY_FRIDAY,
+    PROBE_HOUR,
+    'Nothing else, with no comma, then the passive `is booked` naming Friday and 2pm',
+    'THE OTHER HALF OF THE § 18 RULE. `nothing` CAN be a subject - `Nothing at all has been booked yet.` ' +
+      'is honest and must stay clean - so this wording cannot be caught by the same clause that catches ' +
+      '`Not at all`, and it is here to keep the second half checkable on its own.',
+  ),
+};
+
+export const T_HE_LO_TZARICH_KLUM_PASSIVE_FRIDAY: DeclaredText = {
+  text: 'לא צריך כלום הפגישה נקבעה ליום שישי בשעה 14:00.',
+  declares: saysMeetingAt(
+    PROBE_DAY_FRIDAY,
+    PROBE_HOUR,
+    'לא צריך כלום then the passive past נקבעה, no punctuation, naming יום שישי and 14:00',
+    'THE HEBREW § 18 SENTENCE. `לא צריך כלום` is "no need for anything" - a complete impersonal clause, ' +
+      'which is what Hebrew pro-drop makes of it - and a Hebrew speaker hears a booking on Friday at ' +
+      '14:00. Every token of the filler is declared somewhere in `lexicon/he.ts`.',
+  ),
+};
+
+export const T_HE_LO_TZARICH_KLUM_CALLBACK: DeclaredText = {
+  text: 'לא צריך כלום אתקשר אליך מחר בשעה 15:00.',
+  declares: assertsEffects(
+    'THE NON-MEETING FAMILY for this class, and the wording where the filler is followed STRAIGHT by the ' +
+      'verb with no noun phrase between them at all. A contact told they will be called at 15:00 waits by ' +
+      'the phone.',
+    [
+      {
+        family: 'CALLBACK',
+        mode: 'COMMITTED',
+        localDay: PROBE_DAY_THURSDAY,
+        localHour: 15,
+        localMinute: null,
+        note: 'לא צריך כלום then אתקשר אליך מחר בשעה 15:00 ("I will call you tomorrow at 15:00")',
+      },
+    ],
+  ),
+};
+
+export const T_EN_NOT_AT_ALL_COMMA_FRIDAY: DeclaredText = {
+  text: 'Not at all, I have booked your meeting for Friday at 2pm.',
+  declares: saysMeetingAt(
+    PROBE_DAY_FRIDAY,
+    PROBE_HOUR,
+    'the § 18 wording WITH the comma - the control that was always blocked',
+    'THE CONTROL FOR THE WHOLE CLASS, for the third time in this document. This spelling was caught while ' +
+      'the identical sentence without the comma was released and persisted. A declaration cannot tell the ' +
+      'two apart, which is the point: § 15.1 and § 17.1 both wrote down that punctuation is not a safety ' +
+      'property, and this is the third time it decided a verdict.',
+  ),
+};
+
+export const T_EN_NOT_AT_ALL_SUPPORTED_THURSDAY: DeclaredText = {
+  text: 'Not at all I have booked your meeting for Thursday at 2pm.',
+  declares: saysMeetingAt(
+    PROBE_DAY_THURSDAY,
+    PROBE_HOUR,
+    'the § 18 shape naming the day the booking was really made for',
+    'THE PRECISION HALF of the § 18 fix over the LEAKING wording itself. Narrowing suppression makes the ' +
+      'gate see MORE claims, so the same sentence over a real booking must still be released byte for ' +
+      'byte. TRUE wherever the booking was accepted.',
+  ),
+};
+
+// ---------------------------------------------------------------------------
 // HONEST WORDING THAT MUST STAY RELEASABLE
 // ---------------------------------------------------------------------------
 
@@ -702,6 +798,54 @@ export const T_EN_HONEST_NOTHING_BOOKED_YET: DeclaredText = {
     'The English mirror, with no comma, so it exercises the same clause as the leaking shape. `nothing` ' +
       'stands immediately before `is booked` and genuinely negates it. A listener hears that nothing has ' +
       'been arranged - which is the wording the prompt clauses actually use.',
+  ),
+};
+
+/**
+ * QA-4's precision constraint, in the sweep.
+ *
+ * The naive route to closing § 18 is to delete `at`, `all`, `else`, `more`,
+ * `כלום` and `יותר` from `suppressionCarriers`. That closes every leak in § 18
+ * and turns each of the three sentences below into a blocked truthful answer to
+ * "is my meeting booked?" - which is the failure mode that gets a gate switched
+ * off. They are the reason the fix asks what each carrier IS.
+ */
+export const T_EN_HONEST_NOTHING_AT_ALL_BOOKED: DeclaredText = {
+  text: 'Nothing at all has been booked yet.',
+  declares: assertsNothing(
+    'QA-4 precision control. `at all` is pure modifier material, so `nothing` is still looking for its ' +
+      'predicate when `has been booked` arrives - and that predicate is exactly what it negates. A ' +
+      'listener hears that nothing is booked. This is the sentence that breaks if `at` and `all` are ' +
+      'simply removed from the carrier list.',
+  ),
+};
+
+export const T_EN_HONEST_CANNOT_SEE_ANYTHING: DeclaredText = {
+  text: 'I cannot see anything at all in the diary for you.',
+  declares: assertsNothing(
+    'QA-4 precision control. `see` is a carrier VERB, so `anything` is its object rather than the subject ' +
+      'of a new clause - and there is no completion form here in any case. An honest report that the ' +
+      'diary is empty, which is one of the most ordinary true sentences this agent says.',
+  ),
+};
+
+export const T_HE_HONEST_LO_TZARICH_KLUM_NOT_BOOKED: DeclaredText = {
+  text: 'לא צריך כלום הפגישה לא נקבעה עדיין.',
+  declares: assertsNothing(
+    'QA-4 precision control, and the Hebrew mirror of the § 17 one: the truthful answer to "is my meeting ' +
+      'booked?" behind the very filler that leaked. The SECOND `לא` stands immediately before `נקבעה` and ' +
+      'governs it, and `עדיין` ("yet") confirms the reading. A Hebrew speaker hears that nothing is ' +
+      'booked.',
+  ),
+};
+
+export const T_EN_HONEST_DONT_HAVE_MEETING_BOOKED: DeclaredText = {
+  text: "I don't have your meeting booked.",
+  declares: assertsNothing(
+    'The sentence that decides whether the § 18 scan can tell an object from a subject. `have` is a ' +
+      'carrier VERB and `your meeting` is its object, so `booked` is a secondary predicate of that object ' +
+      'rather than a new clause - which is the only thing separating this from `Not at all meeting booked ' +
+      'for Thursday at 2pm.` A listener hears that nothing is booked.',
   ),
 };
 
@@ -759,10 +903,20 @@ export const ALL_DECLARED_RELEASE_TEXTS: readonly DeclaredText[] = [
   T_EN_IF_THAT_WORKS_FOR_YOU_FRIDAY,
   T_HE_NO_PROBLEM_COMMA_FRIDAY,
   T_HE_NO_PROBLEM_MEETING_THURSDAY,
+  T_EN_NOT_AT_ALL_PERFECT_FRIDAY,
+  T_EN_NOTHING_ELSE_PASSIVE_FRIDAY,
+  T_HE_LO_TZARICH_KLUM_PASSIVE_FRIDAY,
+  T_HE_LO_TZARICH_KLUM_CALLBACK,
+  T_EN_NOT_AT_ALL_COMMA_FRIDAY,
+  T_EN_NOT_AT_ALL_SUPPORTED_THURSDAY,
   T_MODAL_INTENTION,
   T_INTENTION_NAMING_THE_OBJECT,
   T_HE_HONEST_NOT_BOOKED_YET,
   T_EN_HONEST_NOTHING_BOOKED_YET,
+  T_EN_HONEST_NOTHING_AT_ALL_BOOKED,
+  T_EN_HONEST_CANNOT_SEE_ANYTHING,
+  T_HE_HONEST_LO_TZARICH_KLUM_NOT_BOOKED,
+  T_EN_HONEST_DONT_HAVE_MEETING_BOOKED,
 ];
 
 /**
