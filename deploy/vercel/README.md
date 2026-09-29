@@ -36,14 +36,13 @@ transcript and persisted actions are read back from the database on every reques
 
 - Rate limits and the daily turn cap are best-effort per serverless instance; the hard spending cap
   is the credit limit on the OpenRouter key.
-- Callback confirmations are usually WITHHELD on this deployment even though the callback is saved.
-  The model confirms with verb-first wording ("I've scheduled a callback for ..."), which the
-  deterministic detector files as a MEETING claim - the documented, test-asserted false positive
-  in `tests/claimGate/claimGateCorpus.ts` `KNOWN_FALSE_POSITIVES` ("verb-first scheduling wording
-  over a real callback"). No saved meeting can support it, so after three attempts the text is
-  withheld and a human handover is requested. The saved callback still shows in the page's
-  "What the application actually saved" panel, and the follow-up engine runs it. The gate was
-  deliberately NOT changed for hosting: fixing the detector is a gate change for the Founder to decide.
+- Callback confirmations: the model's usual wording ("I've scheduled a callback for ...") used to be
+  filed as a MEETING claim by the deterministic detector (`docs/MISSION_2D_CLAIM_GATE.md` § 8
+  limit 9) and was withheld even though the callback was saved. Fixed on this branch with the
+  Founder's approval: a generic booking verb now defers to a CALLBACK object right after it, unless
+  the sentence also names a meeting or a generic booking. The claim is still reconciled against
+  the saved callback's day and time, and a callback that was never saved, or one described at the
+  wrong day or time, is still rejected (`tests/claimGate/claimGateCorpus.ts` `LEDGER_CASES`).
 - Meeting confirmations are released: the gate checks them against the saved meeting, and if the
   model's time wording is unreadable it asks for a regeneration, which normally succeeds.
 - The semantic claim verifier can occasionally fail to read a TRUE confirmation's time wording and

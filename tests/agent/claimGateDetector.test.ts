@@ -41,8 +41,11 @@ describe('the detector finds a material claim', () => {
     const claims = detectMaterialClaims(
       "Got it. I've booked the callback for 3pm on your local time. You can expect a call from us then.",
     );
-    expect(claims.map((claim) => claim.family)).toContain('MEETING');
-    expect(claims.map((claim) => claim.family)).toContain('CALLBACK');
+    // Every claim is a CALLBACK claim: the frame `i've booked` now sees its object
+    // (§ 8 limit 9, closed on hosted-demo), so it is judged against callbacks - and
+    // on this transcript's EMPTY ledger it still fails NO_MATCHING_EFFECT.
+    expect(claims.length).toBeGreaterThan(0);
+    expect(claims.map((claim) => claim.family).every((family) => family === 'CALLBACK')).toBe(true);
     expect(claims.some((claim) => claim.mode === 'COMMITTED')).toBe(true);
   });
 
@@ -164,14 +167,14 @@ describe('the detector reads the first-person simple past', () => {
    * with the wrong family is judged against the wrong effects.
    */
   const PRETERITE: readonly (readonly [string, string])[] = [
-    ['I booked the callback for 3pm tomorrow.', 'MEETING'],
-    ['I scheduled the callback for 3pm tomorrow.', 'MEETING'],
+    ['I booked the callback for 3pm tomorrow.', 'CALLBACK'],
+    ['I scheduled the callback for 3pm tomorrow.', 'CALLBACK'],
     ['I confirmed your meeting for tomorrow at 3pm.', 'MEETING'],
     ['I booked you in for tomorrow at 3pm.', 'MEETING'],
     ['I have reserved tomorrow at 3pm for you.', 'MEETING'],
     ['I saved the appointment for Thursday.', 'MEETING'],
     ["I've put you down for tomorrow at 3pm.", 'MEETING'],
-    ['We booked the callback for 3pm.', 'MEETING'],
+    ['We booked the callback for 3pm.', 'CALLBACK'],
     ['I just booked it.', 'MEETING'],
     ['I went ahead and booked it for 3pm tomorrow.', 'MEETING'],
     ['I cancelled your meeting.', 'CANCELLATION'],

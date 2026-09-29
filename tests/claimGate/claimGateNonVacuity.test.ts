@@ -769,7 +769,11 @@ describe('the claim gate is not vacuous', () => {
     // and `lexicon/en.ts` makes the argument itself: a gate that punishes honest
     // wording gets switched off, and a gate that is off puts the § 6.5.4 defect
     // back. So these are recorded at least as carefully as the misses.
-    expect(KNOWN_FALSE_POSITIVES.length, 'the false-positive table must not be emptied silently').toBeGreaterThanOrEqual(1);
+    // Emptied DELIBERATELY by the hosted-demo callback fix (§ 8 limit 9): its four
+    // entries now stand in LEDGER_CASES as `expect: null`, next to the false
+    // callback confirmations that must still be rejected. Pinned, so the table
+    // cannot change size in either direction without this line changing with it.
+    expect(KNOWN_FALSE_POSITIVES.length, 'the false-positive table must not change silently').toBe(0);
     for (const entry of KNOWN_FALSE_POSITIVES) {
       expect(entry.cause.length, `false positive "${entry.name}" has no recorded cause`).toBeGreaterThan(60);
       expect(

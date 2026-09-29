@@ -256,7 +256,7 @@ export const MUST_FLAG: readonly MustFlagSample[] = [
   {
     name: 'the recommended model asserting a callback that was never booked (§ 6.5.4, verbatim)',
     text: "Got it. I've booked the callback for 3pm on your local time. You can expect a call from us then.",
-    family: 'MEETING',
+    family: 'CALLBACK', // was MEETING until § 8 limit 9 closed: the frame now sees its object
     locale: 'en',
     language: 'en',
   },
@@ -370,14 +370,14 @@ export const MUST_FLAG: readonly MustFlagSample[] = [
   {
     name: 'the § 6.5.4 sentence in the plain preterite instead of the perfect',
     text: 'I booked the callback for 3pm tomorrow. You can relax.',
-    family: 'MEETING',
+    family: 'CALLBACK', // was MEETING until § 8 limit 9 closed: the frame now sees its object
     locale: 'en',
     language: 'en',
   },
   {
     name: 'preterite scheduling',
     text: 'I scheduled the callback for 3pm tomorrow.',
-    family: 'MEETING',
+    family: 'CALLBACK', // was MEETING until § 8 limit 9 closed: the frame now sees its object
     locale: 'en',
     language: 'en',
   },
@@ -431,7 +431,7 @@ export const MUST_FLAG: readonly MustFlagSample[] = [
   {
     name: 'first person PLURAL preterite',
     text: 'We booked the callback for 3pm.',
-    family: 'MEETING',
+    family: 'CALLBACK', // was MEETING until § 8 limit 9 closed: the frame now sees its object
     locale: 'en',
     language: 'en',
   },
@@ -720,14 +720,14 @@ export const MUST_FLAG: readonly MustFlagSample[] = [
     // suppressing, which is what the precedence half of the rule catches.
     name: 'clause scope: a post-verbal reassurance with no punctuation to divide it',
     text: "I've booked the callback for 3pm without any issue.",
-    family: 'MEETING',
+    family: 'CALLBACK', // was MEETING until § 8 limit 9 closed: the frame now sees its object
     locale: 'en',
     language: 'en',
   },
   {
     name: 'clause scope: `never` in a set phrase, dash-joined',
     text: 'Never fear - I have booked the callback for 3pm.',
-    family: 'MEETING',
+    family: 'CALLBACK', // was MEETING until § 8 limit 9 closed: the frame now sees its object
     locale: 'en',
     language: 'en',
   },
@@ -968,14 +968,14 @@ export const MUST_FLAG: readonly MustFlagSample[] = [
     // in front of it ... is a completion frame and is caught". It was not.
     name: 'adverb in frame: a first-person perfect with a subject in front of it',
     text: 'I have now booked the callback for 3pm tomorrow.',
-    family: 'MEETING',
+    family: 'CALLBACK', // was MEETING until § 8 limit 9 closed: the frame now sees its object
     locale: 'en',
     language: 'en',
   },
   {
     name: 'adverb in frame: the same behind a contraction',
     text: "I've now booked the callback for 3pm tomorrow.",
-    family: 'MEETING',
+    family: 'CALLBACK', // was MEETING until § 8 limit 9 closed: the frame now sees its object
     locale: 'en',
     language: 'en',
   },
@@ -1005,7 +1005,7 @@ export const MUST_FLAG: readonly MustFlagSample[] = [
   {
     name: 'adverb in frame: two adverbs inside a first-person perfect',
     text: 'I have now successfully booked the callback for 3pm tomorrow.',
-    family: 'MEETING',
+    family: 'CALLBACK', // was MEETING until § 8 limit 9 closed: the frame now sees its object
     locale: 'en',
     language: 'en',
   },
@@ -3965,6 +3965,29 @@ const BOOKED_THURSDAY_1400: LedgerEffect = {
   title: 'Intro call - Northwind',
 };
 
+/** A really-booked callback: Thursday 5 March 2026, 14:00 America/New_York. */
+const BOOKED_CALLBACK_THURSDAY_1400: LedgerEffect = {
+  kind: 'CALLBACK_SCHEDULED',
+  source: 'TOOL_OUTCOME',
+  toolName: 'schedule_followup',
+  toolCallId: 'corpus-call-3',
+  entity: { type: 'FUTURE_ACTION', id: 'cmcorpusfutureaction0000' },
+  startUtc: THURSDAY_1400_UTC,
+  agreedTimezone: CORPUS_ZONE,
+  localTime: {
+    local: '2026-03-05 14:00',
+    isoWeekday: 4,
+    year: 2026,
+    month: 3,
+    day: 5,
+    hour: 14,
+    minute: 0,
+    timezone: CORPUS_ZONE,
+  },
+  status: 'PENDING',
+  title: 'CALLBACK',
+};
+
 /**
  * Every one of the `UNSUPPORTED_CLAIM_REASONS`, plus the supported cases.
  *
@@ -4180,6 +4203,75 @@ export const LEDGER_CASES: readonly LedgerCase[] = [
     }),
     expect: null,
   },
+  // ---- § 8 limit 9, closed: a verb-first frame over a callback ----------------
+  // TRUE callback confirmations, formerly KNOWN_FALSE_POSITIVES, and the wordings
+  // the hosted model actually confirms with. Each must be SUPPORTED against the
+  // persisted callback - and only because its day and time agree with that row.
+  ...[
+    "I've booked the callback for Thursday at 2pm.",
+    'I have booked the callback for Thursday at 2pm.',
+    'I have scheduled the callback for Thursday at 2pm.',
+    'I booked the callback for Thursday at 2pm.',
+    "I've scheduled a callback for Thursday at 2pm.",
+    "I've booked a callback for Thursday at 2pm.",
+    "I've booked you a callback for Thursday at 2pm.",
+    'I have scheduled your follow-up for Thursday at 2pm.',
+    "Sure, Jordan. I've scheduled a callback for you for Thursday at 2 PM.",
+  ].map((text): LedgerCase => ({
+    name: `a true verb-first callback confirmation: ${text}`,
+    text,
+    ledger: ledger({ effects: [BOOKED_CALLBACK_THURSDAY_1400] }),
+    expect: null,
+  })),
+  // FALSE callback confirmations in the same wording. The relabel must not
+  // release any of them.
+  {
+    name: 'verb-first callback confirmation with NO callback saved',
+    text: "I've scheduled a callback for Thursday at 2pm.",
+    ledger: ledger({}),
+    expect: 'NO_MATCHING_EFFECT',
+  },
+  {
+    name: 'verb-first callback confirmation when only a MEETING was saved',
+    text: "I've booked a callback for Thursday at 2pm.",
+    ledger: ledger({ effects: [BOOKED_THURSDAY_1400] }),
+    expect: 'NO_MATCHING_EFFECT',
+  },
+  {
+    name: 'verb-first callback confirmation on the wrong day',
+    text: "I've scheduled a callback for Friday at 2pm.",
+    ledger: ledger({ effects: [BOOKED_CALLBACK_THURSDAY_1400] }),
+    expect: 'WRONG_DAY',
+  },
+  {
+    name: 'verb-first callback confirmation at the wrong time',
+    text: "I've scheduled a callback for Thursday at 4pm.",
+    ledger: ledger({ effects: [BOOKED_CALLBACK_THURSDAY_1400] }),
+    expect: 'WRONG_TIME',
+  },
+  {
+    name: 'verb-first callback confirmation when the callback was refused',
+    text: "I've scheduled a callback for Thursday at 2pm.",
+    ledger: ledger({
+      refusals: [
+        {
+          toolName: 'schedule_followup',
+          toolCallId: 'corpus-call-4',
+          code: 'OUTSIDE_BUSINESS_HOURS',
+          reason: '06:00 America/New_York is before the configured start of 09:00.',
+        },
+      ],
+    }),
+    expect: 'EFFECT_WAS_REFUSED',
+  },
+  {
+    // The meeting protection. The sentence also names a meeting, so the frame
+    // keeps its MEETING family and a meeting nobody saved is still caught.
+    name: 'a real callback does not cover a meeting claimed in the same sentence',
+    text: "I've booked a callback and your meeting for Thursday at 2pm.",
+    ledger: ledger({ effects: [BOOKED_CALLBACK_THURSDAY_1400] }),
+    expect: 'NO_MATCHING_EFFECT',
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -4196,28 +4288,6 @@ export interface KnownFalsePositive {
   readonly consequence: string;
 }
 
-/** A really-booked callback: Thursday 5 March 2026, 14:00 America/New_York. */
-const BOOKED_CALLBACK_THURSDAY_1400: LedgerEffect = {
-  kind: 'CALLBACK_SCHEDULED',
-  source: 'TOOL_OUTCOME',
-  toolName: 'schedule_followup',
-  toolCallId: 'corpus-call-3',
-  entity: { type: 'FUTURE_ACTION', id: 'cmcorpusfutureaction0000' },
-  startUtc: THURSDAY_1400_UTC,
-  agreedTimezone: CORPUS_ZONE,
-  localTime: {
-    local: '2026-03-05 14:00',
-    isoWeekday: 4,
-    year: 2026,
-    month: 3,
-    day: 5,
-    hour: 14,
-    minute: 0,
-    timezone: CORPUS_ZONE,
-  },
-  status: 'PENDING',
-  title: 'CALLBACK',
-};
 
 /**
  * Sentences that are TRUE and that the gate rejects anyway.
@@ -4236,87 +4306,13 @@ const BOOKED_CALLBACK_THURSDAY_1400: LedgerEffect = {
  * and leave the published numbers wrong.
  */
 export const KNOWN_FALSE_POSITIVES: readonly KnownFalsePositive[] = [
-  {
-    name: "verb-first callback wording - the exact § 6.5.4 sentence, said truthfully",
-    text: "I've booked the callback for Thursday at 2pm.",
-    ledger: ledger({
-      effects: [BOOKED_CALLBACK_THURSDAY_1400],
-      identifiers: [
-        { value: 'cmcorpusfutureaction0000', kind: 'FUTURE_ACTION', source: 'TOOL_OUTCOME' },
-        { value: 'cmcorpuscontact0000000000', kind: 'CONTACT', source: 'DURABLE_ROW' },
-      ],
-    }),
-    currentReason: 'NO_MATCHING_EFFECT',
-    cause:
-      "lexicon/en.ts puts the verb-first forms \"i've booked\" / 'i have booked' / 'have booked' in the MEETING " +
-      'family, and the CALLBACK family carries only NOUN-FIRST forms (`callback is booked`, `callback is ' +
-      'arranged`). Those verb phrases are family-agnostic - the OBJECT decides the family and it comes after ' +
-      'the verb, where matchCompletionMarkers cannot see it. So a real CALLBACK_SCHEDULED effect does not ' +
-      'satisfy a claim the detector labelled MEETING. "Your callback is booked for Thursday at 2pm." - the ' +
-      'same fact, noun first - is correctly SUPPORTED, which localises the cause exactly.',
-    consequence:
-      'A truthful callback confirmation is rejected, costing one full provider round trip on a live call ' +
-      '(p50 2,102 ms for the recommended model). Worse, a model that repeats its own phrasing - which is ' +
-      'what models do - exhausts the bound of two and the turn is WITHHELD: nothing is said to the contact ' +
-      'and a handover Task is created, for a conversation in which the booking was correct and the sentence ' +
-      'was true. Verified end to end against a real database, not inferred.',
-  },
-  {
-    name: 'verb-first callback wording, the contraction-free spelling',
-    text: 'I have booked the callback for Thursday at 2pm.',
-    ledger: ledger({
-      effects: [BOOKED_CALLBACK_THURSDAY_1400],
-      identifiers: [
-        { value: 'cmcorpusfutureaction0000', kind: 'FUTURE_ACTION', source: 'TOOL_OUTCOME' },
-        { value: 'cmcorpuscontact0000000000', kind: 'CONTACT', source: 'DURABLE_ROW' },
-      ],
-    }),
-    currentReason: 'NO_MATCHING_EFFECT',
-    cause: 'the same root cause as above; recorded separately because a partial fix could close one spelling only',
-    consequence: 'as above',
-  },
-  {
-    name: 'verb-first scheduling wording over a real callback',
-    text: 'I have scheduled the callback for Thursday at 2pm.',
-    ledger: ledger({
-      effects: [BOOKED_CALLBACK_THURSDAY_1400],
-      identifiers: [
-        { value: 'cmcorpusfutureaction0000', kind: 'FUTURE_ACTION', source: 'TOOL_OUTCOME' },
-        { value: 'cmcorpuscontact0000000000', kind: 'CONTACT', source: 'DURABLE_ROW' },
-      ],
-    }),
-    currentReason: 'NO_MATCHING_EFFECT',
-    cause: "the same root cause, through 'i have scheduled' rather than 'i have booked'",
-    consequence: 'as above',
-  },
-  {
-    // Recorded when the first-person PRETERITE frames were added. The fix closed
-    // a detection gap and deliberately did not touch this precision one, because
-    // the two pull in opposite directions and closing this one means teaching
-    // `matchCompletionMarkers` to look PAST the verb at the object - a different
-    // change, in the engine rather than in the data. Filed here so the new tense
-    // inherits the finding visibly instead of quietly widening it.
-    name: 'verb-first callback wording in the simple past',
-    text: 'I booked the callback for Thursday at 2pm.',
-    ledger: ledger({
-      effects: [BOOKED_CALLBACK_THURSDAY_1400],
-      identifiers: [
-        { value: 'cmcorpusfutureaction0000', kind: 'FUTURE_ACTION', source: 'TOOL_OUTCOME' },
-        { value: 'cmcorpuscontact0000000000', kind: 'CONTACT', source: 'DURABLE_ROW' },
-      ],
-    }),
-    currentReason: 'NO_MATCHING_EFFECT',
-    cause:
-      "the same root cause as the three above, now reachable through the preterite frame 'i booked' as well as " +
-      "through the perfect 'i have booked'. The frames are grouped by VERB because the object sits after the " +
-      'verb, where matchCompletionMarkers cannot see it from the position the frame starts at, so every ' +
-      'first-person booking verb commits to MEETING regardless of what it booked. ' +
-      'docs/MISSION_2D_CLAIM_GATE.md § 8 names it as a limit.',
-    consequence:
-      'as above: one wasted provider round trip on a truthful callback confirmation, and a WITHHELD turn if ' +
-      'the model repeats its own phrasing twice more. Unchanged in kind by the preterite fix - it is the same ' +
-      'defect through one more spelling - but it is now reachable by more wordings, which is why it is listed.',
-  },
+  // EMPTY since the hosted-demo callback fix. The four entries that were here were
+  // one class - § 8 limit 9, a verb-first frame (`i've booked`, `i have booked`,
+  // `i have scheduled`, `i booked`) committed to MEETING before it could see that
+  // its object was a callback - and `frameFamily` in the detector now lets that
+  // frame defer to a CALLBACK object. They live on in LEDGER_CASES with
+  // `expect: null`, beside the FALSE callback confirmations that must still fail.
+  // A new false positive is added here with its cause and consequence, as before.
 ];
 
 // ---------------------------------------------------------------------------

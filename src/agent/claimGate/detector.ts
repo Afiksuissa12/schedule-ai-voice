@@ -910,7 +910,7 @@ function matchCompletionMarkers(
       coversTo: position + best.span,
       claim: {
         kind: 'EFFECT_ASSERTED',
-        family: best.entry.family,
+        family: frameFamily(sentence.tokens, best.entry.family, position + best.span, lexicon),
         mode: best.entry.mode,
         locale: lexicon.locale,
         matchedForm: best.form,
@@ -922,6 +922,57 @@ function matchCompletionMarkers(
   }
 
   return out;
+}
+
+/**
+ * How far past the end of a frame its object may start: `I've scheduled a callback`
+ * (one token), `I've booked you a callback` (two), `I have scheduled your follow-up`.
+ */
+const MAX_TOKENS_FROM_FRAME_TO_OBJECT = 3;
+
+/**
+ * The family a frame asserts, once the OBJECT after it is in view. § 8 limit 9.
+ *
+ * A generic MEETING frame (`i've booked`, `i have scheduled`, `i booked`) commits to
+ * MEETING from the position it starts at, so `I've scheduled a callback for tomorrow
+ * at 2pm.` - said truthfully, over a real CALLBACK_SCHEDULED effect - was reconciled
+ * against meetings, found none, and was regenerated until the turn was WITHHELD.
+ * That was the only wording the hosted model used to confirm a callback.
+ *
+ * The frame defers to its object ONLY when all of these hold, and otherwise nothing
+ * changes:
+ *  - the frame's own family is the generic MEETING one;
+ *  - the FIRST domain object after the frame is a CALLBACK object, within
+ *    `MAX_TOKENS_FROM_FRAME_TO_OBJECT`, in the same punctuation clause, with no
+ *    clause breaker between them;
+ *  - the sentence names NO meeting object and no generic booking object anywhere,
+ *    so `I've booked a callback and your meeting for Thursday` stays a MEETING claim
+ *    and a meeting that does not exist is still caught.
+ *
+ * This is a relabel, never a release: a CALLBACK claim is still reconciled against
+ * the ledger, needs a CALLBACK_SCHEDULED effect, and has its day and time compared
+ * with the persisted row exactly as a meeting's are. With no callback saved it fails
+ * NO_MATCHING_EFFECT, as before.
+ */
+function frameFamily(
+  tokens: readonly ClaimToken[],
+  family: ClaimEffectFamily,
+  frameEnd: number,
+  lexicon: ClaimLexicon,
+): ClaimEffectFamily {
+  if (family !== 'MEETING' || frameEnd <= 0) return family;
+  const objects = domainObjectMatches(tokens, [lexicon]);
+  if (objects.some((object) => object.family === 'MEETING' || object.family === 'ANY')) return family;
+
+  const object = objects
+    .filter((candidate) => candidate.position >= frameEnd)
+    .reduce<DomainObjectMatch | null>((first, candidate) => (first === null || candidate.position < first.position ? candidate : first), null);
+  if (object === null || object.family !== 'CALLBACK') return family;
+  if (object.position - frameEnd > MAX_TOKENS_FROM_FRAME_TO_OBJECT) return family;
+  if (tokens[object.position]?.clause !== tokens[frameEnd - 1]?.clause) return family;
+  const between = tokens.slice(frameEnd, object.position);
+  if (formMatches(between, lexicon.clauseBreakers).length > 0) return family;
+  return 'CALLBACK';
 }
 
 interface BestCompletion {
