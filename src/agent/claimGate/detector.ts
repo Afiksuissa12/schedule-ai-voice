@@ -552,7 +552,90 @@ function claimsInView(text: string, context: DetectionContext): DetectedClaim[] 
     collectReadings({ sentence: bridged.sentence, crossing: bridged.boundary }, bridgedReadings, context, out);
   }
 
+  appendRestatedTimes(sentences, context, out);
   return out;
+}
+
+/** The `matchedForm` of a claim produced by `appendRestatedTimes`. Never customer-facing. */
+export const RESTATED_TIME_FORM = '(restated day or time)';
+
+/** The families whose effects have a day and a time a later sentence can restate. */
+const RESTATABLE_FAMILIES: readonly ClaimEffectFamily[] = ['MEETING', 'RESCHEDULE', 'CALLBACK', 'ANY'];
+
+/**
+ * A day or a time RESTATED in a sentence of its own, after the reply has already
+ * asserted a scheduling effect. Hosted-demo safety fix, Founder-approved.
+ *
+ * THE DEFECT. `The meeting is booked for Friday at 10:00 AM. Just note that it's at
+ * 11:00 AM.` - the first sentence is a claim and was checked against the saved
+ * meeting; the second has no completion form, so no rule read it, and the 11:00 went
+ * out to the contact. Found on production.
+ *
+ * THE RULE. When the reply (this view of it) contains at least one EFFECT claim of a
+ * family that has a day and a time, every OTHER sentence that produced no claim of
+ * its own, is not a question, and in which the detector's own readers (`detectDay`,
+ * `detectTime` - the scheduling resolver's vocabulary) read a concrete day or an hour,
+ * is reported as a claim of that same family and mode, carrying what it read. It is
+ * then reconciled like any other claim: against a persisted effect of ITS family, on
+ * that day, at that hour. So a correct restatement is supported, a wrong one is
+ * `WRONG_DAY` / `WRONG_TIME`, a meeting time is never checked against a callback (or
+ * the reverse), and nothing is supported without a persisted effect.
+ *
+ * WHAT IT DOES NOT CATCH, BY CONSTRUCTION. A number the readers do not read as a day
+ * or a time - a price, a quantity, a duration, a phone number, an identifier - adds
+ * nothing, because nothing here reads numbers; only the existing readers do.
+ *
+ * FAIL-CLOSED CHOICES. Negated and conditional sentences are NOT excused (`It's not
+ * at 10, it's at 11.` is exactly the correction this exists for), and the sentence's
+ * unread temporal material is carried like any claim's. When the reply asserts
+ * effects of more than one family, a restatement is reported once per family, so it
+ * must agree with every one of them.
+ */
+function appendRestatedTimes(
+  sentences: readonly ClaimSentence[],
+  context: DetectionContext,
+  out: DetectedClaim[],
+): void {
+  const antecedents = new Map<ClaimEffectFamily, DetectedClaim>();
+  for (const claim of out) {
+    if (claim.kind !== 'EFFECT_ASSERTED' || !RESTATABLE_FAMILIES.includes(claim.family)) continue;
+    if (!antecedents.has(claim.family)) antecedents.set(claim.family, claim);
+  }
+  if (antecedents.size === 0) return;
+
+  const claimed = new Set(out.map((claim) => claim.sentenceIndex));
+  for (const sentence of sentences) {
+    if (claimed.has(sentence.index) || sentence.interrogative) continue;
+
+    const consumed = new Set<number>();
+    const readAsATime = new Set<number>();
+    const day = detectDay(sentence.tokens, context.schedulingLexicons, context.claimLexicons, consumed);
+    const time = detectTime(sentence.tokens, context.schedulingLexicons, consumed, readAsATime);
+    if (day === null && (time === null || time.hour === null)) continue;
+
+    const unreadTemporal = unreadTemporalMaterial(
+      sentence.tokens,
+      clauseIndices(sentence, context.claimLexicons),
+      { consumed, readAsATime },
+      context.claimLexicons,
+      context.schedulingLexicons,
+    );
+    for (const [family, antecedent] of antecedents) {
+      out.push({
+        kind: 'EFFECT_ASSERTED',
+        family,
+        mode: antecedent.mode,
+        locale: antecedent.locale,
+        matchedForm: RESTATED_TIME_FORM,
+        sentenceIndex: sentence.index,
+        excerpt: sentence.raw,
+        assertedDay: day,
+        assertedTime: time,
+        unreadTemporal,
+        identifiers: [],
+      });
+    }
+  }
 }
 
 /** What one sentence says about WHEN and about references, read once. */

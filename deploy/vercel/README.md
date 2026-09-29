@@ -54,3 +54,34 @@ transcript and persisted actions are read back from the database on every reques
   then withholds the reply (fail-safe); the page says so explicitly. See `docs/KNOWN_LIMITATIONS.md`.
 - Telephony and calendar are the deterministic in-process providers: nothing dials a phone or
   touches a real calendar.
+
+## Restated times (safety fix)
+
+A day or a time restated in a sentence with no booking wording - "The meeting is booked for Friday at
+10:00 AM. Just note that it's at 11:00 AM." - is checked against the saved effect like any claim
+(`src/agent/claimGate/detector.ts` `appendRestatedTimes`; tests in `tests/agent/restatedTime.test.ts`).
+It applies when the reply already contains a scheduling claim; prices, quantities, phone numbers,
+identifiers and durations are not read as times, and questions are not restatements.
+
+## Known hosted-demo limitations (measured on production, 29 September 2026; not fixed - scope frozen)
+
+- **Meeting confirmations are not always shown.** In 10 fresh production booking runs, 5 showed the
+  model's confirmation; in the others the meeting was saved but the reply was withheld (the page
+  then shows the safety-gate notice and the saved meeting) or the time was not accepted. Causes below.
+- **"<weekday> next week" is not a time the scheduler accepts** ("Tuesday next week at 1pm" is
+  refused as `INVALID_FORMAT`; "next Tuesday at 1pm" works). Nothing is booked and nothing false is said.
+- **"for <non-time words>" can be read as an unreadable time** by the deterministic detector
+  ("booked for the Northwind Dispatch Demo", "set up for our discussion"), which withholds a true reply
+  (`UNREADABLE_WHEN`). The detector also reads "everything is set up" as a completion claim.
+- **Readiness wording** ("I'll make sure everything is set up") is still sometimes classified by the
+  semantic verifier as a record commitment; "I'll make sure it's on the calendar" is treated as a
+  calendar undertaking, deliberately.
+- **Unsupported promises still occur occasionally** ("I'll confirm the details with you again before
+  the call"); the gate blocks them (`NO_TOOL_FOR_PROMISE`), which withholds that reply.
+- **Timeouts.** When the model keeps producing unsupported text, three gate attempts (each a model
+  call plus a verifier call) can exceed the 60 s function limit; the visitor then sees an error
+  instead of a reply or the safety notice. Nothing false is shown.
+- **A restated time with no scheduling claim anywhere in the reply** has no anchor in the
+  deterministic layer ("Your meeting is at 10 AM. Actually, it'll be at 11."). It is caught only when
+  the semantic verifier reports the first sentence as a meeting - its instruction treats wording that
+  describes a state of affairs as an assertion - and then fails closed (`UNREADABLE_WHEN`).
