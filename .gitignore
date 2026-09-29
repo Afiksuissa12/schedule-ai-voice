@@ -47,3 +47,6 @@ eval-output-*/runs/
 Thumbs.db
 .idea/
 .vscode/
+
+# Vercel build output (hosted-demo)
+deploy/vercel/.generated/

@@ -352,6 +352,12 @@ export interface ClaimDueFutureActionsInput {
   /** How long the claim is held before another runner may steal it. */
   readonly leaseMilliseconds: number;
   readonly limit?: number;
+  /**
+   * OPTIONAL scope. When set, only this organization's actions are claimed - used by the hosted
+   * web demo, where many visitors' demo worlds share one database. Absent = every organization,
+   * exactly as before.
+   */
+  readonly organizationId?: string;
 }
 
 export interface FutureActionRepository {
@@ -484,6 +490,7 @@ export function createFutureActionRepository(db: DbExecutor): FutureActionReposi
 
       const candidates = await db.futureAction.findMany({
         where: {
+          ...(input.organizationId ? { organizationId: input.organizationId } : {}),
           scheduledForUtc: { lte: now },
           OR: [
             { status: 'PENDING' },

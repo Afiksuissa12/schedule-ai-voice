@@ -144,12 +144,16 @@ export class DueActionRunner {
    * Never throws because of a single action - a poison row must not stop the
    * queue. Each action's fate is in the returned summary.
    */
-  async runDueActions(nowUtc: IsoUtcString = this.clock.nowUtc()): Promise<DueActionRunSummary> {
+  async runDueActions(
+    nowUtc: IsoUtcString = this.clock.nowUtc(),
+    scope: { readonly organizationId?: string } = {},
+  ): Promise<DueActionRunSummary> {
     const claimedActions = await this.db.futureActions.claimDue({
       nowUtc,
       leaseOwner: this.runnerId,
       leaseMilliseconds: this.leaseMilliseconds,
       limit: this.batchSize,
+      ...(scope.organizationId ? { organizationId: scope.organizationId } : {}),
     });
 
     const outcomes: DueActionOutcome[] = [];
