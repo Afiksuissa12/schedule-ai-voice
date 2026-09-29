@@ -43,6 +43,11 @@ transcript and persisted actions are read back from the database on every reques
   the sentence also names a meeting or a generic booking. The claim is still reconciled against
   the saved callback's day and time, and a callback that was never saved, or one described at the
   wrong day or time, is still rejected (`tests/claimGate/claimGateCorpus.ts` `LEDGER_CASES`).
+- Semantic-layer readings (Founder-approved, `src/agent/claimGate/semantic/union.ts`
+  `borrowedReading`): a semantic claim may use the day and time the deterministic detector already
+  read from the same phrase, and a bare "then" may refer to an earlier claim of the SAME type in the
+  same reply. The semantic claim keeps its own type and is still checked against the saved state;
+  `tests/agent/semanticBorrowedReading.test.ts` holds the adversarial cases that must still block.
 - Meeting confirmations are released: the gate checks them against the saved meeting, and if the
   model's time wording is unreadable it asks for a regeneration, which normally succeeds.
 - The semantic claim verifier can occasionally fail to read a TRUE confirmation's time wording and

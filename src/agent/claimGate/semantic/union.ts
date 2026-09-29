@@ -211,7 +211,8 @@ export function unionClaims(input: UnionClaimsInput): ClaimUnion {
       continue;
     }
 
-    entries.push({ claim: toDetectedClaim(semantic, index, input.text), source: 'SEMANTIC' });
+    const reading = borrowedReading(semantic, entries, input.text);
+    entries.push({ claim: toDetectedClaim(semantic, index, input.text, reading), source: 'SEMANTIC' });
     contributed += 1;
   }
 
@@ -285,7 +286,12 @@ function coincides(deterministic: DetectedClaim, semantic: SemanticClaim): boole
  * detection. This function is a translator and the absence of any reading in it
  * is the authority boundary at its narrowest point.
  */
-function toDetectedClaim(semantic: SemanticClaim, index: number, text: string): DetectedClaim {
+function toDetectedClaim(
+  semantic: SemanticClaim,
+  index: number,
+  text: string,
+  reading: TemporalReading | null = null,
+): DetectedClaim {
   return {
     // Always an effect assertion. `IDENTIFIER_ASSERTED` is the detector's kind
     // for a MARKER PHRASE with no identifier beside it - a lexical finding this
@@ -308,10 +314,153 @@ function toDetectedClaim(semantic: SemanticClaim, index: number, text: string): 
     // is all a sentence index is used for on this path.
     sentenceIndex: index,
     excerpt: text.length > SEMANTIC_EXCERPT_LIMIT ? `${text.slice(0, SEMANTIC_EXCERPT_LIMIT)}...` : text,
-    // Never parsed. See the module header.
-    assertedDay: null,
-    assertedTime: null,
-    unreadTemporal: semantic.whenPhrase === null ? [] : [semantic.whenPhrase],
+    // Never parsed HERE. See the module header - and `borrowedReading` below for
+    // the only way a semantic claim carries a day and a time: the DETECTOR's own
+    // reading, which reconciliation then checks against the persisted effect.
+    assertedDay: reading?.day ?? null,
+    assertedTime: reading?.time ?? null,
+    unreadTemporal: reading !== null || semantic.whenPhrase === null ? [] : [semantic.whenPhrase],
     identifiers: semantic.identifier === null ? [] : [semantic.identifier],
   };
+}
+
+// ---------------------------------------------------------------------------
+// Borrowing the DETECTOR's reading of a when-phrase (hosted-demo, Founder-approved)
+// ---------------------------------------------------------------------------
+
+/** A day AND a time, both read by `detector.ts`. */
+interface TemporalReading {
+  readonly day: NonNullable<DetectedClaim['assertedDay']>;
+  readonly time: NonNullable<DetectedClaim['assertedTime']>;
+}
+
+/**
+ * The only when-phrases a semantic claim may resolve by reference to an earlier
+ * claim. Compared whole, after trimming and dropping end punctuation.
+ */
+const ANAPHORIC_WHEN_PHRASES: readonly string[] = ['then', 'at that time'];
+
+/**
+ * The day and time a semantic claim's when-phrase refers to, when the DETERMINISTIC
+ * layer has already read them - or `null`, which keeps the phrase unread and so
+ * `UNREADABLE_WHEN`, exactly as before.
+ *
+ * WHY. A semantic claim that did not coincide with a deterministic one (`coincides`
+ * wants the same family AND the same mode) always reached reconciliation as an
+ * unreadable phrase. On the hosted demo that withheld true confirmations twice over:
+ *  1. `The meeting is all set for Thursday, October 1st at 3:00 PM.` - the detector
+ *     read the day and time but filed the claim as ANY (`all set`), the semantic
+ *     layer called it a MEETING, and its copy of the phrase was unreadable;
+ *  2. `I've scheduled a callback for Thursday at 3 PM. I'll give you a call then.` -
+ *     the semantic layer quoted `then`, which no reader can resolve alone.
+ *
+ * WHAT DOES NOT CHANGE. Nothing is folded and nothing is removed: the semantic claim
+ * is still appended as its OWN claim, with its OWN family, and still goes through
+ * `verifyClaims`. So it still needs a persisted effect of ITS family (a callback does
+ * not support a meeting claim, nor the reverse - `NO_MATCHING_EFFECT`), on that day
+ * at that hour (`WRONG_DAY` / `WRONG_TIME`), and the deterministic claims beside it are
+ * reconciled as before. The only thing supplied is a reading, and it comes from the
+ * detector, never from the verifier - the authority boundary above is unchanged.
+ *
+ * WHEN A READING IS BORROWED, and otherwise it is not:
+ *  - DIRECT: a deterministic claim of a COMPATIBLE family (the same one, or the
+ *    detector's generic ANY) read a day AND a time, left nothing unread, sits in a
+ *    sentence that contains the quoted phrase, and every form it read is inside that
+ *    phrase - so the reading is the reading OF that phrase.
+ *  - BY REFERENCE: the phrase is only `then` / `at that time`, and every earlier
+ *    claim of the SAME family (never ANY, never another family) that has a full
+ *    reading agrees on one day and time, and the reference stands AFTER that time in
+ *    the reply. No such claim, or two that disagree, and the phrase stays unread.
+ *    The antecedent is itself a claim in this reply and is reconciled too, so a
+ *    reference to an unsupported claim cannot release the text: the gate releases a
+ *    reply only when EVERY claim in it is supported.
+ */
+function borrowedReading(
+  semantic: SemanticClaim,
+  entries: readonly SourcedClaim[],
+  text: string,
+): TemporalReading | null {
+  if (semantic.whenPhrase === null) return null;
+  const phrase = normalisedPhrase(semantic.whenPhrase);
+  if (phrase.length === 0) return null;
+
+  if (ANAPHORIC_WHEN_PHRASES.includes(phrase)) return antecedentReading(semantic, entries, text, phrase);
+
+  for (const { claim } of entries) {
+    if (claim.locale === SEMANTIC_CLAIM_LOCALE) continue;
+    if (claim.family !== semantic.effectFamily && claim.family !== 'ANY') continue;
+    const reading = fullReading(claim);
+    if (reading === null) continue;
+    if (!normalisedPhrase(claim.excerpt).includes(phrase)) continue;
+    const forms = [...reading.day.forms, ...reading.time.forms];
+    if (forms.length === 0 || !forms.every((form) => phrase.includes(form.toLowerCase()))) continue;
+    return reading;
+  }
+  return null;
+}
+
+function antecedentReading(
+  semantic: SemanticClaim,
+  entries: readonly SourcedClaim[],
+  text: string,
+  phrase: string,
+): TemporalReading | null {
+  const antecedents = entries
+    .map(({ claim }) => ({ claim, reading: fullReading(claim) }))
+    .filter(
+      (candidate): candidate is { claim: DetectedClaim; reading: TemporalReading } =>
+        candidate.claim.family === semantic.effectFamily &&
+        candidate.claim.family !== 'ANY' &&
+        candidate.reading !== null,
+    );
+  const first = antecedents[0];
+  if (first === undefined) return null;
+  if (!antecedents.every((candidate) => sameReading(candidate.reading, first.reading))) return null;
+
+  // The reference must come AFTER the time it refers to. Located in the raw text;
+  // anything that cannot be located leaves the phrase unread.
+  const lowerText = text.toLowerCase();
+  let timeEnd = -1;
+  for (const { claim, reading } of antecedents) {
+    if (claim.locale === SEMANTIC_CLAIM_LOCALE) continue;
+    const start = lowerText.indexOf(claim.excerpt.toLowerCase());
+    if (start < 0) continue;
+    const lastForm = reading.time.forms[reading.time.forms.length - 1];
+    if (lastForm === undefined) continue;
+    const at = claim.excerpt.toLowerCase().lastIndexOf(lastForm.toLowerCase());
+    if (at < 0) continue;
+    const end = start + at + lastForm.length;
+    if (timeEnd < 0 || end < timeEnd) timeEnd = end;
+  }
+  if (timeEnd < 0) return null;
+  const reference = new RegExp(`\\b${phrase.replace(/ /g, '\\s+')}\\b`, 'gi');
+  for (const match of text.matchAll(reference)) {
+    if (match.index !== undefined && match.index >= timeEnd) return first.reading;
+  }
+  return null;
+}
+
+/** A claim's day AND time, when the detector read both and left nothing unread. */
+function fullReading(claim: DetectedClaim): TemporalReading | null {
+  if (claim.assertedDay === null || claim.assertedTime === null) return null;
+  if (claim.unreadTemporal.length > 0) return null;
+  return { day: claim.assertedDay, time: claim.assertedTime };
+}
+
+function sameReading(a: TemporalReading, b: TemporalReading): boolean {
+  return (
+    a.day.isoWeekday === b.day.isoWeekday &&
+    a.day.offsetDays === b.day.offsetDays &&
+    a.day.dayOfMonth === b.day.dayOfMonth &&
+    a.day.month === b.day.month &&
+    a.day.year === b.day.year &&
+    a.time.hour === b.time.hour &&
+    a.time.minute === b.time.minute &&
+    a.time.hourIsAmbiguous === b.time.hourIsAmbiguous &&
+    a.time.dayPart === b.time.dayPart
+  );
+}
+
+function normalisedPhrase(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, ' ').trim().replace(/[.!?,;:]+$/u, '').trim();
 }
