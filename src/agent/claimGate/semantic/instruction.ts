@@ -80,7 +80,7 @@ import { renderSegments, segmentForClassification } from './segmentation.js';
  * classification, or the chain will pin a version that no longer describes the
  * words that ran.
  */
-export const SEMANTIC_VERIFIER_INSTRUCTION_REF = 'semantic-claim-classifier@v2';
+export const SEMANTIC_VERIFIER_INSTRUCTION_REF = 'semantic-claim-classifier@v3';
 
 /**
  * The system-side instruction.
@@ -120,7 +120,7 @@ export const SEMANTIC_VERIFIER_INSTRUCTION = [
   'condition waiting on an answer, a description of what is possible, a courtesy - then it asserts',
   'none, and you do not report it.',
   '',
-  'FIVE RULES FOR READING A SEGMENT. Each is about MEANING or about LAYOUT. None of them is a list of',
+  'SIX RULES FOR READING A SEGMENT. Each is about MEANING or about LAYOUT. None of them is a list of',
   'words to look for, and you must not treat them as one.',
   '',
   '  1. READ EACH SEGMENT RIGHT TO ITS END. Text of this kind often opens with something that asserts',
@@ -150,6 +150,13 @@ export const SEMANTIC_VERIFIER_INSTRUCTION = [
   '     with no separate pronoun, and omit the linking verb in the present tense - so a complete',
   '     assertion that something is finished can be a single word. Grammatical compactness is not',
   '     hedging. Where a text mixes languages, read all of it.',
+  '',
+  '  6. READINESS IS NOT A RECORD. Saying that people will be ready, prepared or expecting the',
+  '     contact - that someone will get ready for an appointment - writes nothing down, sends nothing',
+  '     and changes no arrangement, so on its own it is a courtesy and asserts nothing. It does not',
+  '     cancel anything else the segment asserts, and it never covers an undertaking that WOULD',
+  '     produce a record or a delivery: something entered, noted, scored, scheduled, moved, called',
+  '     off, sent, or a notice, reminder or confirmation going out. Judge those exactly as before.',
   '',
   'ONE OBJECT PER ACTION. A text may assert more than one material action, and then you emit one',
   'object for each, in the order you found them. Do not fold two different actions into one object,',

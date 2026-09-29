@@ -366,7 +366,9 @@ const ANAPHORIC_WHEN_PHRASES: readonly string[] = ['then', 'at that time'];
  *  - DIRECT: a deterministic claim of a COMPATIBLE family (the same one, or the
  *    detector's generic ANY) read a day AND a time, left nothing unread, sits in a
  *    sentence that contains the quoted phrase, and every form it read is inside that
- *    phrase - so the reading is the reading OF that phrase.
+ *    phrase - so the reading is the reading OF that phrase. The one form the phrase
+ *    may leave out is a day part made redundant by an am/pm marker in the phrase
+ *    (`onlyARedundantDayPart`).
  *  - BY REFERENCE: the phrase is only `then` / `at that time`, and every earlier
  *    claim of the SAME family (never ANY, never another family) that has a full
  *    reading agrees on one day and time, and the reference stands AFTER that time in
@@ -393,10 +395,34 @@ function borrowedReading(
     if (reading === null) continue;
     if (!normalisedPhrase(claim.excerpt).includes(phrase)) continue;
     const forms = [...reading.day.forms, ...reading.time.forms];
-    if (forms.length === 0 || !forms.every((form) => phrase.includes(form.toLowerCase()))) continue;
+    if (forms.length === 0) continue;
+    const missing = forms.filter((form) => !phrase.includes(form.toLowerCase()));
+    if (missing.length > 0 && !onlyARedundantDayPart(missing, reading, phrase)) continue;
     return reading;
   }
   return null;
+}
+
+/**
+ * True when the only form of the reading that the quoted phrase left out is its
+ * DAY PART, and the phrase fixes the hour without it.
+ *
+ * `3:00 PM in the afternoon` quoted as `3:00 PM`: the am/pm marker already makes
+ * it 15:00, so the day part adds nothing and the two are the same time. Without
+ * an am/pm marker in the phrase (`3:00 in the afternoon` quoted as `3:00`) the day
+ * part is what decides the hour, and nothing is borrowed.
+ *
+ * The borrowed reading still CARRIES the day part, so a contradictory one - `3:00
+ * PM in the morning` - reaches reconciliation as it was written and is rejected
+ * there against the saved time (`WRONG_TIME`), exactly like the deterministic
+ * claim that read it.
+ */
+function onlyARedundantDayPart(missing: readonly string[], reading: TemporalReading, phrase: string): boolean {
+  const dayPart = reading.time.dayPart?.toLowerCase();
+  if (dayPart === undefined || missing.length !== 1) return false;
+  const [form] = missing;
+  if (form === undefined || !form.toLowerCase().includes(dayPart)) return false;
+  return /(^|[^a-z])[ap]\.?m\.?($|[^a-z])/.test(phrase);
 }
 
 function antecedentReading(

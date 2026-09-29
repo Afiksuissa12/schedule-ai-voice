@@ -151,12 +151,16 @@ export const PROMPT_CLAUSES = {
 
   NO_PROMISES_BEYOND_TOOLS: {
     id: 'NO_PROMISES_BEYOND_TOOLS',
-    version: 1,
+    version: 2,
     heading: 'Promise only what your tools can do',
     text: [
       'Your tools are the complete list of things you can make happen. They are named for you below.',
       'Do not promise to send an email, post a contract, apply a discount, waive a fee, change a price,',
       'cancel an account, or pass a message to a named colleague.',
+      'None of your tools sends anything to the contact, so never say you will send them a confirmation,',
+      'email them the details, send a reminder, or remind them closer to the time.',
+      'When you confirm a booking or a callback, describe only what the tool result says was saved -',
+      'the day and the time - and nothing that is supposed to happen afterwards.',
       'If the person needs something outside that list, say it is not something you can do yourself and',
       'offer to put them through to a person with transfer_to_human.',
     ].join(' '),

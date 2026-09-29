@@ -227,3 +227,87 @@ describe('a borrowed reading never stands in for a persisted effect', () => {
     expect(union.claims.length).toBe(deterministic.length + CALLBACK_THEN_SEMANTIC.length);
   });
 });
+
+describe('a day part the semantic layer left out of its quote', () => {
+  const SAID = 'The meeting is all set for Thursday, March 5th at 3:00 PM in the afternoon.';
+
+  it('"3:00 PM in the afternoon" quoted as "3:00 PM" reconciles against the saved 15:00 meeting', () => {
+    const result = gate(SAID, [claim('MEETING', 'COMPLETED', 'Thursday, March 5th at 3:00 PM')], [MEETING_THURSDAY_1500]);
+    expect(result.reasons).toEqual([]);
+    expect(result.released).toBe(true);
+  });
+
+  it('a CONFLICTING day part ("3:00 PM in the morning") -> BLOCK, borrowed or not', () => {
+    const text = 'The meeting is all set for Thursday, March 5th at 3:00 PM in the morning.';
+    const result = gate(text, [claim('MEETING', 'COMPLETED', 'Thursday, March 5th at 3:00 PM')], [MEETING_THURSDAY_1500]);
+    expect(result.released).toBe(false);
+    expect(new Set(result.reasons)).toEqual(new Set(['WRONG_TIME']));
+  });
+
+  it('no am/pm in the quote, so the day part is what fixes the hour -> nothing borrowed, BLOCK', () => {
+    const text = 'The meeting is all set for Thursday, March 5th at 3:00 in the afternoon.';
+    const result = gate(text, [claim('MEETING', 'COMPLETED', 'Thursday, March 5th at 3:00')], [MEETING_THURSDAY_1500]);
+    expect(result.released).toBe(false);
+    // The semantic claim borrowed nothing, so its phrase stays unread. (The
+    // deterministic claim beside it is judged on its own, as it always was.)
+    expect(result.reasons).toContain('UNREADABLE_WHEN');
+  });
+
+  it('the day part left out AND the hour wrong -> BLOCK', () => {
+    const text = 'The meeting is all set for Thursday, March 5th at 4:00 PM in the afternoon.';
+    const result = gate(text, [claim('MEETING', 'COMPLETED', 'Thursday, March 5th at 4:00 PM')], [MEETING_THURSDAY_1500]);
+    expect(result.released).toBe(false);
+    expect(new Set(result.reasons)).toEqual(new Set(['WRONG_TIME']));
+  });
+
+  it('a quote missing something OTHER than the day part borrows nothing -> BLOCK', () => {
+    const result = gate(SAID, [claim('MEETING', 'COMPLETED', 'Thursday at 3:00 PM')], [MEETING_THURSDAY_1500]);
+    expect(result.released).toBe(false);
+    expect(result.reasons).toEqual(['UNREADABLE_WHEN']);
+  });
+});
+
+describe('promises of a delivery nothing can make are still blocked beside a true booking', () => {
+  const BOOKED = 'The meeting is all set for Thursday, March 5th at 3:00 PM.';
+  const BOOKED_SEMANTIC = claim('MEETING', 'COMPLETED', 'Thursday, March 5th at 3:00 PM');
+
+  for (const [promise, whenPhrase] of [
+    ["I'll send you a confirmation shortly.", 'shortly'],
+    ["I'll email you the details.", null],
+    ["I'll send you a reminder closer to the time.", 'closer to the time'],
+    ["I'll remind you closer to the time.", 'closer to the time'],
+  ] as const) {
+    it(`${promise} -> BLOCK (NO_TOOL_FOR_PROMISE), even with the meeting saved`, () => {
+      const text = `${BOOKED} ${promise}`;
+      const result = gate(text, [BOOKED_SEMANTIC, claim('MESSAGE', 'COMMITTED', whenPhrase)], [MEETING_THURSDAY_1500]);
+      expect(result.released).toBe(false);
+      expect(result.reasons).toContain('NO_TOOL_FOR_PROMISE');
+    });
+  }
+
+  it('a false meeting confirmation with no saved meeting -> BLOCK', () => {
+    const result = gate(BOOKED, [BOOKED_SEMANTIC], []);
+    expect(result.released).toBe(false);
+    expect(result.reasons).toContain('NO_MATCHING_EFFECT');
+  });
+});
+
+describe('readiness wording: the fix is in the CLASSIFICATION, the gate still honours a report', () => {
+  const TEXT = "The meeting is all set for Thursday, March 5th at 3:00 PM. I'll make sure the team is ready for you.";
+  const BOOKED_SEMANTIC = claim('MEETING', 'COMPLETED', 'Thursday, March 5th at 3:00 PM');
+
+  it('the deterministic layer finds no claim in the reassurance itself', () => {
+    expect(detectMaterialClaims("I'll make sure the team is ready for you.")).toEqual([]);
+  });
+
+  it('classified as asserting nothing, the true booking beside it is released', () => {
+    const readiness: SemanticClaim = { ...claim('RECORD', 'NOT_CLAIMED', null), assertsEffect: false };
+    expect(gate(TEXT, [BOOKED_SEMANTIC, readiness], [MEETING_THURSDAY_1500]).released).toBe(true);
+  });
+
+  it('if the semantic layer still reports it as a RECORD commitment, it is still reconciled -> BLOCK', () => {
+    const result = gate(TEXT, [BOOKED_SEMANTIC, claim('RECORD', 'COMMITTED', null)], [MEETING_THURSDAY_1500]);
+    expect(result.released).toBe(false);
+    expect(result.reasons).toEqual(['NO_MATCHING_EFFECT']);
+  });
+});
