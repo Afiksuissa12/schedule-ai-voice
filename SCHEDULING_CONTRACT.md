@@ -36,6 +36,11 @@ Three things make those enforceable rather than aspirational:
 import {
   DateTimeResolver, SchedulingValidator, MeetingSchedulingService,
   schedulingPolicyFromAgentConfiguration,
+  // The natural-language grammar and its locale lexicons, for callers that
+  // need to reason about a `when` without going through the validator.
+  parseNaturalLanguageDateTime, normalizeScript,
+  REGISTERED_LEXICONS, EN_LEXICON, HE_LEXICON,
+  type LocaleLexicon, type LexiconEvent, type NaturalLanguageInterpretation,
 } from './src/scheduling/index.js';
 ```
 
@@ -84,28 +89,107 @@ interface ResolvedSlot     { startUtc; endUtc; timezone; startLocal; endLocal;
 Accepts an ISO instant, an ISO local datetime, or natural language. Pure: no
 wall clock, no database, no mutation.
 
-**Natural-language coverage.** `today` · `tomorrow` · `day after tomorrow` ·
-weekday names and abbreviations, bare and with `next` · `end of the week` ·
+#### The natural-language grammar is fail-closed and its vocabulary is data
+
+> **A phrase may resolve only if EVERY non-whitespace token of the normalised
+> text was consumed by a rule. Anything left over is refused, and the refusal
+> names the leftover.**
+
+This is the contract's most important sentence and it holds in every language,
+including ones the grammar will never learn. Nothing in the resolver names a
+script: `غدا في 15:00`, `завтра в 15:00`, `demain à 15:00` and `qqzzx wibble
+flurm at 15:00` all refuse through the same branch, each naming the words it
+could not read. `docs/DECISIONS.md` § 9 records why, and what used to happen
+instead.
+
+Each locale is a declarative lexicon module — `src/scheduling/lexicon/en.ts`,
+`src/scheduling/lexicon/he.ts` — exporting one `LocaleLexicon` of pure data.
+The resolver holds no language-specific literal, matches against the **union**
+of `REGISTERED_LEXICONS`, and matches whole **tokens** rather than substrings.
+**Adding a locale is adding a module and registering it**, with no resolver
+edit; `tests/scheduling/failClosedGrammar.test.ts` proves that by registering a
+synthetic third locale at runtime through `ParseNaturalLanguageOptions.lexicons`.
+
+**There is no language field anywhere.** `Contact` does not carry one and the
+model is not asked. Because the union is matched, one rule is stated explicitly:
+
+> **A token that two registered locales would read as DIFFERENT days or
+> DIFFERENT times is refused. A token they AGREE on is not an ambiguity** —
+> agreement means the same kind of thing with the same value, and two entries of
+> *different* kinds always disagree.
+
+`en` and `he` use disjoint scripts, so no token triggers it today. Both sides
+are tested against a synthetic locale rather than left untested.
+
+**Carrier tokens.** Each locale declares the filler words it permits and
+discards **on purpose** — English `call`, `me`, `back`, `please`; Hebrew
+`תתקשר`, `אליי`, `בוא`, `נגיד`. They are matched *last*, so a carrier can never
+shadow a real match, and consuming one is a recorded grammar event rather than a
+silent drop. `call me back tomorrow afternoon at 3` therefore still resolves,
+and the receipt says which three words were ignored and by whose rule.
+
+**Script normalisation** (`src/scheduling/lexicon/script.ts`, exported as
+`normalizeScript`) runs first: Unicode NFC, bidi controls and zero-width
+characters stripped, Hebrew niqqud stripped, maqaf → hyphen, geresh →
+apostrophe, gershayim → double quote. It does **not** lower-case, which is what
+makes it provably the identity on English input.
+
+**English coverage.** `today` · `tomorrow` · `day after tomorrow` · weekday
+names and abbreviations, bare and with `next` · `end of the week` ·
 `morning`/`afternoon`/`evening`/`tonight` · `noon`/`midday`/`midnight` · clock
 times with and without am/pm, `HH:mm`, `o'clock`, `p.m.` · `in N
 minutes/hours/days/weeks`, including `in a couple of hours`, `in an hour`,
 `half an hour` · explicit `YYYY-MM-DD` dates.
 
+**Hebrew coverage.** `היום` / `מחר` / `מחרתיים` · all weekday names in the
+`יום X`, `ביום X` and bare forms, with the modifier Hebrew puts *after* the
+weekday (`יום חמישי הבא`) · `סוף השבוע` · day parts `בבוקר`,
+`אחרי הצהריים`, `בערב`, and `הערב` for this evening · named times `בצהריים`,
+`בחצות` · clock times in digits with the prepositional prefix in every written
+form — `ב-15:00`, `ב־15:00` (maqaf), `ב15:00`, `ב 15:00`, `בשעה 15:00`,
+`ל-15:00` · relative offsets `בעוד N דקות/שעות/ימים/שבועות`, the DUAL forms
+`שעתיים` / `יומיים` / `שבועיים`, and `חצי שעה` · dates with or without a time ·
+and code-switched phrases such as `call me back מחר ב-16:00`.
+
+*Not covered, deliberately:* an hour spelled out in Hebrew words. `בשתיים`
+("at two") refuses **naming that word**, because 02:00 and 14:00 are twelve
+hours apart. See `docs/DECISIONS.md` § 9.9.
+
 **Weekday semantics.** A bare weekday means the soonest future one *excluding
 today*; `next tuesday` means the Tuesday of the following ISO week; `end of the
 week` means Friday of the current ISO week, or the next one if that has passed.
+The arithmetic is locale-agnostic and applies to whichever locale's word
+matched. *Which* days a business works is policy and lives in `businessHours`.
 
 **It refuses rather than guesses.** All of these return `INVALID_FORMAT`:
 
-- a bare 12-hour time with nothing to settle am vs pm — `tomorrow at 3`
+- a bare 12-hour time with nothing to settle am vs pm — `tomorrow at 3`,
+  `מחר ב-9:00` (Hebrew has no am/pm, so the same rule applies unchanged)
 - a contradiction — `tomorrow morning at 3pm`, `tomorrow in two hours`
-- vague intent — `sometime next week`, `later`, `soon`, `asap`
-- a period rather than a moment — `next week`, `next month`
+- vague intent — `sometime next week`, `later`, `soon`, `asap`, `אולי מחר`
+- a period rather than a moment — `next week`, `next month`, `שבוע הבא`
 - a day with no time — `next tuesday`
 - any leftover number the grammar cannot account for — `tomorrow at 3pm on the 15th`
+- **any leftover token at all** — `غدا في 15:00`, `qqzzx wibble flurm`
+- a genuine cross-locale ambiguity
 
 A bare time with no day resolves to **today** and is *not* rolled forward, so a
 time that has passed is reported as `IN_THE_PAST` rather than silently moved.
+That branch applies **only** when every token was consumed: a day word the
+grammar could not read can no longer become "the contact meant today".
+
+#### What the interpretation records
+
+`NaturalLanguageInterpretation` keeps `matched`, `dayAnchor`, `dayPart`,
+`timeAnchor` and `normalized`, and adds, additively: `locales` (which lexicons
+matched, in order), `lexicon` (every grammar event with its rule, locale,
+declared form and consumed text — carriers included), `carriers`, `leftover`
+(empty on success, the evidence on a refusal) and `scriptNormalization`.
+`SlotInterpretation` carries `locales`, `lexicon` and `carriers` into
+`ResolvedSlot`, and the whole interpretation continues to ride in
+`ValidationProvenance.notes.interpretation`. Day-anchor labels stay canonical
+and language-neutral, so `מחר ב-15:00` and `tomorrow at 15:00` both record
+`dayAnchor: 'tomorrow'` and differ only in `locales`.
 
 ### `SchedulingValidator`
 
@@ -279,3 +363,90 @@ repositories.
 `parseJsonWith` is typed `ZodType<T>`, which resolves to a schema's *input* type
 when `.default()` is used, making every defaulted field look
 possibly-undefined. Both were reported through the mailbox.
+
+---
+
+## 6. The regression and invariant coverage that backs § 2
+
+> Added by the locale-regression task. It adds no behaviour and changes no
+> existing section: everything below is a description of the tests that now hold
+> § 2's promises to account. `src/scheduling` is untouched by it.
+
+§ 2 makes three strong claims — the grammar is **fail-closed**, its vocabulary is
+**data**, and the day-anchor labels are **language-neutral**. Those are the kind
+of claim that stays true for exactly as long as something is watching. This is
+what watches.
+
+### 6.1 Five regression files, and what each one is for
+
+| File | The claim it holds to account |
+|---|---|
+| `tests/scheduling/localeParity.test.ts` | **Hebrew and English translations resolve to the same instant.** 37 translated pairs × 6 `now` instants × 6 contact zones, asserted on the resolved UTC instant *and* on the local calendar day in the contact's zone — a RELATION, so no expected wall-clock string can go stale. Plus 3 pairs that are faithful translations and deliberately do NOT agree, each carrying its reason and asserted in its divergent shape. |
+| `tests/scheduling/localeTimezoneBoundaries.test.ts` | **A day word is counted on the contact's calendar, never on UTC's**, at five instants where the two disagree (Asia/Jerusalem, America/New_York, Pacific/Auckland, Pacific/Honolulu) with one agreeing control; and the **DST gap and autumn repeat in Israel *and* the United States**, plus Pacific/Auckland's southern-hemisphere pair and Pacific/Honolulu's absence of one. Reuses `dst.test.ts`'s idioms, and re-derives every transition date from Luxon so the header table cannot become a lie. |
+| `tests/scheduling/localeDateAndTime.test.ts` | **A date without a time is not a slot** — 9 day forms × 3 zones × both languages, refused with the same reason on both sides; and **a date with a time is a slot**, the same slot, for 4 different ways of naming a time. |
+| `tests/scheduling/localeRefusalBreadth.test.ts` | **The fail-closed rule names no alphabet.** 13 scripts — Arabic, Cyrillic, French, Han, Hangul, Greek, Thai, Devanagari, Georgian, Ethiopic, Armenian, an invented Latin word, an emoji — each refused with the leftover quoted in the reason *and* recorded as data in the receipt. Plus the **cross-locale ambiguity** rule across all seven kinds of disagreement it distinguishes, each with an agreement control. |
+| `tests/scheduling/localeLexicon.test.ts` | **Adding a locale needs no resolver edit.** A third locale that exists nowhere in `src/` — `zz`, with an entirely invented vocabulary, asserted to share no form with `en` or `he` — is registered at runtime through `ParseNaturalLanguageOptions.lexicons`, and every rule of the grammar is then driven in it: day anchors, weekdays with an **AFTER**-positioned modifier, day parts, an implies-today day part, named times, attached and detached clock prefixes, a clock suffix, meridiems, offsets with a softener, a one-word fixed duration, carriers, vagueness markers, period tokens. The receipt is asserted to credit `zz` by name for each. The fail-closed and am/pm rules are asserted to apply to it unchanged, and `en`/`he` to be unaffected by its presence. Dropping the synthetic locale fails 23 of the file's 33 assertions, which is what keeps it from being a test that passes by understanding nothing. |
+
+Every refusal in `localeRefusalBreadth.test.ts` is held to the same three statements: it refuses
+with `INVALID_FORMAT`, the reason NAMES the token, and it never becomes "the
+contact meant today". The last of those is the one that matters — a refusal
+nobody can act on is a nuisance, a wrong day is a customer on the phone at the
+wrong hour.
+
+### 6.2 Three new invariants in the sweep
+
+`tests/invariants/` grew from 601 scenarios in 11 families to **823 in 12**, and
+from 12 per-scenario invariants to **15**:
+
+| Invariant | Statement |
+|---|---|
+| `INV-15-no-accepted-resolution-ignores-a-token` | Every ACCEPTED natural-language `when` consumed every token: `interpretation.leftover` is empty. Read from the `TOOL_CALL_VALIDATED` audit event, so it covers `check_availability` too, which accepts a time and writes nothing. |
+| `INV-16-hebrew-and-english-parity` | A translated pair resolves to the same instant under the same `now`, zone and policy — and where a row was persisted, that row's instant equals both sides. |
+| `INV-17-resolved-day-is-the-day-the-phrase-named` | Every persisted instant falls on the calendar day its own receipt names, read in the zone the phrase was resolved in — which, for every scenario that does not populate the model-supplied `timezone` argument, is asserted to BE the contact's persisted zone. |
+
+The new family is **`L-locale-parity`**: 10 Hebrew/English pairs, *both sides of
+each*, through the real dispatcher against a seeded Asia/Jerusalem,
+America/New_York or Pacific/Auckland contact. `REJECTED_EXPRESSIONS` also gained
+9 entries — the Hebrew refusal classes and four unknown-language ones — which
+family C crosses with all five main zones.
+
+### 6.3 What this coverage does NOT give you
+
+Stated here because silent truncation that reads as full coverage is a defect in
+itself. All of it is also in `KNOWN_COVERAGE_GAPS`, so it appears in the printed
+`npm run qa:sweep` report and not only in a document.
+
+- **Family L is bounded to 3 zones and 2 `now` instants, deliberately.** Adding
+  Asia/Jerusalem and Pacific/Auckland to the shared `TIMEZONES` axis would have
+  cost ~224 extra scenarios across seven families to re-prove *English* behaviour
+  at a different offset. The consequence: Hebrew is not swept in Europe/London,
+  Australia/Sydney, Asia/Kolkata or UTC. `localeParity.test.ts` covers six zones
+  at the resolver level, where a cell costs microseconds rather than a database.
+- **`INV-16` is not an independent oracle.** It resolves the counterpart phrase
+  through `DateTimeResolver`, the system under test, because no oracle can know
+  what a Hebrew phrase means without a Hebrew dictionary and writing one in the
+  harness would be the reimplementation the design forbids. It is worth having
+  because the claim is *relational* and because it is tied to the persisted row.
+  A change that broke both languages identically passes it — and fails
+  `tests/scheduling/naturalLanguage.test.ts`, which pins English independently.
+- **`INV-17` re-derives only the day anchors whose meaning is fixed arithmetic**
+  (`today`, `implicit_today`, `tonight`, `tomorrow`, `day_after_tomorrow`,
+  `iso_date:*`). A `weekday:*`, `next_weekday:*` or `end_of_week` anchor is
+  reported INAPPLICABLE *naming the label*, because deriving it would mean
+  reimplementing the ISO-week arithmetic under test.
+- **The Hebrew grammar cannot name a local time between 01:00 and 03:00**, which
+  is where every ordinary DST transition sits: Hebrew has no am/pm and no
+  declared day part covers 02:00, so a digit hour of 1–11 is refused first
+  (`docs/DECISIONS.md` § 9.9). The gap and repeat classes are therefore driven
+  through the locale-agnostic ISO path and the English grammar. That a *Hebrew*
+  phrase reaches the same DST checks is proved with America/Havana, whose
+  spring-forward happens at local midnight — the one transition hour Hebrew can
+  name, because `בחצות` is a declared named time.
+
+### 6.4 The wrong-day gate is still sharp
+
+`tests/eval/wrongDayGate.test.ts` was not weakened. Nothing in this coverage
+touches it: it still feeds a **synthetic** wrong-day result to the scorer and
+still proves the gate zeroes the tool-and-structural category, moves the
+composite, and fails the run. Now that no real run in the suite produces a wrong
+day, that file is the only place the gate's teeth can be demonstrated at all.

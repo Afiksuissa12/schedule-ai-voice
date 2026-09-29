@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "1.0.0",
+  "modelId": "hermes3:8b",
+  "runId": "fairness-sweep-2026-09-27",
+  "numCtx": 16384,
+  "sampledBy": "host-env-sampler 1.0.0 (external, runs on the Windows host)",
+  "startedAtIso": "2026-09-27T11:00:00.000Z",
+  "endedAtIso": "2026-09-27T11:30:00.000Z",
+  "modelResidentBytes": 6442450944,
+  "offload": {
+    "reportedBy": "ollama 0.34.3 /api/ps",
+    "gpuBytes": 4831838208,
+    "cpuBytes": 1610612736,
+    "runtimeReportedText": "25%/75% CPU/GPU"
+  },
+  "note": "Another GPU application (a browser with hardware acceleration) was open for the first third of this run - see the GPU utilisation max and the reduced free VRAM. This run is NOT comparable with the others on latency.",
+  "samples": [
+    {
+      "atIso": "2026-09-27T11:00:00.000Z",
+      "freeSystemRamBytes": 10737418240,
+      "vramUsedBytes": 6442450944,
+      "vramTotalBytes": 8585740288,
+      "gpuUtilizationPercent": 90,
+      "cpuLoadPercent": 35
+    },
+    {
+      "atIso": "2026-09-27T11:10:00.000Z",
+      "freeSystemRamBytes": 11811160064,
+      "vramUsedBytes": null,
+      "vramTotalBytes": 8585740288,
+      "gpuUtilizationPercent": 40,
+      "cpuLoadPercent": 25
+    },
+    {
+      "atIso": "2026-09-27T11:20:00.000Z",
+      "freeSystemRamBytes": 12884901888,
+      "vramUsedBytes": 7516192768,
+      "vramTotalBytes": 8585740288,
+      "gpuUtilizationPercent": 20,
+      "cpuLoadPercent": 15
+    },
+    {
+      "atIso": "2026-09-27T11:30:00.000Z",
+      "freeSystemRamBytes": 13958643712,
+      "vramUsedBytes": 8053063680,
+      "vramTotalBytes": 8585740288,
+      "gpuUtilizationPercent": 10,
+      "cpuLoadPercent": 5
+    }
+  ]
+}

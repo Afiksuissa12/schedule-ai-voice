@@ -268,9 +268,17 @@ describe('a conversation resumes after everything in memory is destroyed', () =>
 
       // And the conversation genuinely CONTINUES: the model, given the rebuilt
       // history, schedules the callback the first process was asking about.
+      //
+      // MISSION 2D changed this one line of script. It used to read "Perfect, I
+      // will ring you then." - a promise of a callback made in the same
+      // completion as the tool call that would create it, so the claim gate
+      // correctly regenerated it and this test quietly stopped exercising the
+      // script it was written to exercise. The subject here is restart
+      // continuity, not claim consistency, so the wording is now honest for the
+      // moment it is said and the flow is the one the test describes.
       llm.setScript([
         {
-          assistantText: 'Perfect, I will ring you then.',
+          assistantText: 'Perfect - let me get that arranged.',
           toolCalls: [
             {
               toolCallId: 'call_after_restart',

@@ -74,6 +74,24 @@ export function classificationOf(observations: readonly ScenarioObservation[]): 
       observation.meetings.map((meeting) => `${meeting.startUtc}/${meeting.endUtc}`).join(','),
       observation.futureActions.map((action) => action.scheduledForUtc).join(','),
       observation.auditTypes.join('>'),
+      // WHAT THE AGENT WAS ALLOWED TO SAY, folded into the determinism
+      // comparison. Without this, INV-09 would report a sweep as byte-identical
+      // while the claim gate reached a different verdict on the second run - and
+      // the gate has the most moving parts of anything here: a bounded
+      // regeneration loop whose every attempt consumes a provider step. The
+      // released TEXT is compared, not just the outcome, because a gate that
+      // released a different attempt with the same outcome label has still
+      // changed what a customer heard.
+      observation.stopReason,
+      observation.claimGate.releases
+        .map(
+          (release) =>
+            `${release.iteration}:${release.outcome}:${release.attempts.length}:` +
+            `${release.attempts.map((attempt) => attempt.unsupportedClaims.map((entry) => entry.reason).join('+') || '-').join(',')}:` +
+            (release.releasedText === null ? 'WITHHELD' : String(release.releasedText.length)),
+        )
+        .join(';'),
+      observation.assistantMessages.join('~'),
     ].join('|');
   }
   return classification;

@@ -35,7 +35,12 @@ import { isValidIanaTimezone } from '../shared/time.js';
 import { buildProvenance, ValidationCheckLog } from './checkLog.js';
 import type { DayPartName } from './policy.js';
 import type { SchedulingPolicy } from './policy.js';
-import { parseNaturalLanguageDateTime, type LocalWallTimeTarget } from './naturalLanguage.js';
+import {
+  parseNaturalLanguageDateTime,
+  type LexiconEvent,
+  type LocalWallTimeTarget,
+  type NaturalLanguageInterpretation,
+} from './naturalLanguage.js';
 import { formatOffset, resolveLocalWallTime } from './zoneMath.js';
 
 export const DATETIME_RESOLVER_VERSION = 'datetime-resolver@1';
@@ -60,6 +65,18 @@ export interface SlotInterpretation {
   readonly timeAnchor?: string;
   /** Offset of the resolved instant in the target zone, e.g. `-05:00`. */
   readonly utcOffset: string;
+  /**
+   * Which locale lexicons the natural-language grammar matched against.
+   *
+   * Additive, and optional because the ISO paths have no locale to name. A
+   * reader of a Hebrew booking can now see `['he']` rather than having to infer
+   * from the raw text which vocabulary was consulted.
+   */
+  readonly locales?: readonly string[];
+  /** Every grammar event, in order, each naming the locale that produced it. */
+  readonly lexicon?: readonly LexiconEvent[];
+  /** Carrier/filler tokens discarded BY RULE rather than by omission. */
+  readonly carriers?: readonly string[];
 }
 
 /** A concrete, checked slot. The success payload of the whole pipeline. */
@@ -197,11 +214,7 @@ export class DateTimeResolver {
       checks.pass('local_time_exists', 'not applicable: an elapsed offset determines the instant directly');
       checks.pass('local_time_unambiguous', 'not applicable: an elapsed offset determines the instant directly');
       const slot = this.buildSlot(instant, proposal.timezone, durationMinutes, {
-        source: 'NATURAL_LANGUAGE',
-        matched: parsed.interpretation.matched,
-        ...(parsed.interpretation.dayAnchor ? { dayAnchor: parsed.interpretation.dayAnchor } : {}),
-        ...(parsed.interpretation.dayPart ? { dayPart: parsed.interpretation.dayPart } : {}),
-        ...(parsed.interpretation.timeAnchor ? { timeAnchor: parsed.interpretation.timeAnchor } : {}),
+        ...naturalLanguageInterpretation(parsed.interpretation),
         utcOffset: formatOffset(instant.offset),
       });
       return validationOk(
@@ -229,13 +242,7 @@ export class DateTimeResolver {
       checks,
       nowUtc,
       validatorVersion,
-      interpretation: {
-        source: 'NATURAL_LANGUAGE',
-        matched: parsed.interpretation.matched,
-        ...(parsed.interpretation.dayAnchor ? { dayAnchor: parsed.interpretation.dayAnchor } : {}),
-        ...(parsed.interpretation.dayPart ? { dayPart: parsed.interpretation.dayPart } : {}),
-        ...(parsed.interpretation.timeAnchor ? { timeAnchor: parsed.interpretation.timeAnchor } : {}),
-      },
+      interpretation: naturalLanguageInterpretation(parsed.interpretation),
       notes: { interpretation: parsed.interpretation },
     });
   }
@@ -402,6 +409,30 @@ export class DateTimeResolver {
       interpretation,
     };
   }
+}
+
+/**
+ * Carry the grammar's own account of itself into the slot's interpretation.
+ *
+ * Additive: `matched`, `dayAnchor`, `dayPart` and `timeAnchor` are exactly what
+ * they always were. What is new is `locales`, `lexicon` and `carriers`, so a
+ * reader of a receipt can see WHICH lexicon understood the phrase and which
+ * words were discarded on purpose. The full interpretation, including the
+ * leftover tokens on a refusal, also rides in `provenance.notes.interpretation`.
+ */
+function naturalLanguageInterpretation(
+  interpretation: NaturalLanguageInterpretation,
+): Omit<SlotInterpretation, 'utcOffset'> {
+  return {
+    source: 'NATURAL_LANGUAGE',
+    matched: interpretation.matched,
+    ...(interpretation.dayAnchor ? { dayAnchor: interpretation.dayAnchor } : {}),
+    ...(interpretation.dayPart ? { dayPart: interpretation.dayPart } : {}),
+    ...(interpretation.timeAnchor ? { timeAnchor: interpretation.timeAnchor } : {}),
+    locales: interpretation.locales,
+    lexicon: interpretation.lexicon,
+    carriers: interpretation.carriers,
+  };
 }
 
 function formatTarget(target: LocalWallTimeTarget): string {

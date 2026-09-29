@@ -53,6 +53,63 @@ export const AUDIT_EVENT_TYPES = [
   'VALIDATION_REJECTED',
   /** The agent handed off to a human. */
   'HUMAN_TRANSFER_REQUESTED',
+
+  // -------------------------------------------------------------------------
+  // MISSION 2D - the effect and claim consistency gate.
+  //
+  // The chokepoint governs ACTIONS. These four govern SENTENCES, and they exist
+  // so an auditor can explain any blocked or corrected turn from the chain
+  // alone: what the text asserted, what the records actually said, what was
+  // asked of the model, and what reached the contact.
+  //
+  // `AuditEvent.type` is a String column, so adding them needs no schema
+  // migration - but they ARE validated by `AuditEventTypeSchema` on write and
+  // re-checked by `src/db/mappers.ts` on read, so this list is the contract.
+  // -------------------------------------------------------------------------
+
+  /** Customer-facing text was checked against the ledger and released unchanged. */
+  'CLAIM_GATE_CLAIM_VERIFIED',
+  /** Text asserted something the ledger does not support. It was NOT released. */
+  'CLAIM_GATE_CLAIM_REJECTED',
+  /** The model was handed the authoritative state and asked for the turn again. */
+  'CLAIM_GATE_REGENERATION_REQUESTED',
+  /** Every bounded attempt failed. Nothing was released; a person was asked for. */
+  'CLAIM_GATE_TEXT_WITHHELD',
+
+  // -------------------------------------------------------------------------
+  // MISSION 2F - the SEMANTIC second layer in front of the same gate.
+  //
+  // The four above answer "what did the gate decide". These four answer "what
+  // did each LAYER see", which is a different question and the one eight
+  // successive independent QA rounds needed and could not ask: every one of those
+  // findings was a sentence the deterministic detector did not recognise, and
+  // nothing on the chain could distinguish "no claim in this text" from "no claim
+  // THIS LAYER could see".
+  //
+  // They interleave with the four above on the TURN's own correlationId, so the
+  // chain for one blocked attempt reads in order: the verifier was asked, the
+  // verifier answered (or failed), which layer caught which claim, the
+  // reconciliation rejected it, a regeneration was requested.
+  //
+  // `AuditEvent.type` is a String column, so adding them needs no schema
+  // migration - but they ARE validated by `AuditEventTypeSchema` on write and
+  // re-checked by `src/db/mappers.ts` on read, so this list is the contract.
+  // -------------------------------------------------------------------------
+
+  /** The semantic claim verifier was asked about one proposed text. */
+  'CLAIM_GATE_SEMANTIC_REQUESTED',
+  /** It answered, with its structured output. Carries the classified claims verbatim. */
+  'CLAIM_GATE_SEMANTIC_CLASSIFIED',
+  /**
+   * It did NOT answer usably - malformed, timed out, unavailable, or empty.
+   *
+   * Recorded as its own type rather than as a field on the event above, because
+   * this is the event an operator counts during an outage and a count is the first
+   * thing anybody wants. Every one of these means the text was withheld.
+   */
+  'CLAIM_GATE_SEMANTIC_FAILED',
+  /** WHICH LAYER caught which claim, per attempt: DETERMINISTIC, SEMANTIC or BOTH. */
+  'CLAIM_GATE_CLAIM_LAYERED',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
@@ -73,6 +130,14 @@ export const AuditEventType = {
   FUTURE_ACTION_FAILED: 'FUTURE_ACTION_FAILED',
   VALIDATION_REJECTED: 'VALIDATION_REJECTED',
   HUMAN_TRANSFER_REQUESTED: 'HUMAN_TRANSFER_REQUESTED',
+  CLAIM_GATE_CLAIM_VERIFIED: 'CLAIM_GATE_CLAIM_VERIFIED',
+  CLAIM_GATE_CLAIM_REJECTED: 'CLAIM_GATE_CLAIM_REJECTED',
+  CLAIM_GATE_REGENERATION_REQUESTED: 'CLAIM_GATE_REGENERATION_REQUESTED',
+  CLAIM_GATE_TEXT_WITHHELD: 'CLAIM_GATE_TEXT_WITHHELD',
+  CLAIM_GATE_SEMANTIC_REQUESTED: 'CLAIM_GATE_SEMANTIC_REQUESTED',
+  CLAIM_GATE_SEMANTIC_CLASSIFIED: 'CLAIM_GATE_SEMANTIC_CLASSIFIED',
+  CLAIM_GATE_SEMANTIC_FAILED: 'CLAIM_GATE_SEMANTIC_FAILED',
+  CLAIM_GATE_CLAIM_LAYERED: 'CLAIM_GATE_CLAIM_LAYERED',
 } as const satisfies Record<AuditEventType, AuditEventType>;
 
 /** The kind of domain row an event is about. */

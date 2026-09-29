@@ -9,13 +9,18 @@
  *
  * WHY FAMILIES AND NOT ONE BIG CARTESIAN PRODUCT
  * ---------------------------------------------------------------------------
- * Crossing every axis with every other would be 5 zones x 10 instants x 17
- * expressions x 4 policies x 4 availability states x 6 tool shapes = over
- * 800,000 cases, which is not thoroughness, it is a way of running the same
- * three code paths a hundred thousand times. Instead the corpus is a set of
- * named FAMILIES, each of which crosses the axes that actually interact for the
+ * Crossing every axis with every other would be 5 zones x 10 instants x 35
+ * expressions x 4 policies x 4 availability states x 6 tool shapes = well over
+ * a million cases, which is not thoroughness, it is a way of running the same
+ * three code paths a million times. Instead the corpus is a set of named
+ * FAMILIES, each of which crosses the axes that actually interact for the
  * question it asks, and holds the rest at a documented baseline. Every axis the
  * mission names is exhaustively crossed in at least one family.
+ *
+ * Family L, added by the locale work, goes one step further and declares its own
+ * zone and `now` axes rather than widening the shared ones. That is a DELIBERATE
+ * BOUND with a stated cost - see the comment above `LOCALE_ZONES` in
+ * `dimensions.ts` and the matching entry in `KNOWN_COVERAGE_GAPS`.
  *
  * `docs/ARCHITECTURE.md` and the `qa:sweep` report both name these families, so
  * coverage - and the gaps in it - can be read off rather than inferred.
@@ -28,10 +33,16 @@ import {
   LEAD_TIME_BOUNDARY_CASES,
   LEAD_TIME_BOUNDARY_ZONE,
   LEAD_TIME_EXPRESSIONS,
+  LOCALE_NOW_INSTANTS,
+  LOCALE_PARITY_PAIRS,
+  LOCALE_ZONES,
   NOW_INSTANTS,
   OVERRIDE_PROBE_EXPRESSION,
   POLICIES,
   REJECTED_EXPRESSIONS,
+  RELEASE_PROBE_EXPRESSION,
+  RELEASE_SPECS,
+  RELEASE_ZONES,
   seededRandom,
   SWEEP_SEED,
   TIMEZONE_OVERRIDE_CASES,
@@ -40,8 +51,10 @@ import {
   type AvailabilityDimension,
   type Direction,
   type ExpressionDimension,
+  type LocaleParityPair,
   type NowDimension,
   type PolicyDimension,
+  type ReleaseSpec,
   type TimezoneDimension,
 } from './dimensions.js';
 
@@ -80,7 +93,30 @@ export type FamilyKey =
   | 'H-idempotency-replay'
   | 'I-qualification-cap'
   | 'J-timezone-override'
-  | 'K-lead-time-boundary';
+  | 'K-lead-time-boundary'
+  | 'L-locale-parity'
+  | 'M-claim-release';
+
+/**
+ * The other half of a translated pair, carried on the scenario so that a
+ * per-scenario invariant can state a relation between two inputs.
+ *
+ * `INV-16` is the only consumer. It is on the `Scenario` rather than looked up
+ * from `dimensions.ts` so that a failure message can quote both sides without
+ * the invariant having to know how family L was generated.
+ */
+export interface ParitySpec {
+  /** The `LocaleParityPair` key, for the failure message. */
+  readonly key: string;
+  /** Which side of the pair THIS scenario is. */
+  readonly side: 'he' | 'en';
+  /** The `when` the other side of the pair would have used. */
+  readonly counterpartRaw: string;
+  /** False for a pair that is a faithful translation and still differs. */
+  readonly identical: boolean;
+  /** Required when `identical` is false; quoted in the report. */
+  readonly whyNotIdentical?: string;
+}
 
 export interface Scenario {
   /** Stable across runs and across machines. Quoted in every failure message. */
@@ -96,6 +132,19 @@ export interface Scenario {
   /** Dispatch the SAME turn twice, to probe idempotency. */
   readonly replay: boolean;
   readonly direction: Direction;
+  /** Set only by family L: the translated counterpart of this scenario's `when`. */
+  readonly parity?: ParitySpec;
+  /**
+   * What the agent SAYS, for the scenarios that say something material.
+   *
+   * Absent on families A-L, and that absence is load-bearing: `runner.ts` falls
+   * back to the one neutral sentence those families have always used, so adding
+   * this field moved no existing scenario's behaviour at all. INV-18 is the only
+   * consumer, and it is on the `Scenario` for the same reason `parity` is - so a
+   * failure message can quote what the spec declared without the invariant
+   * having to know how family M was generated.
+   */
+  readonly release?: ReleaseSpec;
   /** Axis values, for the coverage table in the report. */
   readonly labels: Readonly<Record<string, string>>;
 }
@@ -674,8 +723,9 @@ function familyI(): Scenario[] {
  *
  * WHY THIS FAMILY EXISTS
  * ---------------------------------------------------------------------------
- * Families A-I never populate the optional `timezone` argument, so for all 509 of
- * them the zone a slot was agreed in IS the contact's persisted zone. That made
+ * Families A-I never populate the optional `timezone` argument, and neither does
+ * family L, so for every one of them the zone a slot was agreed in IS the
+ * contact's persisted zone. That made
  * an entire class of bug invisible: an accepted call could be checked against a
  * window the MODEL chose rather than the one the contact lives in, and every
  * invariant would still read green, because no invariant looked at the contact's
@@ -798,6 +848,195 @@ function familyK(): Scenario[] {
   return out;
 }
 
+/**
+ * L. Hebrew and English, saying the same thing, through the real front door.
+ *
+ * WHY THIS IS A FAMILY AND NOT A UNIT TEST
+ * ---------------------------------------------------------------------------
+ * `tests/scheduling/localeParity.test.ts` already asserts parity at the
+ * resolver, across six zones and six instants, for thirty-seven pairs. That is
+ * cheap and wide and it is not the same claim as this one. It stops at
+ * `DateTimeResolver`. What it cannot say is that the phrase survives the
+ * DISPATCHER: that a Hebrew `when` arriving as a JSON tool argument, against a
+ * seeded Asia/Jerusalem contact, produces a validated row, a receipt whose
+ * leftover is empty, and an instant on the day the contact named. Every
+ * invariant in this sweep applies to it, INV-15 / INV-16 / INV-17 included.
+ *
+ * BOTH SIDES OF EACH PAIR ARE DISPATCHED
+ * ---------------------------------------------------------------------------
+ * Emitting only the Hebrew half and resolving the English half inside the
+ * invariant would leave the English half untested through the front door in
+ * these zones, and would make a failure ambiguous between "Hebrew is wrong" and
+ * "this zone is wrong". So each pair produces two scenarios, each carrying the
+ * other as its `parity.counterpartRaw`, and INV-16 fires on both.
+ *
+ * THE BOUND, STATED HERE AS WELL AS IN `dimensions.ts`
+ * ---------------------------------------------------------------------------
+ * Three zones and two `now` instants, not five and ten. Adding Asia/Jerusalem
+ * and Pacific/Auckland to `TIMEZONES` would have cost 224 extra scenarios
+ * across families A-J to re-prove English behaviour at a different offset. The
+ * choice is recorded in `KNOWN_COVERAGE_GAPS` so the printed report says it too.
+ */
+function familyL(): Scenario[] {
+  const out: Scenario[] = [];
+
+  const push = (
+    pair: LocaleParityPair,
+    side: 'he' | 'en',
+    zoneKey: string,
+    zone: string,
+    nowKey: string,
+    nowUtc: string,
+    tool: 'schedule_followup' | 'schedule_meeting',
+  ): void => {
+    const raw = side === 'he' ? pair.hebrew : pair.english;
+    const counterpartRaw = side === 'he' ? pair.english : pair.hebrew;
+    out.push({
+      id: `L-par-${pair.key}-${side}-${zoneKey}-${nowKey}-${tool === 'schedule_meeting' ? 'mt' : 'fu'}`,
+      family: 'L-locale-parity',
+      nowUtc,
+      // A zone dimension is needed for `worldFrom`, and family L's zones are
+      // its own, so one is synthesised rather than looked up in `TIMEZONES`.
+      world: worldFrom({ key: zoneKey, zone, rationale: '', observesDst: true }, DEFAULT_POLICY),
+      availability: FREE_DIARY,
+      utterance: side === 'he' ? `${raw}, בבקשה.` : `Could you make it ${raw}?`,
+      toolName: tool,
+      args: schedulingArgs(tool, raw),
+      replay: false,
+      // Honestly EITHER. Whether 15:00 on the named day is inside the seeded
+      // Monday-to-Friday window depends on the weekday, and working that out
+      // here would mean reimplementing the resolver.
+      direction: 'EITHER',
+      parity: {
+        key: pair.key,
+        side,
+        counterpartRaw,
+        identical: pair.identical,
+        ...(pair.whyNotIdentical ? { whyNotIdentical: pair.whyNotIdentical } : {}),
+      },
+      labels: {
+        timezone: zone,
+        now: nowKey,
+        expression: pair.expressionKey,
+        policy: DEFAULT_POLICY.key,
+        availability: FREE_DIARY.key,
+        tool,
+        parityPair: pair.key,
+        localeSide: side,
+      },
+    });
+  };
+
+  for (const pair of LOCALE_PARITY_PAIRS) {
+    for (const side of ['he', 'en'] as const) {
+      for (const zone of LOCALE_ZONES) {
+        for (const now of LOCALE_NOW_INSTANTS) {
+          push(pair, side, zone.key, zone.zone, now.key, now.nowUtc, 'schedule_followup');
+        }
+      }
+    }
+  }
+
+  // The headline pair through the MEETING path as well, because that one also
+  // consults the availability provider and writes a row with an END that has
+  // to sit inside business hours too. One pair rather than ten: the difference
+  // between the two tools is not a locale question, and the other nine pairs
+  // would only re-prove `MeetingSchedulingService`.
+  const headline = LOCALE_PARITY_PAIRS[0] as LocaleParityPair;
+  for (const side of ['he', 'en'] as const) {
+    for (const zone of LOCALE_ZONES) {
+      for (const now of LOCALE_NOW_INSTANTS) {
+        push(headline, side, zone.key, zone.zone, now.key, now.nowUtc, 'schedule_meeting');
+      }
+    }
+  }
+
+  return out;
+}
+
+/**
+ * M. What the agent is allowed to SAY, crossed with four contact zones.
+ *
+ * WHY A FAMILY AND NOT A HANDFUL OF E2E TESTS
+ * ---------------------------------------------------------------------------
+ * `tests/e2e/claimGate.test.ts` and `tests/e2e/claimGateExhaustion.test.ts`
+ * already prove the gate's behaviour case by case, and they are the gate task's.
+ * They are not the same claim as this one. They assert that the gate works in the
+ * cases somebody thought of. This family asserts a PROPERTY - that no released
+ * text asserts an absent effect - over a matrix, in four zones, alongside every
+ * other invariant in the sweep. A regression that only showed up in
+ * `Asia/Kolkata`, or only when a Hebrew claim met an English day word, or only
+ * once a second invariant's scenario had put a row in the same database, is the
+ * kind this finds and a case list does not.
+ *
+ * It also makes INV-18 non-vacuous about the thing that matters. Without family M
+ * every scenario in the sweep releases the same two sentences, neither of which
+ * asserts anything - so INV-18 would be applicable 1,600 times and would never
+ * once examine a claim. That is the vacuity `report.ts` prints in capitals, and a
+ * gate invariant proved only against silence is worth nothing.
+ *
+ * FOUR ZONES, AND THE FIFTH IS EXCLUDED FOR A REASON
+ * ---------------------------------------------------------------------------
+ * `RELEASE_ZONES` is New York, London, Jerusalem and Kolkata: the zones in which
+ * `tomorrow at 2pm` at `n01-midweek` is Thursday 5 March 2026 at 14:00 local.
+ * `Australia/Sydney` is already on Thursday at that instant, so `tomorrow` there
+ * is Friday and every spec that says "Thursday" would be a genuine wrong-day
+ * claim. Crossing it in would not test the gate harder, it would test a
+ * different thing and report it as this one. The exclusion is in
+ * `KNOWN_COVERAGE_GAPS` and `dimensions.test.ts` re-derives all four targets
+ * from Luxon so this comment cannot quietly go stale.
+ *
+ * EVERY SCENARIO RUNS THE SAME UNDERLYING CALL
+ * ---------------------------------------------------------------------------
+ * One expression, one policy, one diary, one instant. That is deliberate: the
+ * only thing varying across this family is WHAT THE AGENT SAID, so a failure
+ * localises to the sentence rather than to the scheduling.
+ */
+function familyM(): Scenario[] {
+  const out: Scenario[] = [];
+
+  for (const spec of RELEASE_SPECS) {
+    // All but the two claim-after-refusal specs share one proposal, so the only
+    // thing varying across the family is what the agent SAID.
+    const when = spec.when ?? RELEASE_PROBE_EXPRESSION;
+    for (const zone of RELEASE_ZONES) {
+      out.push({
+        id: `M-say-${spec.key}-${assertedKey(zone)}`,
+        family: 'M-claim-release',
+        nowUtc: BASELINE_NOW.nowUtc,
+        // A zone dimension is needed for `worldFrom` and family M's zones are
+        // its own, so one is synthesised - the same thing family L does.
+        world: worldFrom({ key: assertedKey(zone), zone, rationale: '', observesDst: true }, DEFAULT_POLICY),
+        availability: FREE_DIARY,
+        utterance: utteranceFor(when),
+        toolName: spec.tool,
+        args: schedulingArgs(spec.tool, when),
+        replay: false,
+        // Honestly EITHER for every spec. Whether Thursday 14:00 is accepted is a
+        // scheduling question and this family is not asking it; what must hold is
+        // INV-18, which reads the rows that actually resulted rather than
+        // predicting them. `r08` in particular ends with NO tool call dispatched
+        // at all, which is neither an acceptance nor a refusal.
+        direction: 'EITHER',
+        release: spec,
+        labels: {
+          timezone: zone,
+          now: BASELINE_NOW.key,
+          expression: 'release-probe',
+          policy: DEFAULT_POLICY.key,
+          availability: FREE_DIARY.key,
+          tool: spec.tool,
+          releaseSpec: spec.key,
+          releaseExpect: spec.expect,
+          releaseLanguage: spec.language,
+        },
+      });
+    }
+  }
+
+  return out;
+}
+
 /** `Asia/Kolkata` -> `asia-kolkata`, so a scenario id stays a safe seed suffix. */
 function assertedKey(zone: string): string {
   return zone.toLowerCase().replace(/[^a-z0-9]+/g, '-');
@@ -822,6 +1061,42 @@ export const FAMILY_PURPOSE: Readonly<Record<FamilyKey, string>> = {
   'K-lead-time-boundary':
     'Sub-minute `now` instants straddling the configured minimum lead time by one and thirty seconds, ' +
     'in both directions.',
+  'L-locale-parity':
+    'Translated Hebrew/English pairs dispatched through the real front door, both sides of each pair, ' +
+    'across three locale zones (Asia/Jerusalem, America/New_York, Pacific/Auckland - family-local, see ' +
+    'the coverage gaps) and two `now` instants. Policed by INV-15, INV-16 and INV-17.',
+  'M-claim-release':
+    'WHAT THE AGENT IS ALLOWED TO SAY. Supported and unsupported claims - wrong day, wrong time, invented ' +
+    'confirmation number, an email nothing can send, a handover nobody requested, a claim made before its ' +
+    'own tool ran, and three consecutive unsupported attempts driven all the way to the withholding path - ' +
+    'in English, Hebrew and mixed Hebrew-English, across four contact zones in which `tomorrow at 2pm` is ' +
+    'the same Thursday. Since r17 it also carries the FIRST-PERSON SIMPLE PAST (`I booked you in for ' +
+    'Friday`, `I cancelled your meeting`, `I sent you a confirmation email`, `סידרתי`) and a fabricated ' +
+    'digits-only confirmation number, which were released end to end until the English lexicon gained a ' +
+    'preterite. Since r23 it carries the CROSS-CLAUSE shape as well (`Don\'t worry, your meeting is booked ' +
+    'for Friday at 2pm.`, `אין דאגה, הפגישה נקבעה ליום שישי`, and the same sentence with no punctuation so ' +
+    'only `but` divides it), which was released and persisted until negation was scoped to the clause - ' +
+    'plus r27, the precision half, which must still be released byte-identical when it is TRUE. Since r28 ' +
+    'it carries ONE WORD INSIDE THE FRAME (`Your meeting is now booked for Friday at 2pm.`, ' +
+    '`I have now booked your meeting for Friday`, `has now been successfully booked`, and the Hebrew ' +
+    'control `הפגישה שלך כבר נקבעה`), which was released and persisted until a completion frame stopped ' +
+    'requiring its tokens to be adjacent. Since r36 it carries the BARE PARTICIPLE BESIDE A DOMAIN OBJECT ' +
+    '(`I have finally and officially booked your meeting`, `has, at long last, finally been booked`, ' +
+    '`Right, meeting booked for Friday at 2pm.`), which no frame rule can read at any bound - a clause joiner ' +
+    'may never be skipped inside a frame and the telegraphic register has no auxiliary at all. Plus r34, r35 ' +
+    'and r40, the three precision halves: the interrupted wording when it is TRUE, and the honest intentions ' +
+    '`I can have that booked for you` and `Let me get your meeting booked for Thursday` which a looser rule ' +
+    'would have blocked. Since r41 it carries the QA-3 shape: A FILLER BUILT ON A NEGATOR WITH NO ' +
+    'PUNCTUATION (`אין בעיה הפגישה נקבעה ליום שישי`, `אין בעיה קבעתי לך פגישה`, `אין צורך לדאוג`, the ' +
+    'CANCELLATION spelling `אין בעיה הפגישה בוטלה.`, the CALLBACK spelling where no noun phrase intervenes ' +
+    'at all, the English `Don\'t worry your meeting is booked for Friday at 2pm.` the finding did not claim, ' +
+    'and a conditional filler ending in `you`), all of which were released and persisted until suppression ' +
+    'was made to test whether a negator GOVERNS the form it silences - plus r48, the comma control that was ' +
+    'blocked throughout, and r49/r50/r51, the honest negations behind the same filler in both languages and ' +
+    'the true claim behind it. Policed by INV-18, and since section 17.5 by a SECOND witness INV-18 owns ' +
+    'that is independent of the gate: every sentence above declares, as hand-authored data beside it, what ' +
+    'it asserts and of which kind, and INV-18 fails when a declared claim is released over state that does ' +
+    'not support it - whatever the detector says.',
 };
 
 /**
@@ -843,6 +1118,8 @@ export function generateScenarios(): readonly Scenario[] {
     ...familyI(),
     ...familyJ(),
     ...familyK(),
+    ...familyL(),
+    ...familyM(),
   ];
 
   const seen = new Set<string>();

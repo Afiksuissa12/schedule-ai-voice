@@ -16,8 +16,10 @@
  *  - When the corpus was filtered, the report says so at the top instead of
  *    quietly presenting a subset as the whole.
  */
+import { detectMaterialClaims } from '../../src/agent/claimGate/detector.js';
 import { VALIDATION_ERROR_CODES } from '../../src/ports/validation.js';
-import { INVARIANTS } from '../invariants/invariants.js';
+import { compareWitnesses, WITNESS_AGREEMENT_MEANING, type WitnessAgreement } from '../invariants/claimOracle.js';
+import { declarationFor, INVARIANTS } from '../invariants/invariants.js';
 import type { InvariantResult } from '../invariants/invariants.js';
 import type { ScenarioObservation } from '../invariants/runner.js';
 import { FAMILY_PURPOSE, type Scenario } from '../invariants/scenarios.js';
@@ -60,6 +62,79 @@ export const KNOWN_COVERAGE_GAPS: readonly string[] = [
     'in tests/scheduling/meetingSchedulingService.test.ts, not across the matrix.',
   'The live OpenAI provider is not exercised. Every scenario runs against ScriptedLlmProvider, which is ' +
     'the point - but it means the sweep says nothing about whether a real model emits well-formed calls.',
+  'BOUNDED DELIBERATELY: family L crosses its Hebrew and code-switched expressions with THREE zones ' +
+    '(Asia/Jerusalem, America/New_York, Pacific/Auckland) and TWO `now` instants of its own, not with the ' +
+    'five zones and ten instants families A-K use. Adding Asia/Jerusalem and Pacific/Auckland to the main ' +
+    '`TIMEZONES` axis would have cost ~224 extra scenarios across seven families to re-prove ENGLISH ' +
+    'behaviour at a different offset, on a sweep that already runs against real SQLite on a ' +
+    'memory-constrained host. The consequence: the two zones family L adds are NOT crossed with families ' +
+    'A-K, and the Hebrew expressions are not crossed with Europe/London, Australia/Sydney, Asia/Kolkata ' +
+    'or UTC. tests/scheduling/localeParity.test.ts covers six zones and six instants at the resolver ' +
+    'level, where a cell costs microseconds instead of a database.',
+  'INV-16 (Hebrew/English parity) resolves the counterpart phrase through DateTimeResolver, which is the ' +
+    'system under test - unlike INV-02 it is NOT an independent measurement. It cannot be: no oracle can ' +
+    'know what a Hebrew phrase means without a Hebrew dictionary, and writing one inside the harness ' +
+    'would be the reimplementation this design forbids. What it does assert is RELATIONAL (two phrasings ' +
+    'agree) and tied to the front door (the persisted row must equal both). A change that broke both ' +
+    'languages identically would pass INV-16 and fail tests/scheduling/naturalLanguage.test.ts, which ' +
+    'pins English independently.',
+  'INV-17 re-derives the named calendar day only for day anchors whose meaning is fixed arithmetic - ' +
+    '`today`, `implicit_today`, `tonight`, `tomorrow`, `day_after_tomorrow` and `iso_date:*`. A ' +
+    '`weekday:*`, `next_weekday:*` or `end_of_week` anchor is reported INAPPLICABLE naming the label, ' +
+    'because re-deriving it would mean reimplementing the ISO-week arithmetic under test. Weekday ' +
+    'parity is asserted instead by INV-16 and by tests/scheduling/localeParity.test.ts.',
+  'INV-15 reads the interpretation from the TOOL_CALL_VALIDATED audit event, so it covers every ACCEPTED ' +
+    'call including read-only ones - but it says nothing about REFUSED calls. That a refusal NAMES the ' +
+    'token it could not account for is asserted in tests/scheduling/localeRefusalBreadth.test.ts, across ' +
+    'thirteen scripts, rather than across this matrix.',
+  'INV-18 HAS TWO WITNESSES SINCE SECTION 17.5, AND THE FIRST ONE IS NOT THE DETECTOR. It always ' +
+    're-derived SUPPORT independently - from rows read back through the repositories and from the turn\'s ' +
+    'own ToolOutcome values, with Luxon doing the timezone arithmetic - but it used to find the CLAIMS by ' +
+    "calling the gate's own detectMaterialClaims, and that circle certified five live fail-open defects as " +
+    'zero leaks (docs/MISSION_2D_CLAIM_GATE.md sections 14.1, 15.1, 16.1, 17.1, 18.1). Now every scripted model ' +
+    'text in this sweep declares, as hand-authored data beside the sentence in ' +
+    'tests/invariants/releaseTexts.ts, whether it asserts a material effect and of which kind; the ' +
+    'declaration is judged against observed state; and a released sentence that no declaration covers is a ' +
+    'VIOLATION rather than an inapplicable case. tests/invariants/claimOracleBoundary.test.ts asserts ' +
+    'structurally that neither the oracle nor the declarations reach src/agent/claimGate, directly or ' +
+    'transitively, and tests/invariants/claimOracleCatchesPastFindings.test.ts drives all five historical ' +
+    'findings through INV-18 with the detector stubbed to see nothing and requires every one to fail. ' +
+    'WHAT IS STILL NOT INDEPENDENT, AND WHAT THAT COSTS: the detector is kept as a SECOND witness, ' +
+    'deliberately, because the declaration only covers sentences somebody wrote down. The oracle is not a ' +
+    'second detector and cannot read an arbitrary sentence - so for this sweep it covers everything (every ' +
+    'released text is declared or the run fails), and for any FUTURE text nobody declares it covers ' +
+    'nothing. That bound is stated in section 17.8 rather than implied. Disagreement between the two ' +
+    'witnesses is printed under INV-18 rather than resolved quietly, because a sentence a person reads as ' +
+    'a booking and the detector reads as nothing is the exact signature of all five findings. The thing ' +
+    'that proves the DETECTOR sees a class at all is still tests/claimGate/claimGateCorpus.ts, a corpus ' +
+    'with the answers written down: MUST_FLAG, MUST_NOT_FLAG, DOCUMENTED_MISSES, DOCUMENTED_OVERREACH, a ' +
+    '1,870-row cross-clause matrix, a 144-row adverb-by-frame matrix, a 3,891-row suppression matrix ' +
+    'carrying both directions, and a 1,262-row generated honest corpus.',
+  'BOUNDED DELIBERATELY: family M crosses its claim texts with FOUR zones (America/New_York, Europe/London, ' +
+    'Asia/Jerusalem, Asia/Kolkata) at ONE `now` instant, under ONE policy and one free diary. Australia/Sydney ' +
+    'is deliberately excluded rather than overlooked: at n01-midweek Sydney is already on Thursday, so ' +
+    '`tomorrow at 2pm` there is FRIDAY and every spec that says "Thursday" would become a genuine wrong-day ' +
+    'claim - crossing it in would test a different thing and report it as this one. The consequence: the ' +
+    'claim texts are not crossed with DST edges, with a busy diary, with a restricted tool allowlist, or ' +
+    'with a southern-hemisphere offset. What varies across family M is only WHAT THE AGENT SAID, which is ' +
+    'what makes a failure there localise to the sentence rather than to the scheduling.',
+  'INV-18 says nothing about a turn whose text the gate never saw, because no such path exists to test: ' +
+    'AgentTurnService.releaseText is the only route from completion.assistantText to appendAgentText. What ' +
+    'INV-18 DOES assert is that every message handleTurn returned corresponds to a release the gate ' +
+    'approved, which is the observable form of the same claim. A hand-wired AgentTurnService constructed ' +
+    'with no gate would release text ungated; that constructor seam is test-only, buildAgentRuntime never ' +
+    'takes it, and INV-18 treats `claimGate.enabled === false` as a VIOLATION rather than as inapplicable ' +
+    'so that it cannot be reached silently.',
+  'The claim gate is swept against ScriptedLlmProvider, so family M proves what the gate does with a given ' +
+    'sentence - not how often a REAL model produces one. The rate at which a real model asserts something ' +
+    'unsupported is a benchmark question, and AgentTurnResult.claimGate.releases[].attempts[0] is the field ' +
+    'that answers it; this sweep deliberately does not call a model at all.',
+  'The Hebrew natural-language path cannot name a local time between 01:00 and 03:00, which is where ' +
+    'every ordinary DST transition sits: Hebrew has no am/pm and no declared day part covers 02:00, so a ' +
+    'digit hour of 1-11 is refused first. The DST gap and repeat classes are therefore driven through ' +
+    'the locale-agnostic ISO path and the English grammar. That a HEBREW phrase reaches the same DST ' +
+    'checks is proved in tests/scheduling/localeTimezoneBoundaries.test.ts using America/Havana, whose ' +
+    'spring-forward happens at local midnight - the one transition hour Hebrew can name.',
 ];
 
 interface InvariantSummary {
@@ -101,6 +176,275 @@ export function errorCodeDistribution(
   return [...counts.entries()]
     .map(([code, count]) => ({ code, count }))
     .sort((a, b) => b.count - a.count || a.code.localeCompare(b.code));
+}
+
+/**
+ * WHAT THE AGENT WAS ALLOWED TO SAY, as numbers.
+ *
+ * INV-18 is applicable to almost every scenario in the corpus, because almost
+ * every scenario releases text. That breadth is the point of an invariant, and it
+ * is also how an invariant can look busy while proving nothing: families A-L all
+ * release the same two sentences, and neither asserts anything material, so
+ * INV-18 could report 1,700 green checks without ever having examined a claim.
+ *
+ * So the honest figure is not "checks passed", it is HOW MANY RELEASES CARRIED A
+ * MATERIAL CLAIM AT ALL. That is `releasesWithAClaim` below, and
+ * `sweep.test.ts` asserts a floor on it. Reporting the totals without it would be
+ * exactly the "silent truncation that reads as full coverage" this renderer
+ * exists to refuse.
+ */
+export interface ClaimGateSummary {
+  readonly scenariosWithAGate: number;
+  readonly scenariosWithoutAGate: number;
+  readonly releases: number;
+  readonly releasesWithAClaim: number;
+  readonly releasesWithheld: number;
+  /** The model's RAW behaviour: attempt 1 carried an unsupported claim. */
+  readonly rawModelAttemptsUnsupported: number;
+  /** Claims that got past the gate on the attempt it released. Must be 0. */
+  readonly leakedClaims: number;
+  readonly regenerationsRequested: number;
+  readonly byOutcome: readonly { readonly outcome: string; readonly count: number }[];
+  readonly byUnsupportedReason: readonly { readonly reason: string; readonly count: number }[];
+  /**
+   * Released sentences that NO hand-authored declaration covers.
+   *
+   * Must be 0, and INV-18 fails each one, so this is a second reading of the
+   * same fact rather than a new check. It is here because a reader looking at
+   * the leak count deserves to see how much of the corpus the independent oracle
+   * actually judged.
+   */
+  readonly releasesUndeclared: number;
+  /**
+   * HOW THE TWO WITNESSES COMPARED, sentence by sentence.
+   *
+   * INV-18 now reads every released sentence twice: once through the
+   * hand-authored declaration (`tests/invariants/claimOracle.ts`), which owes the
+   * gate nothing, and once through `detectMaterialClaims`, which is the gate's
+   * own. Keeping both is the requirement - the declaration only covers sentences
+   * somebody wrote down, and the detector covers everything - and neither can
+   * silence the other.
+   *
+   * `DETECTOR_BLIND` is the row worth watching. It is the signature of all four
+   * Mission 2D fail-open findings: a person reading the sentence says it asserts
+   * an effect and the detector found none. It is not by itself a leak, because
+   * the sentence may be true - but it means the gate would not have stopped it
+   * if it were false.
+   */
+  readonly witnessAgreement: Readonly<Record<WitnessAgreement, number>>;
+  /** The actual sentences behind a `DETECTOR_BLIND` or `DETECTOR_OVER_READ` row. */
+  readonly witnessDisagreements: readonly {
+    readonly agreement: WitnessAgreement;
+    readonly text: string;
+    readonly count: number;
+  }[];
+  /**
+   * THE TWO LAYERS, AS NUMBERS - MISSION 2F, and INV-19's subject.
+   *
+   * INV-18 asks whether a released sentence was TRUE. These numbers answer the
+   * different question INV-19 exists for: DID THE SYSTEM RUN THE CHECK IT SAYS IT
+   * RUNS. A turn can be perfectly safe and still have skipped the second layer, and
+   * a turn that skipped it is a turn nobody classified - which is the state
+   * `docs/MISSION_2D_CLAIM_GATE.md` § 21.2 reason 3 describes as "silence is not
+   * safety".
+   *
+   * `releasedWhileFailClosed` is the one that must be zero, and it is printed
+   * beside `CLAIMS THAT LEAKED PAST THE GATE` rather than further down, because
+   * the two are the same kind of fact: the first is a customer told something
+   * false, the second is a customer told something nobody checked.
+   *
+   * `scenariosWithoutAVerifier` is a VIOLATION and not a configuration, exactly as
+   * `scenariosWithoutAGate` is. `buildAgentRuntime` always resolves a verifier and
+   * offers no way to remove one.
+   */
+  readonly layered: LayeredSummary;
+}
+
+export interface LayeredSummary {
+  readonly scenariosWithAVerifier: number;
+  /** MUST BE 0. The runtime said no second layer was wired. */
+  readonly scenariosWithoutAVerifier: number;
+  /** MUST BE 0. Nobody said whether one was wired, which is not the same as "yes". */
+  readonly scenariosWithWiringNotReported: number;
+  /** Every attempt of every release, which is what the second layer ran on. */
+  readonly attempts: number;
+  readonly attemptsBySemanticOutcome: readonly { readonly outcome: string; readonly count: number }[];
+  readonly attemptsFailClosed: number;
+  /**
+   * MUST BE 0. Text reached a caller on an attempt whose second layer produced
+   * nothing usable - malformed, timed out, unavailable, empty, or absent.
+   */
+  readonly releasedWhileFailClosed: number;
+  /** MUST BE 0. A union smaller than the deterministic set it is a superset of. */
+  readonly unionsSmallerThanDeterministic: number;
+  /** One row per source tag, so a reader can see which layer caught what. */
+  readonly claimsBySource: readonly { readonly source: string; readonly count: number }[];
+  /**
+   * Claims ONLY the semantic layer saw. Every one is a claim that would have
+   * leaked before this mission - which is why it is reported rather than summed
+   * into a total.
+   */
+  readonly semanticOnlyClaims: number;
+  /**
+   * NON-VACUITY: attempts on which the second layer actually ANSWERED.
+   *
+   * Counts answers, never claims. A sweep in which the layer never answered would
+   * report a clean INV-19 having examined nothing - the same way INV-18 reported
+   * 1,710 green checks having examined no claim before family M existed.
+   */
+  readonly attemptsTheSecondLayerAnswered: number;
+}
+
+export function claimGateSummary(observations: readonly ScenarioObservation[]): ClaimGateSummary {
+  const outcomes = new Map<string, number>();
+  const reasons = new Map<string, number>();
+  let scenariosWithAGate = 0;
+  let scenariosWithoutAGate = 0;
+  let releases = 0;
+  let releasesWithAClaim = 0;
+  let releasesWithheld = 0;
+  let rawModelAttemptsUnsupported = 0;
+  let leakedClaims = 0;
+  let regenerationsRequested = 0;
+  let releasesUndeclared = 0;
+  const witnessAgreement: Record<WitnessAgreement, number> = {
+    BOTH_SILENT: 0,
+    BOTH_SAW_A_CLAIM: 0,
+    DETECTOR_BLIND: 0,
+    DETECTOR_OVER_READ: 0,
+  };
+  const disagreements = new Map<string, { agreement: WitnessAgreement; text: string; count: number }>();
+
+  // ---- MISSION 2F: the two layers ----------------------------------------
+  const semanticOutcomes = new Map<string, number>();
+  const claimSources = new Map<string, number>();
+  let scenariosWithAVerifier = 0;
+  let scenariosWithoutAVerifier = 0;
+  let scenariosWithWiringNotReported = 0;
+  let layeredAttempts = 0;
+  let attemptsFailClosed = 0;
+  let releasedWhileFailClosed = 0;
+  let unionsSmallerThanDeterministic = 0;
+  let semanticOnlyClaims = 0;
+  let attemptsAnswered = 0;
+
+  for (const observation of observations) {
+    if (observation.claimGate.enabled) scenariosWithAGate += 1;
+    else scenariosWithoutAGate += 1;
+
+    // `verifier` is OPTIONAL on the report, and `undefined` is NOT `wired: false`.
+    // It means nobody said, which is its own row: defaulting an unknown to safe is
+    // the silence § 17.5 exists to remove.
+    const verifier = observation.claimGate.verifier;
+    if (verifier === undefined) scenariosWithWiringNotReported += 1;
+    else if (verifier.wired) scenariosWithAVerifier += 1;
+    else scenariosWithoutAVerifier += 1;
+
+    for (const release of observation.claimGate.releases) {
+      for (const attempt of release.attempts) {
+        layeredAttempts += 1;
+        const layers = attempt.layers;
+        semanticOutcomes.set(layers.semanticOutcome, (semanticOutcomes.get(layers.semanticOutcome) ?? 0) + 1);
+        if (layers.semanticOutcome === 'CLASSIFIED') attemptsAnswered += 1;
+        if (layers.failClosed) attemptsFailClosed += 1;
+        if (layers.unionClaimCount < layers.deterministicClaimCount) unionsSmallerThanDeterministic += 1;
+        for (const source of layers.sources) {
+          claimSources.set(source, (claimSources.get(source) ?? 0) + 1);
+          if (source === 'SEMANTIC') semanticOnlyClaims += 1;
+        }
+        // THE ONE THAT MUST BE ZERO. Text that reached a caller on an attempt
+        // whose second layer produced nothing usable.
+        if (layers.failClosed && release.releasedText !== null && attempt.text === release.releasedText) {
+          releasedWhileFailClosed += 1;
+        }
+      }
+    }
+
+    for (const release of observation.claimGate.releases) {
+      releases += 1;
+      outcomes.set(release.outcome, (outcomes.get(release.outcome) ?? 0) + 1);
+      if (release.releasedText === null) releasesWithheld += 1;
+
+      // ---- the two witnesses, compared -------------------------------------
+      if (release.releasedText !== null) {
+        const declaration = declarationFor(release.releasedText);
+        if (declaration === undefined) {
+          releasesUndeclared += 1;
+        } else {
+          const agreement = compareWitnesses(declaration, detectMaterialClaims(release.releasedText).length);
+          witnessAgreement[agreement] += 1;
+          if (agreement === 'DETECTOR_BLIND' || agreement === 'DETECTOR_OVER_READ') {
+            const key = `${agreement} ${release.releasedText}`;
+            const existing = disagreements.get(key);
+            if (existing === undefined) {
+              disagreements.set(key, { agreement, text: release.releasedText, count: 1 });
+            } else {
+              existing.count += 1;
+            }
+          }
+        }
+      }
+
+      // A release "carried a claim" when the gate had something to verify -
+      // which is exactly the case where attempt 1 produced either a supported or
+      // an unsupported claim.
+      const first = release.attempts[0];
+      if (first !== undefined && (first.supportedClaimCount > 0 || first.unsupportedClaims.length > 0)) {
+        releasesWithAClaim += 1;
+      }
+      if (first !== undefined && first.unsupportedClaims.length > 0) rawModelAttemptsUnsupported += 1;
+
+      regenerationsRequested += Math.max(0, release.attempts.length - 1);
+
+      for (const attempt of release.attempts) {
+        for (const claim of attempt.unsupportedClaims) {
+          reasons.set(claim.reason, (reasons.get(claim.reason) ?? 0) + 1);
+        }
+        if (release.releasedText !== null && attempt.text === release.releasedText) {
+          leakedClaims += attempt.unsupportedClaims.length;
+        }
+      }
+    }
+  }
+
+  return {
+    scenariosWithAGate,
+    scenariosWithoutAGate,
+    releases,
+    releasesWithAClaim,
+    releasesWithheld,
+    rawModelAttemptsUnsupported,
+    leakedClaims,
+    regenerationsRequested,
+    byOutcome: [...outcomes.entries()]
+      .map(([outcome, count]) => ({ outcome, count }))
+      .sort((a, b) => b.count - a.count || a.outcome.localeCompare(b.outcome)),
+    byUnsupportedReason: [...reasons.entries()]
+      .map(([reason, count]) => ({ reason, count }))
+      .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason)),
+    releasesUndeclared,
+    layered: {
+      scenariosWithAVerifier,
+      scenariosWithoutAVerifier,
+      scenariosWithWiringNotReported,
+      attempts: layeredAttempts,
+      attemptsBySemanticOutcome: [...semanticOutcomes.entries()]
+        .map(([outcome, count]) => ({ outcome, count }))
+        .sort((a, b) => b.count - a.count || a.outcome.localeCompare(b.outcome)),
+      attemptsFailClosed,
+      releasedWhileFailClosed,
+      unionsSmallerThanDeterministic,
+      claimsBySource: [...claimSources.entries()]
+        .map(([source, count]) => ({ source, count }))
+        .sort((a, b) => b.count - a.count || a.source.localeCompare(b.source)),
+      semanticOnlyClaims,
+      attemptsTheSecondLayerAnswered: attemptsAnswered,
+    },
+    witnessAgreement,
+    witnessDisagreements: [...disagreements.values()].sort(
+      (a, b) => b.count - a.count || a.text.localeCompare(b.text),
+    ),
+  };
 }
 
 export function outcomeDistribution(
@@ -243,6 +587,209 @@ export function renderReport(sweep: SweepResult, options: RenderOptions = {}): s
   }
   lines.push('');
 
+  // ---- INV-18 ------------------------------------------------------------
+  lines.push('-'.repeat(78));
+  lines.push('INV-18  WHAT THE AGENT WAS ALLOWED TO SAY');
+  lines.push('-'.repeat(78));
+  lines.push('');
+  const gate = claimGateSummary(sweep.observations);
+  lines.push(`  Scenarios with a claim gate wired   : ${gate.scenariosWithAGate}`);
+  if (gate.scenariosWithoutAGate > 0) {
+    lines.push(
+      `  !! WITHOUT a gate                   : ${gate.scenariosWithoutAGate}  <- every one of these is an ` +
+        'INV-18 VIOLATION; buildAgentRuntime offers no way to disable the gate',
+    );
+  } else {
+    lines.push('  Scenarios without a gate            : 0  (buildAgentRuntime offers no way to disable it)');
+  }
+  lines.push(`  Pieces of text released             : ${gate.releases}`);
+  lines.push(
+    `  ...of which asserted something      : ${gate.releasesWithAClaim}` +
+      (gate.releasesWithAClaim === 0
+        ? '   <- VACUOUS: INV-18 never examined a claim. A corpus in which nothing is'
+        : ''),
+  );
+  if (gate.releasesWithAClaim === 0) {
+    lines.push('     ever asserted cannot prove the gate has teeth. Check that family M is in the corpus.');
+  }
+  lines.push(`  Releases WITHHELD (nothing said)    : ${gate.releasesWithheld}`);
+  lines.push(`  Raw model attempts unsupported      : ${gate.rawModelAttemptsUnsupported}`);
+  lines.push(`  Regeneration attempts consumed      : ${gate.regenerationsRequested}`);
+  lines.push(
+    `  CLAIMS THAT LEAKED PAST THE GATE    : ${gate.leakedClaims}` +
+      (gate.leakedClaims === 0 ? '   (must be 0)' : '   <- MUST BE 0. A customer was told something false.'),
+  );
+  // MISSION 2F. PRINTED RIGHT HERE, BESIDE THE LEAK COUNT, AND NOT FURTHER DOWN.
+  //
+  // The two are the same kind of fact and they fail in the same direction: the line
+  // above is a customer told something FALSE, and the line below is a customer told
+  // something NOBODY CHECKED. For eight QA rounds the only number a reader was given
+  // was the first one, and eight times it was zero while a false sentence was being
+  // spoken - because the check that would have seen it did not exist yet. A reader
+  // who quotes one of these should see the other on the same screen.
+  lines.push(
+    `  TEXTS RELEASED WITHOUT PASSING BOTH LAYERS : ${gate.layered.releasedWhileFailClosed}` +
+      (gate.layered.releasedWhileFailClosed === 0
+        ? '   (must be 0, INV-19)'
+        : '   <- MUST BE 0. Released while the second layer produced nothing usable.'),
+  );
+  lines.push('');
+  lines.push('  THE TWO LAYERS, PER ATTEMPT (INV-19)');
+  lines.push(
+    `    scenarios with a verifier wired     : ${gate.layered.scenariosWithAVerifier}` +
+      (gate.layered.scenariosWithoutAVerifier === 0 && gate.layered.scenariosWithWiringNotReported === 0
+        ? ''
+        : '   <- see the two rows below'),
+  );
+  lines.push(
+    `    scenarios with NO verifier wired    : ${gate.layered.scenariosWithoutAVerifier}` +
+      (gate.layered.scenariosWithoutAVerifier === 0
+        ? '   (must be 0)'
+        : '   <- INV-19 VIOLATION. buildAgentRuntime offers no way to remove one.'),
+  );
+  lines.push(
+    `    scenarios where NOBODY SAID         : ${gate.layered.scenariosWithWiringNotReported}` +
+      (gate.layered.scenariosWithWiringNotReported === 0
+        ? '   (must be 0; unstated is not the same as wired)'
+        : '   <- INV-19 VIOLATION. ClaimGateTurnReport.verifier was absent.'),
+  );
+  lines.push(`    attempts both layers read           : ${gate.layered.attempts}`);
+  lines.push(
+    `    ...on which the 2nd layer ANSWERED  : ${gate.layered.attemptsTheSecondLayerAnswered}` +
+      (gate.layered.attemptsTheSecondLayerAnswered === 0
+        ? '   <- VACUOUS: the second layer never answered, so INV-19 examined nothing'
+        : ''),
+  );
+  lines.push(`    ...on which it FAILED CLOSED        : ${gate.layered.attemptsFailClosed}`);
+  lines.push(
+    `    unions smaller than deterministic   : ${gate.layered.unionsSmallerThanDeterministic}` +
+      (gate.layered.unionsSmallerThanDeterministic === 0
+        ? '   (must be 0; the union may only ADD)'
+        : '   <- MUST BE 0. The second layer REMOVED a claim the first one found.'),
+  );
+  lines.push(
+    `    claims ONLY the 2nd layer saw       : ${gate.layered.semanticOnlyClaims}` +
+      '   (each one would have leaked before Mission 2F)',
+  );
+  lines.push('    what the second layer did, per attempt');
+  for (const row of gate.layered.attemptsBySemanticOutcome) {
+    lines.push('    ' + bar(row.outcome, row.count, Math.max(gate.layered.attempts, 1)));
+  }
+  if (gate.layered.claimsBySource.length === 0) {
+    lines.push('    No claim was found by either layer anywhere in this sweep, so the layering is unexercised.');
+  } else {
+    lines.push('    which layer caught each claim');
+    const tagged = gate.layered.claimsBySource.reduce((sum, row) => sum + row.count, 0);
+    for (const row of gate.layered.claimsBySource) {
+      lines.push('    ' + bar(row.source, row.count, Math.max(tagged, 1)));
+    }
+  }
+  lines.push('');
+  lines.push('    WHAT THIS ZERO IS BOUNDED BY, AND IT IS A DIFFERENT BOUND FROM THE ONE ABOVE.');
+  lines.push('    INV-19 bounds the WIRING, not the vocabulary. It proves that both layers ran on every');
+  lines.push('    customer-facing text, that the union only ever grew, and that nothing was released while the');
+  lines.push('    second layer produced nothing usable. It proves NOTHING about whether the second layer is');
+  lines.push('    any good at reading a sentence - and it cannot, because the sweep runs a DETERMINISTIC');
+  lines.push('    DOUBLE. tests/invariants/semanticSweepVerifier.ts contains no classification logic at all:');
+  lines.push('    it is a lookup on exact bytes, and every verdict it returns was written down by a person');
+  lines.push('    beside the sentence in tests/invariants/dimensions.ts. Nobody may read these numbers as');
+  lines.push('    evidence that the semantic layer WORKS. They are evidence that the PIPELINE does.');
+  lines.push('      - tests/claimGate/layeredClaimCorpus.ts is where the second layer is shown to catch a');
+  lines.push('        class the deterministic one misses, over 912 adversarial rows and 295 honest controls,');
+  lines.push('        with the premise re-measured on every run and a LOUD failure if the detector improves.');
+  lines.push('      - tests/e2e/claimGateFailClosed.test.ts drives every fail-closed variant through the real');
+  lines.push('        AgentTurnService, the real ToolDispatcher and real SQLite.');
+  lines.push('      - and how often a real model writes any of these sentences is a BENCHMARK question. No');
+  lines.push('        model was called by this sweep, and INV-10 asserts that rather than assuming it.');
+  lines.push('');
+  // WHAT THAT ZERO IS WORTH, STATED WHERE IT IS PRINTED.
+  //
+  // INV-18's independent oracle reads the released text with the SAME
+  // `detectMaterialClaims` the gate reads it with, so a claim the DETECTOR cannot
+  // see is a claim this line cannot count. That is not hypothetical: independent
+  // QA released eight unsupported claims end to end, against an empty ledger,
+  // while this line printed 0 - a negator in a leading clause suppressed the whole
+  // sentence and the detector returned nothing to judge. The gap is closed
+  // (`src/agent/claimGate/detector.ts` scopes negation to the clause) and the
+  // bound is printed anyway, because the next detector gap will be invisible here
+  // in exactly the same way and a reader is entitled to know that before quoting
+  // the zero.
+  lines.push('  WHAT THIS ZERO IS BOUNDED BY');
+  lines.push('    THIS ZERO WAS WRONG FIVE TIMES, AND THE REASON DIFFERED EACH TIME: fixtures one punctuation');
+  lines.push('    mark wide, an escape check filtered through the detector it was policing, specs that did not');
+  lines.push('    name a wording of the failing shape, a GENERATED matrix whose joiner axis never included the');
+  lines.push('    empty joiner, and - the fifth time - a generated matrix whose FILLER axis had 26 values and');
+  lines.push('    not one of them built only out of tokens the locale declares as crossable. See');
+  lines.push('    docs/MISSION_2D_CLAIM_GATE.md sections 15.2, 15.4, 16.4, 17.2 and 18.2.');
+  lines.push('    The common cause was one thing: INV-18 found its claims with the gate\'s OWN detector, so a');
+  lines.push('    sentence the detector could not see was a sentence this line could not count.');
+  lines.push('');
+  lines.push('    SINCE SECTION 17.5 THERE ARE TWO WITNESSES, AND THIS ONE IS NOT THE DETECTOR.');
+  lines.push('    Every scripted model text in this sweep DECLARES, as hand-authored test data beside the');
+  lines.push('    sentence, whether it asserts a material effect and of which kind. The declaration consults');
+  lines.push('    nothing under src/agent/claimGate - tests/invariants/claimOracleBoundary.test.ts walks the');
+  lines.push('    transitive import closure and fails if it ever does - and INV-18 judges it against what this');
+  lines.push('    sweep actually persisted and dispatched. So a declared claim released over an empty ledger');
+  lines.push('    fails REGARDLESS OF WHAT THE DETECTOR SAYS.');
+  lines.push('    tests/invariants/claimOracleCatchesPastFindings.test.ts drives all five findings above');
+  lines.push('    through INV-18 with detectMaterialClaims stubbed to return nothing, and every one fails.');
+  lines.push('');
+  lines.push('    WHAT IS STILL BOUNDED. The oracle is not a second detector: it can only judge a sentence');
+  lines.push('    somebody declared. For the sweep that is every sentence - an UNDECLARED released text is an');
+  lines.push('    INV-18 violation, counted below - but it is a real limit on what this mechanism generalises');
+  lines.push('    to, and docs/MISSION_2D_CLAIM_GATE.md sections 17.8 and 18.7 state it rather than implying');
+  lines.push('    more. Section 18 is the case in point: DETECTOR_BLIND read 0 on the tree that leaked it,');
+  lines.push('    honestly, because nobody had declared the sentence.');
+  lines.push('      - tests/claimGate/claimGateCorpus.ts is still the thing that proves the DETECTOR sees a');
+  lines.push('        class at all: MUST_FLAG, MUST_NOT_FLAG, DOCUMENTED_MISSES, DOCUMENTED_OVERREACH, a');
+  lines.push('        1,870-row cross-clause matrix, a 144-row adverb-by-frame matrix, a 3,891-row suppression');
+  lines.push('        matrix carrying both directions, and a 1,262-row generated honest corpus.');
+  lines.push('        Read it beside this number, not after it.');
+  lines.push('');
+  lines.push(
+    `  Released sentences with NO declaration : ${gate.releasesUndeclared}` +
+      (gate.releasesUndeclared === 0
+        ? '   (must be 0)'
+        : '   <- each is an INV-18 VIOLATION; the oracle had no ground truth for it'),
+  );
+  lines.push('  HOW THE TWO WITNESSES COMPARED, per released sentence');
+  for (const agreement of ['BOTH_SILENT', 'BOTH_SAW_A_CLAIM', 'DETECTOR_BLIND', 'DETECTOR_OVER_READ'] as const) {
+    lines.push(`    ${agreement.padEnd(20)} ${String(gate.witnessAgreement[agreement]).padStart(6)}`);
+  }
+  if (gate.witnessDisagreements.length === 0) {
+    lines.push('    The declaration and the detector agreed on every sentence this sweep released.');
+  } else {
+    lines.push('    THEY DISAGREED, WHICH IS INFORMATION RATHER THAN A FAILURE:');
+    for (const row of gate.witnessDisagreements.slice(0, 12)) {
+      lines.push(`      [${row.agreement} x${row.count}] ${JSON.stringify(row.text.slice(0, 90))}`);
+    }
+    if (gate.witnessDisagreements.length > 12) {
+      lines.push(`      ... and ${gate.witnessDisagreements.length - 12} more distinct sentence(s)`);
+    }
+    for (const agreement of ['DETECTOR_BLIND', 'DETECTOR_OVER_READ'] as const) {
+      if (gate.witnessAgreement[agreement] > 0) {
+        lines.push(`      ${agreement}: ${WITNESS_AGREEMENT_MEANING[agreement]}`);
+      }
+    }
+  }
+  lines.push('');
+  lines.push('  gate outcome');
+  for (const row of gate.byOutcome) {
+    lines.push('  ' + bar(row.outcome, row.count, Math.max(gate.releases, 1)));
+  }
+  lines.push('');
+  if (gate.byUnsupportedReason.length === 0) {
+    lines.push('  No claim was ever rejected, so no rejection reason has been seen to work.');
+    lines.push('  tests/claimGate/claimGateCorpus.ts is the corpus that proves each one individually.');
+  } else {
+    lines.push('  why a claim was rejected (across every attempt, released or not)');
+    const rejected = gate.byUnsupportedReason.reduce((sum, row) => sum + row.count, 0);
+    for (const row of gate.byUnsupportedReason) {
+      lines.push('  ' + bar(row.reason, row.count, Math.max(rejected, 1)));
+    }
+  }
+  lines.push('');
+
   // ---- outcomes ----------------------------------------------------------
   lines.push('-'.repeat(78));
   lines.push('OUTCOME DISTRIBUTION');
@@ -353,6 +900,7 @@ export function renderJson(sweep: SweepResult, options: RenderOptions = {}): str
       violations: sweep.violations,
       networkAttempts: sweep.networkAttempts.map((attempt) => ({ via: attempt.via, target: attempt.target })),
       invariants: summarizeInvariants(sweep.results),
+      claimGate: claimGateSummary(sweep.observations),
       outcomes: outcomeDistribution(sweep.observations),
       errorCodes: errorCodeDistribution(sweep.observations),
       families: familyTable(sweep.scenarios, sweep.observations),

@@ -3,8 +3,9 @@
 Why this slice is built the way it is, what was deliberately deferred, and what
 the Founder now has to decide.
 
-Read **§ 0 FOUNDER DIRECTIVE — Baseline V1** and **§ 1 FOUNDER DECISIONS REQUIRED**
-first. Everything below them is context.
+Read **§ 0 FOUNDER DIRECTIVE — Baseline V1**, **§ 0A FOUNDER DIRECTIVE — a SEMANTIC
+second check on the claim gate** and **§ 1 FOUNDER DECISIONS REQUIRED** first.
+Everything below them is context.
 
 ---
 
@@ -25,6 +26,71 @@ reasoning.
 Full text, rationale, and what it concretely means for the next milestone:
 `docs/BASELINE_V1.md` § 4. Not yet implemented as of Baseline V1 — this is a
 directive for what comes next, not a change made to this codebase.
+
+---
+
+## 0A. FOUNDER DIRECTIVE — a SEMANTIC second check on the claim gate (recorded 2026-09-28)
+
+**The known leaks are NOT accepted.** Eight successive independent QA rounds each
+found a phrasing shape the deterministic lexicon detector did not recognise, and
+each one leaked a false success claim to a contact and persisted it with no effect
+behind it. A lexicon detector cannot be shown complete.
+`docs/MISSION_2D_CLAIM_GATE.md` § 17.8 states why the sequence does not terminate,
+and § 1.9 below put the question to me and built nothing. **This is the answer: a
+semantic AI second check is added as defence in depth.**
+
+It answers the objection § 11.1 makes — *"putting the guarantee inside a second
+model call puts it back where it failed"* — not by disputing it but by making sure
+no guarantee lives in the model call at all. The bounds below are what make that
+true, and they are non-negotiable.
+
+**What the semantic verifier may do.** It may ONLY classify whether a proposed
+customer-facing response claims or implies that a material action has happened or
+been committed to.
+
+**What it may NEVER do.** It must never execute an action, approve an action,
+create state, override validation, or have its judgement treated as proof that
+something happened. **Authoritative truth comes ONLY from successful validated
+tool results and persisted application and domain state.**
+
+**It must fail safely.** Malformed, schema-invalid, timed-out, empty or
+unavailable output is UNSUPPORTED — never clean. I accept what that buys: a
+verifier outage hands off every claiming turn to a human. That is the correct
+direction for this product and it is a cost a deployment has to be sized for.
+
+**It may only ADD suspicion**, as a union with the deterministic layer, and it can
+never clear, suppress or override something the deterministic layer flagged. The
+final supported/unsupported decision is always made by deterministic code
+reconciling the classified claims against the action ledger.
+
+**Blocked replies are regenerated naturally through the same LLM**, reusing the
+existing bounded attempts and the existing non-canned audited exhaustion outcome.
+Never a canned correction. § 0 applies unchanged and in full: no scripted
+production or demo conversation, no canned customer-facing wording, no predefined
+dialogue trees. Model-facing instructions are permitted; customer-facing wording
+is not.
+
+**The verifier's model must be configurable and must default to the configured
+local model.** Do not change model defaults and do not implement per-language
+routing — § 12 stays design-only.
+
+**Do not reject this architecture solely because it adds latency.** It costs one
+extra provider round trip on every customer-facing text, including the ~98% that
+assert nothing, and the previous "no material claim, no cost" fast path is gone by
+design — a fast path conditioned on the deterministic detector would let the layer
+whose gaps this exists to cover decide whether to cover them. Realtime voice
+optimisation comes later.
+
+**Both layers must catch the two live QA classes.** The deterministic half is
+`docs/MISSION_2D_CLAIM_GATE.md` § 21; the semantic half and the whole design are
+[`docs/MISSION_2F_SEMANTIC_VERIFIER.md`](MISSION_2F_SEMANTIC_VERIFIER.md), which
+carries the authority boundaries with the type and the test that enforce each, the
+fail-closed matrix, the determinism controls in effect and NOT guaranteed, the
+latency measurement method, and the residual limits.
+
+**What was NOT done.** No model was called, pulled, created or run by the mission
+that implemented this. No model default was changed. `prisma/schema.prisma` is
+untouched. Nothing was merged to Baseline V1 master.
 
 ---
 
@@ -125,7 +191,196 @@ out again in `docs/LEGACY_LESSONS.md`.
 | Transcript retention | Full `ConversationTurn` history, no truncation, no expiry | Retention is a legal question |
 | Should conflicts also check our own `Meeting` rows? | Only the `AvailabilityProvider` is consulted | See § 5.3 |
 
+### 1.8 Default local model — **recommendation recorded, NOTHING CHANGED**
+
+**Recorded 2026-09-27.** The fair five-model benchmark is finished and it
+recommends a default. **The recommendation is `qwen2.5:7b-instruct`, which is
+already the configured default, so no value was changed anywhere.** What changed
+is the *status* of that default, and that is the thing needing your signature.
+
+| | |
+|---|---|
+| Recommended | **`qwen2.5:7b-instruct`** |
+| Wired today | `LOCAL_LLM_MODEL="qwen2.5:7b-instruct"` in `.env.example`; `DEFAULT_LOCAL_LLM_MODEL` in `src/llm/localLlmProvider.ts`; `model: 'qwen2.5:7b-instruct'` in `src/config/env.ts` |
+| Changed by this mission | **Nothing.** No value in `.env.example`, no default constant in `src/`, no provider-selection logic, no prompt |
+| Evidence | `docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 9, and the artefacts under `eval-output-fair-20260927/` (`results.json`, `COMPARISON.md`, `transcripts/`, `environment/`) |
+| Blocked on you | Confirming that the incumbent default is now also the *recommended* default, **for English only**, and deciding what to do about Hebrew |
+
+`qwen2.5:7b-instruct` is recommended as the intended default for the local-brain
+path on the evidence in `docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 9, and
+is wired as such, **pending your approval** — deliberately the same standing, and
+the same wording, as `num_ctx` **16384**, which that review's § 9.1 records as
+"recommended as the intended default ... pending your approval" and which is wired
+as `LOCAL_LLM_NUM_CTX=16384` in `.env.example`.
+
+**Why the status change matters even though the value does not.** Until this
+benchmark it was the default *because the provider slice needed a model to
+develop against* and it was the strongest instruction-follower of its
+generation — **not because a comparison chose it.** It is now the default the
+evidence earns. That is a different claim, and it is the one being put to you.
+
+**SCOPE, and this qualification is load-bearing.** `qwen2.5:7b-instruct` is
+recommended for **ENGLISH-language customer-facing use only. NO candidate is
+earned for HEBREW customer-facing use**, and the review says so explicitly.
+
+**The evidence, in the order it forces.** Two of the five candidates fail a hard
+gate and are therefore ranked below every gate-passer whatever their score:
+`llama3.1:8b-instruct-q4_K_M` fails the fabricated-timestamp gate (1 gate failure
+/ 65 turns, 1.5%) and `aya-expanse:8b` fails it too (2 / 65, 3.1%). That leaves
+`qwen2.5:7b-instruct`, `hermes3:8b` and `mistral:7b-instruct`. On the primary
+criterion — natural human conversation quality — qwen2.5 scores **85.2%**,
+hermes3 77.7%, mistral 33.6%. qwen2.5 also leads the composite (**88.2%** vs
+82.1% and 51.9%) and tool/structural correctness (**93.1%**), records **0**
+native-malformed tool calls (native 8 / recovered 0 / malformed 0, malformed rate
+0.0%), 100.0% argument validity <sub>n=8</sub>, 100.0% structured output
+<sub>n=8</sub>, 100.0% no-unnecessary-calls <sub>n=54</sub> and 100.0%
+non-repetitive <sub>n=65</sub>. It is the **only gate-passer with an EXERCISED
+wrong-day denominator**: PASS on 1 applicable turn, 0 wrong day, 0.0% — hermes3
+and mistral both show `n/a - not exercised`, **which is not a pass and must not
+be written as one.**
+
+`hermes3:8b` is disqualified on programmatic grounds despite passing the
+fabrication gate: **43.3% no-hallucinated-ids** <sub>n=30</sub>, i.e. it invented
+contact ids on the majority of its tool calls and then read real internal ids
+aloud to the contact; its transcripts also show persona collapse (it describes
+itself as *"a tool used for calling functions"*) and fabricated product facts (it
+asserts a Salesforce integration the grounding explicitly denies).
+`mistral:7b-instruct` collapses on latency and verbosity (turn p95 120,122 ms;
+content expectations 13.0% <sub>n=54</sub>; length budget 14.2% <sub>n=50</sub>).
+
+On latency qwen2.5 is also the cleanest number in the set because it is one of
+only two models held **entirely in VRAM** (100.0% on GPU, 0.00 GiB in system
+RAM) — TTFT p50 98 ms, turn p50 2,410 ms, 50.2 tok/s. Three of the five did not
+fit entirely on the 8 GB GPU; `EVAL_HARNESS.md` § 10.5 and § 10.6 name them and
+say what it costs their latency figures.
+
+**Stated honestly alongside it, because the review does not hide these.**
+qwen2.5's worst observed behaviour is the adversarial-guardrail scenario, where it
+**invented a confirmation number (`CONF123456`) and then claimed a callback was
+booked when no tool call had been made** — a real, unfixed product risk that needs
+a **programmatic guard rather than a prompt clause.** Its weakest judged dimension
+is *remembers earlier information* at 65.6% <sub>n=16</sub>. And its Hebrew is the
+worst of the five on transcript reading despite a 78.4% Hebrew composite: it
+code-switches into Chinese for whole turns, emits Korean/Japanese glyphs inside
+Hebrew words, and on one mixed scenario emitted 7,402 characters that included a
+Chinese translation of the system prompt.
+
+**HEBREW — no model is earned, and this is a decision for you, not a gap to be
+closed by picking differently.** The best Hebrew *composite* is llama3.1's 81.3%,
+but llama3.1 answered an entire Hebrew scenario **in English** (0% Hebrew letters
+on all five turns of `hebrew-intro-and-booking`) and fails the fabrication gate.
+The best language-match figure is hermes3's 98.5% <sub>n=65</sub>, but hermes3
+stays in Hebrew script while saying content that is off-persona and partly
+non-words. The only model whose Hebrew transcripts actually **read as fluent
+native Hebrew** is `aya-expanse:8b` — and it fails the fabrication gate, scores
+14.6% argument validity <sub>n=41</sub>, has a 12.0% malformed-tool-call rate,
+leaks raw tool-call JSON to the contact, and claimed a meeting was booked when
+none was. **Fluent-but-unsafe versus safe-but-not-fluent: neither is shippable in
+Hebrew.**
+
+**What approving this would concretely involve — and it is deliberately almost
+nothing.** Because the recommendation *is* the incumbent, approval changes no
+code: it promotes the existing value from "a development choice" to "the
+evidenced default", and the honest wording in
+`docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 9.1 stops being provisional.
+
+Had the recommendation differed, changing the default would have meant all of:
+the value of `LOCAL_LLM_MODEL` in `.env.example`; `DEFAULT_LOCAL_LLM_MODEL` in
+`src/llm/localLlmProvider.ts`; the `model` default in `src/config/env.ts`; a pull
+of the new tag on every host (`npm run llm:probe` to confirm presence); a re-check
+that `LOCAL_LLM_NUM_CTX=16384` still fits the new model's resident size on an 8 GiB
+card; and **a re-run of the benchmark**, because a default nothing measured under
+the recorded conditions is the exact situation this mission existed to end. None
+of that was done, because none of it is needed.
+
+**An existing `.env` is not touched by any of this.** `npm run db:generate` copies
+`.env.example` to `.env` only when `.env` is absent, and whatever is in your `.env`
+beats the defaults in `src/` (§ 4). If your `.env` names a different model, that is
+what runs, approved or not.
+
 ---
+
+### 1.9 A model-assisted SECOND OPINION for the claim gate's vocabulary surface — **ANSWERED IN § 0A, AND BUILT**
+
+> **RESOLVED 2026-09-28.** The Founder answered this question in **§ 0A**: the known
+> leaks are not accepted, and the semantic second check is added as defence in
+> depth in **exactly the one-directional shape this subsection said would be
+> compatible with § 11.1**. It may raise suspicion on text the deterministic
+> detector passed; it may never clear a claim the detector raised.
+>
+> **It is now built.** `src/ports/claimVerifier.ts`,
+> `src/agent/claimGate/semantic/`, wired by default with no off switch. The
+> consequences this subsection priced in advance were all accepted as priced: a
+> model failure costs a regeneration and never a release; it cannot weaken any
+> guarantee that exists today; **and it costs one extra provider round trip on the
+> happy path.** The fourth consequence named below — that byte-identical
+> determinism would end for `npm run qa:sweep -- --determinism` — was avoided
+> rather than accepted: the sweep wires a deterministic double, so it stays
+> byte-identical, **and the sweep therefore proves the layered pipeline and NOT the
+> semantic layer's accuracy.** That limit is stated as residual 1 of
+> [`docs/MISSION_2F_SEMANTIC_VERIFIER.md`](MISSION_2F_SEMANTIC_VERIFIER.md) § 12
+> rather than left implicit, and `npm run eval:verifier` (EVAL_HARNESS.md § 11) is
+> the operator command that measures the thing the sweep cannot.
+>
+> **The text below is left exactly as it was written**, because it is the record of
+> a question and not a document that tracks the answer.
+
+**Recorded 2026-09-28 by `MISSION-2D-R-CLAIM-GATE-FAILSAFE-AUTO-INDEPENDENT-ORACLE`,
+part 1(b) of Mission 2D-R.** Raised as a question, not a proposal. **Nothing was
+implemented, no model was called, pulled or run, and no model default was changed.**
+
+| | |
+|---|---|
+| Subject | `src/agent/claimGate/detector.ts` and `src/agent/claimGate/lexicon/**` |
+| Today | Wholly deterministic. Text in, material claims out, no I/O, byte-identical every run |
+| The question | Whether to add a model-assisted second opinion that can only **ADD** suspicion and can never **CLEAR** a claim |
+| Built | **Nothing.** No code path, no port, no flag, no prompt |
+| Blocked on you | Whether the residual in `docs/MISSION_2D_CLAIM_GATE.md` § 17.8 is worth a second provider round trip on the turns that would otherwise be released |
+
+**Why it is being raised now and was not before.** `docs/DECISIONS.md` § 11.1 chose
+deterministic over model-assisted and the argument still holds: the finding the gate
+exists for is that a model does not reliably follow an instruction, so putting the
+guarantee inside a second model call puts it back where it failed.
+`docs/MISSION_2D_CLAIM_GATE.md` § 17.4 said the answer to *"is a deterministic
+lexicon detector fail-safe enough"* is **yes**, and named what would change it: *"a
+finding in a DIFFERENT shape from these four — one where the detector cannot be made
+to see a class without an open-class enumeration."*
+
+**That finding arrived.** § 17.7 records it. Four fixes and three independent QA
+rounds into this gate, the English CANCELLATION family still had one idiom in it, and
+`That meeting is off the calendar now.` was returned to a caller and written to
+`ConversationTurn` as a spoken agent turn with nothing booked. It is not a scope
+defect, not an arrangement defect and not a governance defect — the rules were right
+and the **word was not in the list**. A lexicon of completion forms is an open class.
+
+**What is NOT being claimed.** That the gate is unsafe, that the deterministic design
+was wrong, or that this should be built. The suppression mechanism was attacked with
+169 wordings across every axis a reviewer would try and produced **zero** new leaks;
+the rules generalise. The residual is the vocabulary, and no rule fixes a vocabulary.
+
+**The only shape that would be compatible with § 11.1, if you want it.** A second
+opinion that is **strictly one-directional**: it may raise suspicion on text the
+deterministic detector passed, and it may **never** clear a claim the detector
+raised. Consequences, stated so the trade is legible:
+
+- a model failure costs a **regeneration**, never a release — the fail-safe direction
+  `src/agent/claimGate/detector.ts` already states for itself;
+- it cannot weaken any guarantee that exists today, because it only ever adds;
+- it costs **one extra provider round trip on the happy path** — on every turn that
+  asserts nothing, which is ~98% of them (2,014 of 2,050 released sentences in the
+  current sweep). That is the exact cost § 4.1 rejected, and it is the reason this is
+  a Founder decision and not an engineering one;
+- it would end byte-identical determinism for `npm run qa:sweep -- --determinism`
+  unless the second opinion is excluded from the sweep, which then means the sweep no
+  longer tests the production path.
+
+**The alternative, which costs nothing and is not free of consequences either:**
+leave it deterministic and accept that a completion idiom nobody listed is a miss,
+as § 8 limit 10 now states plainly. That is the status quo and it is what ships
+unless you say otherwise.
+
+**Nothing here is actionable by an engineer without your signature.** If this is read
+as approval to build a model-assisted path, it has been misread.
 
 ## 2. Could the legacy export be read?
 
@@ -589,3 +844,956 @@ reports `declared REJECT but the system accepted it` for both sub-minute
 shortfalls. Six of the seven cases in `tests/e2e/timezoneOverride.test.ts` fail;
 the seventh is a control that is meant to pass either way. An invariant that
 cannot fail is not evidence, so this was established rather than assumed.
+
+---
+
+## 9. The natural-language resolver fails closed, and its vocabulary is data
+
+**Recorded 2026-09-27.** This fixes the most serious open finding in
+`docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 8.3: a Hebrew `when` with the
+clock time in digits was not refused — it booked the **wrong calendar day**.
+
+### 9.1 What was actually wrong — two root causes, not one
+
+`src/scheduling/naturalLanguage.ts` normalised the input, ran a sequence of
+regexes (day part, named time, ISO date, relative offset, day anchor, clock
+time), and blanked each match out of a `remaining` string. What survived was
+checked against exactly two safety nets: `/\d/.test(remaining)` and an
+**English-only** blocklist of period words. **Everything else in `remaining` was
+silently discarded.**
+
+Separately, when no day anchor was found but a clock time or day part was, the
+assembly step fell through to a branch that set the date to
+`nowLocal.startOf('day')` and the anchor to `implicit_today`.
+
+Put together, reproduced on this branch before anything was changed, with `now`
+= Wednesday 2026-03-04 10:00 Asia/Jerusalem:
+
+| `when` | Resolved | `dayAnchor` | |
+|---|---|---|---|
+| `tomorrow at 15:00` | 2026-03-05 15:00 | `tomorrow` | correct |
+| `מחר ב-15:00` | **2026-03-04** 15:00 | `implicit_today` | **WRONG DAY**, `ok: true` |
+| `יום חמישי ב-15:00` | **2026-03-04** 15:00 | `implicit_today` | **WRONG DAY**, `ok: true` |
+| `مرحبا غدا 15:00` | **2026-03-04** 15:00 | `implicit_today` | **WRONG DAY**, `ok: true` |
+| `завтра в 15:00` | **2026-03-04** 15:00 | `implicit_today` | **WRONG DAY**, `ok: true` |
+| `demain à 15:00` | **2026-03-04** 15:00 | `implicit_today` | **WRONG DAY**, `ok: true` |
+
+Every validator check passed. A `Meeting` or a `FutureAction` was persisted with
+a complete receipt, and `DueActionRunner` would have dialled it a day early.
+
+So there were **two** root causes, and fixing only the visible one would have
+left the dangerous one in place:
+
+1. **Fail-open leftovers.** A token no rule claimed was thrown away.
+2. **An English-only lexicon.** Nothing but English could ever be understood.
+
+### 9.2 Why fail-closed beats a Hebrew string patch
+
+Teaching the grammar Hebrew fixes **one language**. It does nothing for Arabic,
+Russian, French, Polish or any of the other languages a `when` argument can
+arrive in, and every one of them would still have produced a silent wrong-day
+booking through exactly the same branch. The general rule is now:
+
+> **A phrase may resolve only if EVERY non-whitespace token of the normalised
+> text was consumed by a rule. Anything left over refuses, and the refusal names
+> the leftover.**
+
+Nothing in the code names a script or an alphabet. `qqzzx wibble flurm at 15:00`
+refuses through the identical branch that refuses `غدا في 15:00`, which is the
+proof that the rule is general rather than a list of the languages somebody
+happened to think of. The `implicit_today` branch — the most dangerous line in
+the file — is additionally guarded on `everyTokenConsumed`, so the guarantee is
+stated where the decision is made and not only in the refusal above it.
+
+The Hebrew lexicon was then added **as well**, because a refusal is safe but a
+correct booking is the product. The order matters: fail-closed first, then
+vocabulary. Adding vocabulary to a fail-open grammar would have shrunk the hole
+without closing it.
+
+### 9.3 Carrier tokens, and why the fix could not be a one-line check
+
+`call me back tomorrow afternoon at 3` is an accepted input, pinned by
+`tests/scheduling/naturalLanguage.test.ts`, and it leaves `call`, `me` and
+`back` unconsumed. A naive "refuse on any leftover" rule would have broken it —
+and the mission required every existing English behaviour to be preserved byte
+for byte unless a test documents a deliberate change.
+
+So each locale now declares a **carrier** list: tokens it permits to be present
+and discards **on purpose**. Consuming one is a recorded grammar event, not a
+silent drop. The distinction being implemented is:
+
+| | |
+|---|---|
+| *"this token was discarded by a rule somebody wrote down"* | a carrier — appears in the provenance as `carrier:en:back` |
+| *"this token was discarded because nobody looked at it"* | the defect — now impossible |
+
+Two design rules keep the list honest. Carriers are matched **last**, after
+every rule that could want the token, so a carrier can never shadow a real match
+(`a` is the quantity word in `in a couple of hours` and a carrier only where the
+offset rule did not take it). And the lists are deliberately **short**: a carrier
+list that grows until it covers any sentence is a fail-open rule with extra
+steps.
+
+### 9.4 The lexicon is data, and the resolver is locale-agnostic
+
+`WEEKDAY_NUMBERS`, `WEEKDAY_ALTERNATION`, `NUMBER_WORDS`, `RELATIVE_OFFSET_RE`,
+`VAGUENESS_MARKERS`, `LEFTOVER_BLOCKLIST_RE`, `TIME_RE`, the day-part and
+named-time alternations, every literal inside `matchDayAnchor`, and the rewrite
+rules inside `normalize()` are gone from the resolver. They are now
+`src/scheduling/lexicon/en.ts` and `src/scheduling/lexicon/he.ts`, each
+exporting one `LocaleLexicon` of pure data — weekday names and their forms, day
+anchors, relative-offset units and quantity words, day-part markers, named clock
+times, clock-time prefix and separator forms, carrier tokens and vagueness
+markers. `naturalLanguage.ts` contains no language-specific literal at all.
+
+**Adding a locale is adding a module and registering it.** That claim is proved
+rather than asserted: `tests/scheduling/failClosedGrammar.test.ts` registers a
+synthetic third locale at runtime, through
+`ParseNaturalLanguageOptions.lexicons`, and resolves phrases in it — weekdays,
+day parts, offsets, vagueness and period words all work with no resolver edit.
+
+**Matching is on whole tokens, not substrings.** This is not a style choice.
+JavaScript's `\b` is defined on ASCII word characters, so `\bמחר\b` never
+matches anything — a regex grammar of the old shape could not have been extended
+to Hebrew by adding alternatives to it, however many were added. Token equality
+works in every script, and it also turns "every token was accounted for" into an
+exact statement rather than a guess about leftover whitespace.
+
+### 9.5 The cross-locale ambiguity rule
+
+**There is no schema change. `Contact` has no language field and none was
+added.** A model-supplied language would be one more unaudited model assertion
+deciding what a booking means. The resolver therefore matches against the
+**union** of every registered lexicon and lets the words decide. That raises one
+real question, and the answer is stated explicitly rather than left to emerge:
+
+> **A token that two registered locales would read as DIFFERENT days or
+> DIFFERENT times is a refusal. A token they AGREE on is not an ambiguity.**
+
+"Agree" is exact: two entries agree when they are the same kind of thing with
+the same value — the same day offset, the same ISO weekday, the same day part,
+the same named hour and minute, the same offset unit or quantity. Everything
+else disagrees, **including two entries of different kinds**, because a token one
+language reads as a day and another reads as a time of day is precisely the
+confusion worth refusing over. The rule is evaluated only where the grammar
+would actually read the token — on the longest form matching at a position — so
+a disagreement buried inside a phrase that matched as a whole cannot cause a
+spurious refusal.
+
+With `en` and `he` registered there is no such token, because the two use
+disjoint scripts. That is a fact about today's registry and not a property of the
+rule, so **both sides are tested against a synthetic locale**: one that reads
+`tomorrow` as two days out (refuses), one that reads it as one day out (resolves
+— agreement is not ambiguity), and one that reads `afternoon` as a day rather
+than a time of day (refuses, cross-kind).
+
+### 9.6 Hebrew script normalisation is a separate, documented step
+
+`src/scheduling/lexicon/script.ts` normalises Unicode NFC, strips bidi controls
+and zero-width characters, strips niqqud, and maps maqaf → hyphen, geresh →
+apostrophe, gershayim → double quote and the Hebrew stops → space. It reports
+which steps fired, and those land in the provenance.
+
+Two decisions inside it are worth recording:
+
+- **It does not lower-case.** Case folding is a grammar step. Keeping it out is
+  what makes "this function is the identity on English" an exact, testable claim
+  rather than an approximate one — and it is tested, byte for byte, across every
+  English expression the suite and the invariant sweep put through the resolver.
+- **Its rules are a table of numeric code-point ranges, not a regex of literal
+  characters.** The characters involved are invisible. Written literally, no
+  reviewer could confirm that the niqqud range excludes U+05BE MAQAF — and
+  sweeping the whole Hebrew block would have silently destroyed the maqaf that
+  `ב־15:00` depends on.
+
+It deliberately does **not** convert Arabic-Indic or Devanagari digits. No
+registered locale needs it, and inventing an untested digit rule would be the
+same class of mistake as the one being fixed; such a phrase fails closed
+instead.
+
+### 9.7 What the provenance now records
+
+`NaturalLanguageInterpretation` keeps `matched`, `dayAnchor`, `dayPart`,
+`timeAnchor` and `normalized` exactly as they were, and gains, additively:
+
+| field | what it says |
+|---|---|
+| `locales` | which lexicons supplied a match, in first-match order — `['he']`, or `['he','en']` for a code-switched phrase |
+| `lexicon` | every grammar event in order, each with its `rule`, `locale`, the declared `form` and the `text` consumed |
+| `carriers` | the filler tokens discarded **by rule** |
+| `leftover` | the tokens nobody accounted for. Always empty on success; on a refusal it is the evidence |
+| `scriptNormalization` | which normalisation steps actually changed the raw input |
+
+`SlotInterpretation` carries `locales`, `lexicon` and `carriers` into
+`ResolvedSlot`, and the full interpretation continues to ride in
+`ValidationProvenance.notes.interpretation`. `matched` also now carries
+`carrier:<locale>:<token>` entries, which is a deliberate change to the English
+receipt: a reader has to be able to see the difference between a word that was
+ignored by a rule and a word that was ignored by accident.
+
+### 9.8 Deliberate behaviour changes, listed rather than buried
+
+Everything else about English is unchanged, and
+`tests/scheduling/naturalLanguage.test.ts` and `dst.test.ts` pass **unmodified**.
+These are the differences a careful reader would spot:
+
+1. **`at midnight` consumes its `at`.** A named time is introduced the same way
+   a digit one is, so the preposition belongs to that rule. The `at` used to
+   survive as a leftover, which only went unnoticed because leftovers were being
+   thrown away.
+2. **`timeAnchor` is the text actually said.** `tomorrow at 3 p.m.` records
+   `at 3 p.m.` rather than `at 3 pm`, because `normalize()` no longer rewrites
+   the input behind the reader's back. The resolved instant is identical.
+3. **`matched` carries carrier events** (§ 9.7).
+4. **A leftover report is now the leftover.** `tomorrow at 3pm on the 15th` still
+   refuses with the same "could not interpret" reason, but names `15th` rather
+   than `on the 15th`, because `on` and `the` were consumed by rules.
+
+### 9.9 What was deliberately left out of scope
+
+- **Hours spelled out in Hebrew words.** `בשתיים` ("at two") is not a clock time
+  in this lexicon, so `מחר אחרי הצהריים, בשתיים` resolves `מחר` and
+  `אחרי הצהריים` and then refuses, **naming `בשתיים`**. Guessing that `שתיים`
+  means 14:00 rather than 02:00 is exactly the guess this grammar exists to
+  refuse. The required coverage was digit clock times and it is complete.
+- **An hour of 1–11 that nothing settles still refuses, in Hebrew too.** Hebrew
+  has no am/pm, so `מחר ב-9:00` refuses with "09:00 or 21:00" while
+  `מחר ב-9:00 בבוקר` resolves. That is the pre-existing English rule applying
+  unchanged, by the same code, and changing it would have altered English
+  behaviour.
+- **`שני` as a quantity word.** It means both "two (of)" and "Monday". The
+  idiomatic Hebrew for "in two days" is the dual `יומיים`, which is supported.
+- **Israeli working days.** The seeded business-hours policy is Monday to
+  Friday and Israeli working days are not. That is a **policy configuration**
+  matter and was explicitly out of scope, so `סוף השבוע` resolves through the
+  same locale-agnostic end-of-ISO-week rule English uses and the business-hours
+  check then has its own say.
+
+### 9.10 What was touched outside `src/scheduling`
+
+Nothing in `src/llm/scriptedLlmProvider`, `src/audit`, `src/db`, `prisma` or
+`src/eval` was modified, and no schema changed. Outside `src/scheduling` this
+change touched only:
+
+| file | why |
+|---|---|
+| `tests/e2e/hebrewDigitClockTime.test.ts` | it pinned the WRONG instant on purpose and its own failure message said what to change. Now asserts the day the contact named; the wrong-day branch and the constant behind it are deleted. Both controls kept and updated honestly |
+| `tests/eval/wrongDayGate.test.ts` | its narrative described the resolver as producing the wrong day. Every scorer assertion is kept — the gate must stay sharp, and with no real run producing a wrong day any more, its synthetic fixtures are now the only place its teeth can be demonstrated |
+| `tests/scheduling/scriptNormalization.test.ts`, `hebrewGrammar.test.ts`, `failClosedGrammar.test.ts` | new unit coverage |
+| `SCHEDULING_CONTRACT.md`, this file | the contract and the decision |
+
+The nine ordered validation checks and their order, the `ValidationProvenance`
+receipt and its write path, the pinned-slot single-resolution guarantee, the
+business-hours anchor zone, the dispatcher chokepoint and refusals-as-values are
+all untouched.
+
+---
+
+## 10. Integrating the three Mission 2B branches
+
+The evaluation-fairness, resolver and regression branches were developed in
+parallel and merged without textual conflict. Two things still had to be settled
+by hand before the merged tree ran.
+
+### 10.1 The Prisma CLI is resolved through Node, never built from the repo root
+
+Four places shelled out to `prisma db push` to apply the schema to a throwaway
+SQLite file, and three of them located the CLI as
+`join(REPO_ROOT, 'node_modules', 'prisma', 'build', 'index.js')`. That path is
+wrong whenever the repository is checked out as a **git worktree**, which is how
+every agent in this project works: `node_modules` is installed once at the
+workspace root ABOVE the worktree, so the repo-root path does not exist and the
+call dies with `MODULE_NOT_FOUND`. `tests/helpers/testDb.ts` is the global test
+setup, so this took down the ENTIRE suite before a single test ran — not one
+test, all of them.
+
+`src/eval/runner/world.ts` had already met this exact problem and solved it
+correctly with `createRequire(import.meta.url).resolve('prisma/build/index.js')`,
+which walks the same lookup chain Node itself would and finds the package
+wherever it actually is. Its fix carried a comment explaining precisely why the
+repo-root form is wrong. The other three call sites never learned it.
+
+So the resolver is now **one shared function**, `prismaDbPushArgs()` in
+`src/db/prismaCli.ts`, and all four call sites use it —
+`tests/helpers/testDb.ts`, `src/app/sliceDemo.ts`, `src/cli/support.ts` and
+`src/eval/runner/world.ts`, which lost its private copy. The duplication was the
+actual defect: a correct fix existed in this repository and three copies of the
+bug outlived it, because nothing made them share. Four identical argv arrays
+could drift in four directions; one cannot.
+
+This is the one place where integration had to touch `src/db`, which § 9.10
+records as untouched by the resolver branch. That statement remains true of that
+branch. It is no longer true of the merged tree, and this is the change that made
+it false.
+
+### 10.2 The cross-branch seam is load-bearing, and the sweep proves it
+
+The regression branch wrote invariants INV-16 (Hebrew/English parity) and INV-17
+(the resolved day is the day the phrase named) against a Hebrew lexicon that only
+existed on the resolver branch. Neither branch could demonstrate that pairing
+alone. In the Mission 2B merged tree `npm run qa:sweep` ran 823 scenarios and
+reported **INV-16 at 108 applicable checks and INV-17 at 258, both with zero
+failures**, which is the first evidence that the regression net and the
+fail-closed resolver agree about Hebrew. (Those two counts are a record of *that*
+integration. § 11 grew the corpus, so the figures moved with it — the current ones
+are in the sweep report, and `EVAL_HARNESS.md` § 0 carries the integrated totals.) Likewise the evaluation-fairness branch's environment
+records reach the report through `src/eval/report/generate.ts`, and the
+regression branch's `tests/qa/report.ts` reaches the operator through
+`tests/qa/sweepCli.ts`. Both seams are exercised by the merged suite rather than
+asserted here.
+
+### 10.3 The anti-scripting allowlist is fixed in the regex, not in `.gitattributes`
+
+`npm run check:anti-scripting` was exiting **1** on the single allowance the
+repository declares, in `src/agent/prompt/clauses.ts`. `ALLOW_RE` in
+`src/context/antiScriptingCheck.ts` captured the justification with `(.*)`
+anchored at `$`; `.` does not match `\r`, so on a CRLF line the match failed
+outright, `collectAllowances` returned nothing, and `isAllowed` could never return
+true. The allowlist documented in `CONVERSATION_CONTEXT.md` § 7 had never worked.
+The defect is pre-existing — `master` (`deeb88b`) has the same regex — and was
+found by independent QA running the command rather than reading about it.
+
+**Two fixes were available and the cheaper one was rejected.** The committed blobs
+are LF; the CRLF is added at checkout by `core.autocrlf=true` with no
+`.gitattributes`. Adding `* text=auto eol=lf` would have made the symptom go away
+without making the check correct — and it would have left the verdict a function
+of how each person cloned the repository, green on one machine and red on another
+for the same commit. A source-hygiene gate whose result depends on the
+environment is not a gate. So the fix is in the pattern: `[^\n]*`, which consumes
+the `\r` into the captured reason where the existing `.trim()` removes it. The
+check is now line-ending agnostic under any git configuration.
+
+**The guard is a second corpus entry, not a new test file.** `KNOWN_GOOD` in
+`src/context/antiScriptingSelfTest.ts` already held an allowed-with-reason sample,
+but assembled with `.join('\n')` — so the non-vacuity self-test exercised a line
+ending none of the 27 files the walk reads actually has, which is why it kept
+reporting a clean allowance path while the real one was broken. The same two lines
+are now also joined with `\r\n`, from a shared `ALLOWED_GUARDRAIL_EXAMPLE` constant
+so the pair cannot drift. With the old regex restored, the self-test names that
+sample and fails. Both samples live in
+the self-test corpus rather than `tests/` because this check must stay runnable as
+a standalone CLI with its non-vacuity proof attached, per § 6.3; a vitest file
+would be an addition to that, not a replacement for it.
+
+---
+
+## 11. The effect and claim consistency gate
+
+**The finding this section answers**, recorded before it was fixed, in
+`docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 9.3 point 2 and again in § 13:
+
+> pressed to confirm a booking that did not exist, `qwen2.5:7b-instruct` invented
+> `CONF123456` and then said *"I've booked the callback for 3pm on your local
+> time."* No tool call was made. Nothing was booked. **The chokepoint cannot help
+> here, because the chokepoint refuses tool calls and this was a sentence.**
+
+`aya-expanse:8b` does the same thing in Hebrew (§ 6.2) and adds an email the agent
+has no tool to send. § 9.4 generalises it: *"the chokepoint governs actions, not
+sentences. Every model that said something false said it freely."*
+
+Built at `src/agent/claimGate/`, enabled by default, reported in
+`docs/MISSION_2D_CLAIM_GATE.md`. Five decisions are recorded here.
+
+### 11.1 The detector is DETERMINISTIC, not model-assisted
+
+**Decision.** Claim detection is a deterministic pass over tokens against locale
+vocabulary declared as data. No second model call is involved anywhere in
+detection or verification. The only model call the gate makes is the
+*regeneration*, and that asks the model to write English or Hebrew - never to
+judge whether something is true.
+
+**Why.** The finding being fixed IS that an instruction to a model is a request
+rather than a constraint. § 8.8's language-drift evidence is the standing
+demonstration: the prompt asks for the contact's language and the models answer in
+another one anyway. A model-assisted detector would put the guarantee back inside
+the component that cannot be relied on, and would do it at the cost of one extra
+provider round trip on **every** turn rather than only on failing ones.
+
+Three properties follow, and each of them was a requirement rather than a bonus:
+
+- **Free on the happy path.** The detector is pure, so it runs FIRST, and the
+  ledger's five database reads happen only when something has been found to check.
+  Measured p50 of 0.022 ms on a 34-character reply that asserts nothing.
+- **Identical on every run**, which is what lets `npm run qa:sweep --determinism`
+  stay byte-identical with the gate in the loop.
+- **Provable by a test that names the sentence.** The two verbatim transcripts
+  from the review are assertions in `tests/agent/claimGateDetector.test.ts`. If
+  either stops being detected, the build fails.
+
+**What was rejected.** A model-assisted or hybrid detector. It would have needed a
+deterministic path for the tests anyway (through `ScriptedLlmProvider`), so the
+tests would have proved the deterministic path and production would have run the
+other one - which is the worst of both.
+
+### 11.2 The locale vocabulary is DATA, and English and Hebrew are described differently
+
+**Decision.** `src/agent/claimGate/lexicon/` holds one module per language
+exporting a `ClaimLexicon` and nothing else. The engine, `detector.ts`, contains no
+language-specific literal. Adding a language is adding a module and one line in
+`lexicon/index.ts`.
+
+**Why.** This is § 9.4's conclusion applied a second time. The reason the Hebrew
+wrong-day defect could not be fixed by adding Hebrew alternatives to English
+regexes is that JavaScript's `\b` is defined on ASCII word characters, so
+`\bמחר\b` never matches. The same is true of `\bנקבעה\b`. A detector built as
+English regexes with Hebrew bolted on would have had no Hebrew coverage at all
+while appearing to have some - which is precisely the shape of the defect this
+mission exists to close, arriving through a different door.
+
+**The consequence that vindicates the shape.** The two languages need genuinely
+different declarations, and a single shared field layout could not have expressed
+both:
+
+- English asserts completion with a FRAME - `is booked`, `has been confirmed`,
+  `you are all set` - because the bare participle `booked` is ambiguous between a
+  completed effect and an intention (`let me get that booked`, which is the exact
+  wording the guardrail clause holds up as the HONEST thing to say).
+- Hebrew asserts completion with ONE inflected word - `נקבעה`, `בוטלה`, `אושרה` -
+  because the passive past is carried by the morphology.
+
+Day, time, weekday and day-part vocabulary is **not duplicated**. The verifier
+reads `REGISTERED_LEXICONS` from `src/scheduling/lexicon/`, so the gate and the
+resolver cannot disagree about what `מחר` or `אחרי הצהריים` means. The day-part
+WINDOWS come from the turn's own `SchedulingPolicy`, carried on the ledger, for the
+same reason.
+
+**Two Hebrew forms were deliberately excluded**, and the reasons are the interesting
+part. `נקבע` - the masculine passive past - collides with the cohortative "let's
+schedule", and `src/scheduling/lexicon/he.ts` already declares `נקבע` as a CARRIER
+token on exactly that reading. A form that is a completed booking in one reading
+and a proposal in another must not decide whether a sentence reaches a customer.
+`העברתי` means both "I transferred [to a colleague]" and "I moved [the meeting]",
+so it cannot say which family it belongs to. Both exclusions are misses, and both
+are recorded as misses in `docs/MISSION_2D_CLAIM_GATE.md` § 8 rather than papered
+over by guessing.
+
+### 11.3 The regeneration bound is TWO
+
+**Decision.** `MAX_CLAIM_GATE_REGENERATION_ATTEMPTS = 2`, a named constant in
+`src/agent/claimGate/claimGate.ts`. One original attempt plus at most two
+regenerations, so at most three provider calls for one released sentence.
+
+**Why two and not one, three or ten.** Two arguments, and they meet at two.
+
+**Latency.** Each attempt is one full provider round trip, paid on a live phone
+call while the caller listens to silence. Measured from the committed benchmark
+rather than guessed: of `qwen2.5:7b-instruct`'s 65 turns in
+`eval-output-fair-20260927/`, 57 made exactly one provider call, and those turns
+took **p50 2,102 ms, mean 3,574 ms, p95 4,213 ms** end to end. Two regenerations is
+therefore about 4.2 s of worst-case added latency, which is recoverable on a call;
+three would be over six seconds, which is a caller saying "hello? are you there?".
+
+**Diminishing returns.** A model handed the authoritative state either accepts it
+immediately or is arguing with it, and a model arguing with its own tool results is
+the § 6.5.4 behaviour this gate exists to STOP rather than to negotiate with. When
+two attempts are not enough the honest answer is a person, not a fourth try.
+
+**And it is a number in code, not an instruction in a prompt**, for the same
+reason `DEFAULT_MAX_TOOL_ITERATIONS` is. An instruction is a request; a number is a
+limit.
+
+**The one knob, and what it cannot do.** `buildAgentRuntime` accepts
+`claimGate.maxRegenerationAttempts` and accepts NOTHING that disables the gate.
+Lowering the bound makes the gate stricter - fewer chances to correct, not more
+chances to leak - so the only available misconfiguration is a safe one. This is
+deliberately unlike `contextAssembly` and `llmProviderConfig`, which are
+capabilities a deployment opts into.
+
+### 11.4 The exhaustion outcome is a real handover, and no words at all
+
+**Decision.** When every bounded attempt is still unsupported:
+
+1. NO text is released, and none is invented. `assistantText` is `null`,
+   `assistantMessages` is empty, `stopReason` is `CLAIM_GATE_WITHHELD`.
+2. A `Task` is created and `HUMAN_TRANSFER_REQUESTED` is emitted, through the same
+   code path the `transfer_to_human` tool uses.
+3. A `SYSTEM` note goes on the conversation, so the durable transcript records
+   that the turn produced no words.
+
+**Why nothing is said.** § 0's directive forbids canned customer-facing wording
+without exception. A gate that answered a model's dishonesty with a hardcoded
+apology would be the scripted conversation the whole architecture exists to
+prevent, and it would be scripted at exactly the moment a customer was most likely
+to remember it.
+
+**Why a `Task` and not silence alone.** Because the alternative has nobody
+accountable. The conversation has reached a state where the model asserts something
+the records do not support and will not stop; on a live call the contact is now
+waiting, and the only thing that resolves that is a human being. A `Task` with a
+deadline is how this system already expresses "a person must pick this up", it is
+already rendered by `src/app/auditReport.ts`, and it is already what an operator's
+queue reads. Recording the withholding only in the audit trail would make it
+explainable afterwards and actionable by nobody. It is marked URGENT and due now,
+because a caller is on the line.
+
+**Why it does NOT go through `ToolDispatcher`.** Because it would have to lie.
+`dispatch` opens with `TOOL_CALL_REQUESTED` summarised as "Model proposed
+transfer_to_human", and the model proposed nothing - application code decided. So
+the gate writes its own `HUMAN_TRANSFER_REQUESTED` with `toolCallId: null` and
+`requestedBy: 'CLAIM_GATE'`, sharing the row, the transaction and the events with
+the tool path through `src/agent/tools/handoverTask.ts`. An audit trail that
+records a fabricated model intent to satisfy a code path is worse than a second
+entry point.
+
+**What this writes, stated exactly, because the reading matters.** ONE row: the
+`Task`. Zero meetings, zero future actions, zero qualification states, zero calls,
+zero call outcomes. In particular the gate NEVER creates the effect the model
+falsely claimed, which is the property that actually matters, and
+`tests/e2e/claimGateExhaustion.test.ts` asserts that split table by table rather
+than asserting a single total. `docs/MISSION_2D_CLAIM_GATE.md` § 9 records that
+this is a deliberate interpretation of "zero domain rows written by the gate
+itself" and says why accountability was chosen over a strictly empty write.
+
+### 11.5 The gate needs the whole text, and that constrains the voice milestone
+
+**Decision.** Verification happens on the complete text, before release. Recorded
+here as a DECISION rather than an implementation note because it forecloses
+something a later milestone will want.
+
+**The consequence.** `src/ports/llm.ts` has an optional streaming path
+(`completeTurnStreaming`), and the local provider implements it - that is how the
+committed TTFT p50 of 98 ms was measured. **A caller cannot speak a token before
+the text is verified.** Streaming remains valuable for measurement, for a progress
+indicator and for an abort, but it can no longer be a path from a token to a
+loudspeaker. What a voice milestone gets instead is the whole sentence, slightly
+later, and the guarantee that it is true.
+
+**Why that is the right trade, stated rather than assumed.** The alternative is
+speaking the first half of a sentence and discovering the second half was false -
+and the § 6.5.4 transcript is precisely a sentence whose first half ("I've booked
+the callback") is the harmful part. There is no prefix of that sentence which is
+safe to say. Verifying a prefix is therefore not a smaller version of this gate; it
+is a different and weaker thing.
+
+**The measured cost**, on this host, with no model called:
+
+| Path | Cost |
+|---|---|
+| Text asserting nothing material | detector only, p50 0.022 ms, **zero** database reads, zero provider calls |
+| Text asserting something, supported | detector + ledger + verifier, p50 ≈ 2.2 ms, five repository reads, zero extra provider calls |
+| Each regeneration | one additional FULL provider round trip - p50 2,102 ms on the benchmark host |
+
+Full method and the rest of the numbers are in `docs/MISSION_2D_CLAIM_GATE.md`
+§ 7. `MISSION-2D-CLAIM-GATE-AND-HEBREW-MODEL-AUTO-CLAIM-ASSURANCE` publishes the
+measured-at-scale figures; this section records the design consequence.
+
+---
+
+## 12. Per-language model routing — DESIGN ONLY, not implemented, not recommended yet
+
+> **Nothing in this section is built.** No routing exists in `src/`, no default changed, and
+> `qwen2.5:7b-instruct` at `num_ctx` 16384 remains the single configured and proposed model — for
+> **English** (`docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` § 9.0, § 9.1). This is a design note
+> written so that the decision, when it is taken, is taken against thresholds rather than against a
+> hope. **On today's evidence the answer is no**, and § 12.6 is the list of things that would change it.
+
+### 12.1 Why the question is open at all
+
+The review's position is uncomfortable and worth restating plainly: **no model is earned for Hebrew**
+(§ 6.2, § 9.3). The model with the best Hebrew composite answered an entire Hebrew conversation in
+English; the one with the best language-match score does not know who it is or what it sells; the
+recommended model's Hebrew is the worst of the five on reading. The **only** candidate whose Hebrew
+reads as native Hebrew is `aya-expanse:8b`, and it fails the fabricated-timestamp gate.
+
+So routing is the shape of the obvious fix — English to the model that won on English, Hebrew to the
+model that can actually speak Hebrew — and it is worth designing before it is worth building, because
+the hard parts are not the routing.
+
+### 12.2 How it would be built: one more `LlmProvider`, and nothing else moves
+
+The port already permits this without a change. `src/ports/llm.ts` says an `LlmProvider` takes a
+`CompleteTurnRequest` and returns text plus **proposed** tool calls, and `src/app/composition.ts`
+already accepts a fully-built provider via `options.llm`, which wins over `llmProviderConfig`. So:
+
+```
+LanguageRoutingLlmProvider implements LlmProvider
+  ├── name()                -> "routed(en=qwen2.5:7b-instruct, he=<model>)"  // audited
+  ├── completeTurn(req)     -> delegate.completeTurn(req)
+  └── completeTurnStreaming -> advertised only if EVERY delegate streams
+```
+
+Four consequences of doing it this way, and each is a reason to do it this way:
+
+- **Each delegate is an ordinary `LocalLlmProvider`**, constructed exactly as today with its own model,
+  `num_ctx`, `keepAlive` and timeout. Nothing in `src/llm/localLlmProvider.ts` changes.
+- **`isStreamingLlmProvider` must be answered honestly.** The guard checks both that the method exists
+  *and* that the provider says it is usable. A router must advertise streaming only if **all** delegates
+  do, because a caller that asked for deltas and silently got a non-streaming path loses
+  time-to-first-token — the one metric a voice milestone depends on.
+- **`name()` must name the routing, not the router.** It is recorded on every audit event. A router
+  reporting a single opaque name would make the audit trail unable to answer "which model said this",
+  which is the first question anyone will ask of a routed transcript.
+- **The context budget needs the delegate's window.** `resolveContextBudget` cannot see the window of a
+  provider passed in as an instance, which is why the benchmark passes `modelNumCtx` explicitly. With
+  two delegates at possibly different windows, the budget must be computed from the **narrower** one, or
+  a Hebrew turn can be handed a prompt its model cannot hold.
+
+### 12.3 Where the language decision comes from — application state, never a model's opinion
+
+**The routing key is a persisted field, read from a row, never inferred from the text at request time.**
+This is the same rule as everywhere else in this architecture: the LLM controls language, application
+code controls authority, and *which model to ask* is authority.
+
+Today there is nowhere to put it. `Contact` carries `timezone` but no language; `Conversation` carries
+`channel` and `status` but no language. So routing needs a schema change, and it should be added to
+`§ 10.2`'s recommended-but-not-made list rather than smuggled in:
+
+| Field | Where | Why there |
+| --- | --- | --- |
+| `Contact.preferredLanguage` | `prisma/schema.prisma` | A language preference is a property of the **person**, the same argument `§ 10.2 R1` makes for `ContactFact`. It is also the field a human can correct. |
+| `Conversation.language` | `prisma/schema.prisma` | Pinned per conversation at start from the contact, so a replay routes the way the live call routed. Same reasoning as `agentConfigurationId`, which is pinned for exactly this. |
+
+**What must NOT be the routing input, stated because it is the tempting shortcut.** `checkLanguage` in
+`src/eval/rubric/programmatic.ts` counts the Hebrew-to-Latin letter ratio of a reply. It exists to
+**score** a run and it says of itself that it is "deliberately crude". Promoting it to a routing input
+would mean the model's own output chose which model handled the next turn — a feedback loop where a
+model that drifts into the wrong language gets *confirmed* in that drift. The committed transcripts show
+that drift happening: `qwen2.5:7b-instruct` replied to a Hebrew question entirely in English on
+`hebrew-intro-and-booking` turn 5, and switched to Chinese for three consecutive turns of
+`hebrew-price-objection`.
+
+**How it stays auditable.** Three requirements, none of them optional:
+
+1. The routing decision is written as its own audit event on the turn it applies to — the key read, the
+   row it came from, and the model selected.
+2. `LlmProvider.name()` carries the selected model, so every existing audit event already answers
+   "which model" without a schema change.
+3. A **change** of route mid-conversation is an audit event in its own right, not a silent switch.
+
+### 12.4 What must stay model-independent, and this is the list that makes routing safe
+
+Routing is only cheap because everything that matters is already downstream of the model. **Not one item
+below may be made conditional on which model answered:**
+
+- **the system prompt** (`sales-scheduler-local@v2`) — one prompt, both models. A per-model prompt is a
+  per-model product, and the anti-scripting guarantee is stated over one prompt;
+- **the nine tool JSON Schemas**, generated from the real Zod definitions, `.strict()` and closed;
+- **the `ToolDispatcher` chokepoint** and every one of its checks;
+- **the scheduling resolver**, which fails closed on any token no rule consumed (§ 9). It is already
+  locale-agnostic with the vocabulary as data — that work is what makes Hebrew routing conceivable, and
+  it must not acquire a model-shaped branch;
+- **the claim gate**, and therefore the `unsupportedClaimLeak` measure over it. A gate that applied to
+  one model and not the other would make the must-be-zero number meaningless;
+- **the audit trail**, its event types and its shapes.
+
+If any of those has to change to accommodate a second model, the second model is not a routing decision
+— it is a second product.
+
+### 12.5 The costs and the risks
+
+**Cost 1 — two resident models do not fit on this host, and this is measured, not estimated.** From
+review § 4: the card is **8,188 MiB** with a **7.5 GiB** working budget for weights plus KV cache. At
+`num_ctx` 16384, `qwen2.5:7b-instruct` is resident at **5.09 GiB** and `aya-expanse:8b` at **5.81 GiB**.
+**Together: 10.90 GiB against a 7.5 GiB budget.** They cannot both be resident. Two options, both bad:
+
+- **Swap per turn.** Review § 4.2: keeping a model resident is the difference between a **~4.9 s** first
+  turn and a **~0.9 s** one. On a phone call, a language switch would cost the caller five seconds of
+  silence. This is the option that makes routing a voice-quality regression.
+- **Let one spill.** Review § 4.1 measured what that costs: three of the five candidates spilled, and
+  every latency figure for them describes the spill. Note which two did **not** spill — precisely
+  `qwen2.5:7b-instruct` and `aya-expanse:8b`, at 100.0% GPU each. Routing would take the only two
+  models that fitted and make at least one of them not fit.
+
+**Therefore: routing needs a bigger card, and that is a hardware decision, not an engineering one.** On
+a 12 GiB card both fit resident with headroom and the whole cost argument evaporates.
+
+**Cost 2 — it multiplies the claim gate's regeneration cost.** A regeneration is one additional full
+provider round trip. On a model with weaker instruction-following, regenerations are more frequent, and
+on a swapped-out model each one may also pay a cold load.
+
+**Risk 1 — the mid-conversation language switch, and the committed transcripts show it really happens.**
+This is the risk that decides the design. The corpus has an entire `mixed` language category because
+Israeli business calls code-switch **inside a sentence**: *"היי, כן. תשמע, אני ב-back-to-back כל
+הבוקר"*. A router keyed on a per-conversation field answers one language for the whole call, which is
+**wrong for the commonest real shape**. A router keyed per turn would swap models mid-call and pay
+Cost 1 repeatedly. Neither is good, and the honest reading is that **a code-switched call wants one
+genuinely bilingual model, not two monolingual ones.** Routing helps the Hebrew-only and English-only
+calls and actively hurts the mixed ones.
+
+**Risk 2 — the conversation is rebuilt from database rows each iteration**, so a second model inherits a
+transcript the first one wrote, including its tool calls and its phrasing. Nothing in the port forbids
+this and nothing in the harness has measured whether a model handles another model's transcript well. It
+is an untested behaviour, and it would be introduced by a change whose entire justification is a
+measurement.
+
+**Risk 3 — it doubles what the benchmark has to hold.** Every corpus scenario would need running under
+the routed provider as well as each model alone, or the fair-comparison discipline of § 9 is lost.
+
+### 12.6 WHAT EVIDENCE WOULD JUSTIFY TURNING IT ON
+
+Thresholds, against the Mission 2D re-benchmark (`EVAL_HARNESS.md` § 9.7). **All six. Not a majority.**
+
+| # | Threshold | Why this one |
+| --- | --- | --- |
+| **1** | A Hebrew candidate **passes the fabricated-timestamp gate outright — 0 turns, not a low rate.** | `aya-expanse:8b` is recorded at 2/65 (3.1%) and the Mission 2D aya task recomputed it at **8/65 (12.3%)** once the unwrapped arguments become visible to the detector — **four times worse than recorded**. A failed gate is not a points deduction. |
+| **2** | That candidate's **`unsupportedClaimLeak` count is ZERO** over the full 26-scenario corpus, including all five adversarial-claim scenarios. | Its recorded Hebrew behaviour is the reason the measure exists: it told a contact *"the meeting was successfully scheduled"* with no dispatched call, and promised a confirmation email it has no tool to send. A non-zero attempts number is expected and fine; a leak is not. |
+| **3** | `argumentValidity` **above 90%**, and the three non-wrapper defects fixed or absent. | The aya task recomputed 14.6% → **61.0–65.9%**, not ~100%. The residue is free-text enums and a missing `contact_id` — real model defects the wrapper was hiding. A model getting a third of its arguments wrong is refused a third of the time, and a refused call is a turn the contact hears nothing useful in. |
+| **4** | A **native Hebrew speaker** reads a sample of that candidate's Hebrew transcripts and signs off. | Review § 9.3 point 3: no human evaluation was performed, and § 6.2's reading is this repository's own. A 7–8B judge's opinion of Hebrew register is a weak prior, explicitly. **This threshold cannot be met by any run.** |
+| **5** | The host can hold **both** models resident at `num_ctx` 16384 with headroom — or the mid-conversation swap latency is measured and accepted. | 10.90 GiB against a 7.5 GiB budget (§ 12.5). Until this is true, routing trades a correctness gain for a latency regression nobody has costed. |
+| **6** | The **mixed** scenarios are measured under the routed provider and are **no worse** than under the best single model. | Routing is expected to hurt the code-switched case (§ 12.5 Risk 1), which is the commonest real shape. If it does, routing is the wrong answer to this problem and a bilingual model is the right one. |
+
+**What is NOT evidence for turning it on:** a higher Hebrew *composite* (it is 55% judged, and the
+review's § 6.2 shows the top Hebrew composite belongs to a model that answered in English); a higher
+*language-match* score (it measures the alphabet, not the words — the best score in the set belongs to a
+model that describes itself as "a tool used for calling functions"); or the wrapper fix alone (necessary,
+and § 12.6 threshold 1 is why it is not sufficient).
+
+**If thresholds 1–4 are met but 5 is not**, the correct decision is to keep a single model and revisit on
+larger hardware — not to ship a swap that costs the caller five seconds.
+
+---
+
+## 13. Integrating the four Mission 2D branches
+
+Four branches were merged into one tree: `…-AUTO-AYA-TOOL-SHAPE` (the `aya-expanse:8b`
+tool-argument shape), `…-AUTO-CLAIM-GATE` (§ 11), `…-AUTO-CLAIM-ASSURANCE` (INV-18 and
+the claim-gate assurance suite) and `…-AUTO-EVAL-AND-ROUTING` (the two-number claim
+measure, five adversarial scenarios, and § 12). Three merged cleanly. The fourth did
+not, and one seam between two of them was wrong in a way neither branch could have
+seen alone. Both are recorded here, because § 10 set the precedent that an integration
+is itself a thing with decisions in it.
+
+### 13.1 Two branches both wrote `## 11`, and the design-only one moved
+
+**The conflict.** `…-AUTO-CLAIM-GATE` and `…-AUTO-EVAL-AND-ROUTING` each appended a
+new top-level section to this file, each numbered `## 11`, each at the same line.
+`docs/MISSION_2D_EVAL_AND_ROUTING.md` § 7 shows the routing task had anticipated
+exactly this and answered it in its own mailbox: *"their § goes after mine if they
+arrive later"*. They did not arrive later; they arrived at the same time.
+
+**The decision.** The claim gate keeps § 11 and the routing note became § 12, with its
+subsections renumbered 12.1–12.6 and its three internal cross-references moved with
+them. **Nothing else in this file was renumbered**, and no existing section's number
+changed — so every citation of § 1–§ 10 anywhere in the repository is still correct.
+
+**Why that way round, and not the way the mailbox proposed.** Three reasons, in
+order of weight:
+
+1. **§ 11 is built and § 12 is not.** The claim gate is code, enabled by default, with
+   an invariant over it; the routing note opens by saying *"Nothing in this section is
+   built"*. A reader scanning section numbers should reach the thing that ships first.
+2. **`docs/MISSION_2D_CLAIM_GATE.md` cites § 11.1 and § 11.4 by number**, in prose that
+   summarises them. Renumbering the gate would have required editing a sibling's report
+   to keep two pointers valid, which is a wider edit for a worse result.
+3. **The routing note cites nothing by number from outside itself** except § 10.2, which
+   did not move.
+
+The two-line note about the move is written into
+`docs/MISSION_2D_EVAL_AND_ROUTING.md` § 5 rather than left for a reader to infer from a
+mismatch between a doc that says "§ 11" and a file whose § 11 is about something else.
+
+### 13.2 The seam that was actually wrong: a gate reporting `enabled: false`
+
+**This is the one defect the merge exposed, and it existed in neither branch.**
+
+`src/eval/runner/claimGateReport.ts` reads the gate's per-turn report **structurally**,
+over `unknown`, deliberately: it was written before the gate landed, and § 12's whole
+independence argument requires it to read only `attempts[].text` and never the gate's
+verdict. That was right, and it is why `npm run typecheck` passed on the merged tree
+with no change at all. But the reader checked only the *shape* of the report, and the
+gate publishes one well-formed shape the reader had no answer for:
+
+```
+claimGate: { enabled: false, releases: [] }
+```
+
+A shape-only reader answers `observed: true` with zero texts. The harness would then
+print an **attempts column of 0 beside a non-zero leak column** — a claim that leaked
+past a gate it was never shown to, which is not a possible event. The two numbers exist
+precisely so that a reader can tell "the gate corrected nothing" from "there was no
+gate", and this is the case that collapses them the wrong way.
+
+**The fix, in one line of behaviour.** `enabled === false` is checked before the shape
+of `releases` and yields the absent-report answer — `observed: false`, no
+`malformedReason`, because nothing is malformed and nothing lied. A gate that says it
+was off is reporting the same fact as a gate that is not there. The independence
+property is untouched: `enabled` is not a verdict about a claim, it is the answer to
+"was anything standing between the model and the caller".
+
+**Why fix it when it is unreachable.** It *is* unreachable through
+`buildAgentRuntime`, which always constructs the gate, and INV-18 treats
+`enabled === false` as a sweep **violation** rather than as inapplicable — so the
+production path cannot reach it silently and the sweep would catch it if it did. The
+only way in is `AgentTurnServiceOptions.claimGate: null`, a test-only seam. It is fixed
+anyway because the cost is one comparison and the failure mode is a benchmark that
+reports a **false zero** on its must-be-zero number. A measurement that is silently
+wrong in the safe direction is worse than one that refuses to answer, and this
+repository has that argument written down in four other places.
+
+`tests/eval/unsupportedClaimMeasure.test.ts` pins it, including the case where
+`enabled: false` arrives alongside a populated `releases` array — the gate's own
+statement wins, because it is the gate being asked.
+
+### 13.3 The other three seams held, and were checked rather than assumed
+
+| Seam | How it was checked | Result |
+| --- | --- | --- |
+| The gate's report shape vs. what `src/eval` reads out of it — `releases[].attempts[].text`, and the `enabled` field | Read both sides against each other: `AgentTurnService` builds `{ enabled, releases }` at `src/agent/agentTurnService.ts`, `ClaimGateRelease`/`ClaimGateAttempt` declare the rest | Field-for-field identical. The gate's `src/agent/claimGate/index.ts` names this as a contract two siblings compile against, and it was honoured |
+| The unwrapped `aya-expanse` tool arguments vs. the harness's fabricated-timestamp detector | `…-AUTO-AYA-TOOL-SHAPE` removes the `{tool_name, parameters}` wrapper, so arguments arrive at the top level — which is the level the detector reads. § 12.6 thresholds 1 and 3 are stated against the recomputed numbers | Consistent. Making the detector walk arbitrary nesting stays a named follow-up in `EVAL_HARNESS.md` § 9.7.6, not a silent gap |
+| INV-18 and family M (assurance) vs. the gate they measure | The sweep itself: 887 scenarios, INV-18 at 1,818 applicable checks, 0 failures, 0 scenarios without a gate | Held |
+
+### 13.4 Why the four mission reports quote four different totals, and all four are right
+
+Each branch measured itself, on its own tree, against the Mission 2C baseline of
+`1,020 / 2` tests and `823 / 4,624` sweep — which is what a branch report should do, and
+what makes "nothing else regressed" a checkable statement rather than a hope. The
+consequence is that no single one of those four numbers is the integrated total:
+
+| Record | `npm test` | `npm run qa:sweep` |
+| --- | --- | --- |
+| Mission 2C baseline (`docs/FOUNDER_REVIEW…` § 7) | 1,020 / 2, 50 files | 823 · 4,624 applicable (12,472 evaluated) |
+| `…-AUTO-EVAL-AND-ROUTING` alone | 1,080 / 2, 53 files | 823 · 4,624 (12,472) — unchanged, it adds nothing the sweep runs |
+| `…-AUTO-CLAIM-GATE` alone | 1,102 / 2, 56 files | 823 · 4,624 (12,472) — unchanged |
+| `…-AUTO-CLAIM-ASSURANCE` (on top of the gate) | 1,110 / 2, 58 files | **887 · 6,938 (15,294)** — INV-18 plus family M |
+| **This integrated tree** | **1,223 / 2, 62 files** | **887 · 6,938 (15,294)** |
+
+`EVAL_HARNESS.md` § 0 carries the integrated pair as the current figure and says which
+narrower figures it supersedes. The per-branch tables in the four Mission 2D reports are
+left exactly as their authors measured them: they are each labelled with the tree they
+were run on, and rewriting them would destroy the only evidence that each branch was
+individually green.
+
+**The invariant that did not move through any of it:** `npm run qa:sweep` reports **0
+violations and 0 network attempts**, and `--determinism` is byte-identical, with the
+benchmark, the claim gate and the assurance suite all in the same source tree.
+
+---
+
+## 14. Integrating the three Mission 2D-R branches
+
+Three branches were merged: `…-AUTO-SUPPRESSION-REDESIGN` (§ 17's reach rule — a suppressor
+governs only what it reaches), `…-AUTO-INDEPENDENT-ORACLE` (§ 17.5 — INV-18 stops finding its
+claims by asking the detector) and `…-AUTO-AYA-PROMPT-AND-TEMPLATE` (§ 9 — the prompt stops
+teaching a model the one date format it forbids). All three merged with **no textual conflict**,
+and `typecheck`, `test` and `qa:sweep` were all green on the merged tree before any edit of mine.
+
+That is the interesting part, so it is worth stating plainly: **a clean merge and three green
+gates did not mean the tree was coherent.** Two of the three seams below are places where a
+branch changed behaviour correctly and a file it did not own went on describing the old
+behaviour — which no merge algorithm and no existing test could have noticed.
+
+### 14.1 Why there were so few conflicts: the branches were stacked, not parallel
+
+Checked rather than assumed, because it changes what an integrator should go looking for:
+
+```
+merge-base(SUPPRESSION, ORACLE) == SUPPRESSION   → ORACLE contains SUPPRESSION
+merge-base(AYA, ORACLE)         == e5e93f1       → AYA is independent
+```
+
+So the real topology is two lines, not three: `SUPPRESSION ⊂ ORACLE` (the oracle branch was
+written on top of the redesign and saw all of it), and `AYA` beside it. Their changed-file sets
+are **disjoint** — the oracle line owns `src/agent/claimGate/**` and `tests/invariants/**`, the
+aya line owns `src/eval/**`, `src/llm/**` and the three date-format sites — which is why the
+merge was textually silent. It also means the remaining risk was never *overlapping edits*; it
+was **one line changing behaviour that a file on the other line describes**. Both real findings
+below are exactly that.
+
+### 14.2 The seam the merge could not see: a generated worked example that stopped being generated
+
+`CONVERSATION_CONTEXT.md` embeds the assembled context between
+`<!-- BEGIN RENDERED EXAMPLE -->` markers, and says of it: *"Produced by `npm run context:render`,
+**not typed by hand**"*. `src/cli/contextRender.ts` puts the reason in its own header — *"A worked
+example in documentation that was typed by hand is a worked example that is wrong by the second
+commit; this one is generated by the code it documents."*
+
+It was wrong anyway. § 9 dropped the year from `contextAssembler.ts`'s `describeLocal`, so the
+renderer now emits `Wednesday 4 March at 10:00` while the document still showed
+`Wednesday 4 March 2026 at 10:00` — in three lines: the disclosed clock, the previous
+conversation's start, and the promised callback. Diffed against live output, those three lines
+were the **only** content drift; nothing else in 185 lines had moved.
+
+**Fixed by hand, not by regenerating.** `context:render` seeds a throwaway database, so the
+contact id in the block is a fresh cuid on every run: regenerating would have rewritten a line
+that is not stale and produced a diff that hid the three that were. The file is CRLF and the edits
+preserve it.
+
+**A guard came with it, because this is the second document in two missions to go stale this
+way** — § 13's predecessor added `tests/invariants/architectureCounts.test.ts` for the same reason
+and said the guard was *"worth more than the correction"*. `tests/agent/spokenDateFormat.test.ts`
+now checks the extracted block, and the three code sites, against `FABRICATION_PATTERNS` itself
+rather than against golden strings. It asserts a property (*nothing we speak matches a shape we
+refuse*) instead of a wording, so it cannot drift away from the gate — widening the pattern list
+tightens the test in the same commit — and it carries a positive control over the pre-§ 9 wording
+so it cannot pass by matching nothing.
+
+### 14.3 The claim § 9 made that the guard falsified, and why the code did not change
+
+Writing that guard found a real overclaim. § 9 said of itself that after the fix *"there is no
+longer a year anywhere in the window to copy"*. **True of the prose, false of the payload.** The
+same `schedule_meeting` result whose summary now reads *"is booked for Thursday 5 March at 15:00
+(America/New_York)"* still hands the model:
+
+```json
+"start_local": "2026-03-05T15:00", "end_local": "2026-03-05T15:30"
+```
+
+That is `iso-datetime` — the **first** of the five `FABRICATION_PATTERNS`, and the shape § 7's six
+newly-visible ISO failures actually take. So an `OK`-stamped exemplar with a four-digit year
+survives at the site § 9.1a calls the strongest of the three.
+
+**The code was not changed, and this is the decision.** `start_local` is load-bearing **for the
+claim gate itself**: `src/agent/claimGate/ledger.ts`'s `readStartUtcFromOutcome` reconstructs the
+instant a time-bearing tool committed to from `start_local` plus `timezone`, and
+`src/eval/runner/runScenario.ts` reads the same pair. A year-less local time is not a resolvable
+instant, so dropping the year would trade an imitation risk for a gate that could no longer tell
+which day it had booked — and the claim gate is the thing Mission 2D exists to make trustworthy.
+Weighing an imitation heuristic against the gate's own ability to reconstruct an instant is also
+an engine decision in the gate owner's domain, not the format fix § 9 is.
+
+So it is recorded instead, in both places a reader might look: a correction in
+`docs/MISSION_2D_AYA_ROOT_CAUSE.md` § 9 that narrows the claim without touching the part of it
+that is true (`day-month-name-with-year` really is gone), and a test named `BOUND:` that pins the
+surviving `start_local` year. **If somebody later finds a way to give the ledger its instant
+without spelling a year at the model, that test goes red** — which is the right direction for it
+to fail in. This is § 8 limit 1's standing rule in `docs/MISSION_2D_CLAIM_GATE.md`: a limit list
+that overstates a guarantee is worse than a documented gap.
+
+### 14.4 `EVAL_HARNESS.md` § 0 was stale by a whole mission, and the numbers reconcile exactly
+
+§ 0 carries the integrated Layer A figures and explicitly says which narrower ones it supersedes,
+which makes it the one place in the repository that is *supposed* to be current. It said
+`1223 / 887`. Neither branch could have fixed it: the oracle line grew the sweep to 1,027
+scenarios but does not own `EVAL_HARNESS.md`, and the aya line owns that file but never saw the
+oracle's scenarios. That is the cleanest possible example of a seam only an integrator can close.
+
+The numbers were reconciled rather than just overwritten, and they add up with nothing left over:
+
+| Tree | `npm test` | files | sweep scenarios · applicable |
+| --- | ---: | ---: | ---: |
+| Mission 2D at its close (`e5e93f1`, § 17.2) | 1,403 / 2 | 62 / 1 | 983 · 8,086 |
+| `…-AUTO-AYA-PROMPT-AND-TEMPLATE` alone | 1,424 / 2 | 63 / 1 | 983 · 8,086 (adds nothing the sweep runs) |
+| `…-AUTO-INDEPENDENT-ORACLE` alone (contains the redesign) | 1,567 / 2 | 65 / 1 | 1,027 · 10,667 |
+| **The merged tree, before any edit of mine** | **1,588 / 2** | **66 / 1** | **1,027 · 10,667** |
+| **This tree** | **1,594 / 2** | **67 / 1** | **1,027 · 10,667** |
+
+`1,403 + 164 (oracle) + 21 (aya) = 1,588`, and `62 + 3 + 1 = 66`. Both identities hold exactly,
+which is the evidence that **the merge dropped no test from either line** — a stronger statement
+than "the suite is green", because a suite that quietly lost a file would also be green. The
+remaining `+6 / +1` is `tests/agent/spokenDateFormat.test.ts`.
+
+### 14.5 The seams that held, checked rather than assumed
+
+| Seam | How it was checked | Result |
+| --- | --- | --- |
+| § 9's three date-format sites vs. the claim gate's `WRONG_DAY` / `WRONG_TIME` detection, which reads the day out of released text | The sweep: family M crosses claim texts with four zones, and INV-18 re-derives support from persisted rows | Held. The gate reads the *model's* sentence, never `describeLocal`'s output |
+| `LlmToolCallHealth.refusalReasons` (new, aya line) vs. every existing producer of that port | `typecheck` on the merged tree, plus `llm:mapcheck` — the field is optional and additive, and `mappingSelfCheck` asserts it rather than loosening its equality checks | 84 checks, 0 failures. `ScriptedLlmProvider`, `OpenAiLlmProvider` and the fixtures compile untouched |
+| The oracle's import-closure boundary vs. the aya line's new `src/eval` and `src/llm` modules | `tests/invariants/claimOracleBoundary.test.ts` walks the transitive closure with a positive control | Nothing in the oracle's closure reaches `src/agent/claimGate/**`. The aya line adds nothing to that closure — disjoint file sets |
+| `docs/ARCHITECTURE.md`'s three sweep numbers vs. the oracle line's growth | `tests/invariants/architectureCounts.test.ts`, which is § 13's successor guard | 1,027 scenarios / 16 invariants / 13 families, all re-derived from the code |
+| `check:anti-scripting` and `context:prove` vs. the § 9 prompt change | Both run on the merged tree | `PASS — no canned dialogue`, 1 allowance unchanged; `PASS — 9/9 proofs` |
+
+### 14.6 What was left alone deliberately
+
+- **`docs/MISSION_2D_CLAIM_GATE.md` § 17.7 Finding B** — the § 17 reach rule newly flags nine
+  honest refusals (*"I haven't got a confirmation number to give you."*). Its author measured it,
+  declined to fix it, and said why: closing it means adding possession and receipt verbs to
+  `suppressionCarriers`, one of exactly two lists in the design where a wrong entry costs a
+  **MISS** rather than a regeneration. It fails *closed* — the cost is a regenerated sentence that
+  was true, not a leak. Overriding a deliberate fail-closed judgement in the detector owner's
+  domain is not an integration fix, and doing it to improve precision would widen a fail-open list
+  on the strength of three measured wordings. Left as recorded, in § 17.8's residual list.
+- **The historical records**: `eval-output/**`, `eval-output-fair-20260927/**` and
+  `docs/FOUNDER_REVIEW_MISSION_2_LOCAL_BRAIN.md` all show `day <month name> <year>` in transcripts
+  and quoted dispatcher output. Those are evidence of what actually ran at the time. Rewriting
+  them to match today's format would be falsifying the record the § 9 argument is built on.
+- **The per-branch validation tables** in all four mission reports, per § 13.4's precedent.

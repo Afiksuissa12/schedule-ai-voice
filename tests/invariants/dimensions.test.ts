@@ -18,12 +18,42 @@ import {
   AVAILABILITY_STATES,
   LEAD_TIME_BOUNDARY_CASES,
   LEAD_TIME_BOUNDARY_ZONE,
+  LEAD_TIME_EXPRESSIONS,
+  LOCALE_NOW_INSTANTS,
+  LOCALE_PARITY_PAIRS,
+  LOCALE_ZONES,
   NOW_INSTANTS,
   POLICIES,
+  REJECTED_EXPRESSIONS,
+  RELEASE_PROBE_LOCAL_DAY,
+  RELEASE_PROBE_LOCAL_HOUR,
+  RELEASE_SPECS,
+  SEMANTIC_SWEEP_SCRIPT,
+  expectedCatchingLayerOf,
+  scriptedTextsOf,
   seededRandom,
+  semanticBehaviourOf,
+  semanticTextsOf,
+  type ReleaseSpec,
   TIMEZONE_OVERRIDE_CASES,
   TIMEZONES,
+  VALID_EXPRESSIONS,
 } from './dimensions.js';
+import { AMBIENT_SWEEP_TEXTS, declarationInconsistencies } from './claimOracle.js';
+import {
+  buildSemanticSweepScript,
+  FAIL_CLOSED_SWEEP_BEHAVIOURS,
+  SEMANTIC_SWEEP_BEHAVIOURS,
+  type SweepSemanticClaim,
+} from './semanticSweepVerifier.js';
+import {
+  ALL_DECLARED_RELEASE_TEXTS,
+  PROBE_DAY_FRIDAY,
+  PROBE_DAY_SATURDAY,
+  PROBE_DAY_THURSDAY,
+  PROBE_HOUR,
+  SWEEP_DECLARATIONS,
+} from './releaseTexts.js';
 
 describe('timezone dimension', () => {
   it.each(TIMEZONES)('$zone is a real IANA zone', ({ zone }) => {
@@ -244,6 +274,159 @@ describe('the lead-time boundary dimension', () => {
   );
 });
 
+describe('the locale dimensions', () => {
+  it('every locale zone is a real IANA zone, and Asia/Jerusalem is one of them', () => {
+    for (const { zone } of LOCALE_ZONES) {
+      expect(IANAZone.isValidZone(zone), `${zone} is not a real IANA zone`).toBe(true);
+    }
+    expect(
+      LOCALE_ZONES.map((locale) => locale.zone),
+      'the zone the § 8.3 defect was found in must be in the matrix',
+    ).toContain('Asia/Jerusalem');
+  });
+
+  it('the locale zones add something the main timezone axis does not have', () => {
+    // If every locale zone were already in `TIMEZONES` the family-local axis
+    // would be pure cost. Two of the three are new, and the shared one is
+    // deliberate - see the comment above `LOCALE_ZONES`.
+    const swept = new Set(TIMEZONES.map((timezone) => timezone.zone));
+    const added = LOCALE_ZONES.filter((locale) => !swept.has(locale.zone));
+    expect(added.length, 'the locale axis must cross at least two zones the main axis never reaches')
+      .toBeGreaterThanOrEqual(2);
+    expect(LOCALE_ZONES.some((locale) => swept.has(locale.zone)), 'and at least one shared with it, as a control')
+      .toBe(true);
+  });
+
+  it('Asia/Jerusalem transitions on its OWN dates, which is why it earns a place', () => {
+    // Israel moves on neither the US date (2026-03-08) nor the EU one
+    // (2026-03-29). A suite that knew only those two would ship an Israeli
+    // off-by-one hour with every test green.
+    const zone = 'Asia/Jerusalem';
+    expect(DateTime.fromISO('2026-03-20T12:00:00.000Z', { zone }).isInDST, 'still winter time on 20 March').toBe(
+      false,
+    );
+    expect(DateTime.fromISO('2026-03-28T12:00:00.000Z', { zone }).isInDST, 'summer time by 28 March').toBe(true);
+    // And on 20 March New York has ALREADY transitioned.
+    expect(DateTime.fromISO('2026-03-20T12:00:00.000Z', { zone: 'America/New_York' }).isInDST).toBe(true);
+  });
+
+  it('every locale `now` is a valid UTC instant, and one puts the contact on another calendar day', () => {
+    for (const instant of LOCALE_NOW_INSTANTS) {
+      expect(DateTime.fromISO(instant.nowUtc, { zone: 'utc' }).isValid).toBe(true);
+      expect(instant.nowUtc).toMatch(/Z$/);
+    }
+    const across = LOCALE_NOW_INSTANTS.find((instant) => instant.key === 'ln2-across-local-midnight')
+      ?.nowUtc as string;
+    expect(DateTime.fromISO(across, { zone: 'America/New_York' }).toFormat('yyyy-LL-dd')).toBe('2026-03-04');
+    expect(DateTime.fromISO(across, { zone: 'utc' }).toFormat('yyyy-LL-dd')).toBe('2026-03-05');
+  });
+
+  it('every parity pair names an expression that really is in the expression dimensions', () => {
+    const declared = new Set(
+      [...VALID_EXPRESSIONS, ...REJECTED_EXPRESSIONS, ...LEAD_TIME_EXPRESSIONS].map(
+        (expression) => expression.key,
+      ),
+    );
+    for (const pair of LOCALE_PARITY_PAIRS) {
+      expect(declared.has(pair.expressionKey), `${pair.key} points at unknown expression ${pair.expressionKey}`)
+        .toBe(true);
+    }
+  });
+
+  it('every parity pair carries the SAME raw text as the expression it names', () => {
+    // Otherwise family L would be sweeping one string while the dimension
+    // table documented another, and the report's `expression` axis would lie.
+    const byKey = new Map(
+      [...VALID_EXPRESSIONS, ...REJECTED_EXPRESSIONS, ...LEAD_TIME_EXPRESSIONS].map(
+        (expression) => [expression.key, expression.raw] as const,
+      ),
+    );
+    for (const pair of LOCALE_PARITY_PAIRS) {
+      expect(byKey.get(pair.expressionKey), pair.key).toBe(pair.hebrew);
+    }
+  });
+
+  it('a pair that is NOT identical must say why, and one that is must not', () => {
+    for (const pair of LOCALE_PARITY_PAIRS) {
+      if (pair.identical) {
+        expect(pair.whyNotIdentical, `${pair.key} is identical, so it must carry no exception text`)
+          .toBeUndefined();
+      } else {
+        expect(
+          pair.whyNotIdentical,
+          `${pair.key} is declared NOT identical. An undocumented exception is indistinguishable from ` +
+            'an untested one.',
+        ).toBeTruthy();
+        expect((pair.whyNotIdentical as string).length).toBeGreaterThan(80);
+      }
+    }
+  });
+
+  it('the parity list is mostly identical pairs, or INV-16 would be near-vacuous', () => {
+    const identical = LOCALE_PARITY_PAIRS.filter((pair) => pair.identical);
+    expect(identical.length).toBeGreaterThanOrEqual(6);
+    expect(identical.length / LOCALE_PARITY_PAIRS.length).toBeGreaterThan(0.5);
+  });
+
+  it('the two sides of every pair are genuinely different strings, in different scripts', () => {
+    const hebrewLetters = /[֐-׿]/;
+    for (const pair of LOCALE_PARITY_PAIRS) {
+      expect(pair.hebrew, pair.key).not.toBe(pair.english);
+      expect(hebrewLetters.test(pair.hebrew), `${pair.key}: the "hebrew" side contains no Hebrew`).toBe(true);
+      expect(hebrewLetters.test(pair.english), `${pair.key}: the "english" side contains Hebrew`).toBe(false);
+    }
+  });
+
+  it('the locale expressions cover every class the regression brief names', () => {
+    const locale = [...VALID_EXPRESSIONS, ...REJECTED_EXPRESSIONS, ...LEAD_TIME_EXPRESSIONS].filter(
+      (expression) => expression.locales !== undefined,
+    );
+    const hebrewLetters = /[֐-׿]/;
+
+    // Hebrew-bearing, code-switched, and unknown-language expressions all
+    // present, in both the accept and the refuse direction.
+    expect(locale.filter((expression) => expression.locales?.includes('he')).length).toBeGreaterThanOrEqual(8);
+    expect(locale.filter((expression) => (expression.locales ?? []).length === 2).length).toBeGreaterThanOrEqual(2);
+    expect(locale.filter((expression) => (expression.locales ?? []).length === 0).length).toBeGreaterThanOrEqual(4);
+    expect(locale.filter((expression) => expression.direction === 'EITHER').length).toBeGreaterThanOrEqual(6);
+    expect(locale.filter((expression) => expression.direction === 'REJECT').length).toBeGreaterThanOrEqual(8);
+
+    // An expression declaring `['he']` must actually contain Hebrew, and one
+    // declaring `[]` must contain none of it.
+    for (const expression of locale) {
+      if (expression.locales?.includes('he')) {
+        expect(hebrewLetters.test(expression.raw), `${expression.key} declares he but has no Hebrew`).toBe(true);
+      }
+      if ((expression.locales ?? []).length === 0) {
+        expect(hebrewLetters.test(expression.raw), `${expression.key} declares no locale but has Hebrew`).toBe(
+          false,
+        );
+      }
+    }
+  });
+
+  it('every dimension entry still carries a rationale that explains itself', () => {
+    // The style rule this file is built on: a dimension without a reason is a
+    // dimension nobody can review.
+    const everything: { key: string; rationale: string }[] = [
+      ...VALID_EXPRESSIONS,
+      ...REJECTED_EXPRESSIONS,
+      ...LEAD_TIME_EXPRESSIONS,
+      ...LOCALE_ZONES,
+      ...LOCALE_NOW_INSTANTS,
+      ...LOCALE_PARITY_PAIRS,
+    ];
+    // 30 characters, not 40: `x07-asap` says "Intent with no time in it at
+    // all." in 33 and that genuinely is the whole explanation. The bar is set
+    // where it catches an empty or placeholder string, not where it rewards
+    // padding.
+    for (const entry of everything) {
+      expect(entry.rationale.length, `${entry.key} has a rationale too short to explain anything`)
+        .toBeGreaterThan(30);
+    }
+  });
+});
+
 describe('the seeded PRNG', () => {
   it('produces the same stream for the same seed, and a different one otherwise', () => {
     const a = seededRandom(20260923);
@@ -257,6 +440,391 @@ describe('the seeded PRNG', () => {
     for (const value of streamA) {
       expect(value).toBeGreaterThanOrEqual(0);
       expect(value).toBeLessThan(1);
+    }
+  });
+});
+
+/**
+ * The release specs have to DECLARE what they forbid, not leave it to be inferred.
+ *
+ * `invariants.ts` used to work out which of a spec's texts was the false one by
+ * running `detectMaterialClaims` over them - so a wording the DETECTOR missed was
+ * dropped from the forbidden list and could not be reported as having escaped. The
+ * effect was that INV-18 certified a live fail-open detector gap as zero leaks while
+ * eight unsupported claims reached real callers
+ * (`docs/MISSION_2D_CLAIM_GATE.md` § 15). `ReleaseSpec.forbidden` names the strings
+ * instead, and these assertions are what stop the naming from going stale.
+ */
+describe('the claim-release specs', () => {
+  const notReleased = RELEASE_SPECS.filter((spec) => spec.expect === 'NOT_RELEASED');
+
+  it('has NOT_RELEASED specs at all, so the escape check is exercised', () => {
+    expect(notReleased.length).toBeGreaterThanOrEqual(15);
+  });
+
+  it.each(notReleased)('$key names the exact wording it forbids', (spec) => {
+    expect(
+      spec.forbidden ?? [],
+      `${spec.key} is NOT_RELEASED but forbids nothing, so INV-18 has nothing to keep away from the caller`,
+    ).not.toEqual([]);
+  });
+
+  it.each(notReleased)('$key forbids only strings it actually scripts', (spec) => {
+    // Otherwise a spec could forbid a sentence no model in it ever says and pass
+    // for ever. Checked as SET MEMBERSHIP against the spec's own texts, so an edit
+    // to the wording that forgets to update `forbidden` fails here by name.
+    const scripted = scriptedTextsOf(spec);
+    for (const declared of spec.forbidden ?? []) {
+      expect(
+        scripted,
+        `${spec.key} forbids ${JSON.stringify(declared.text)}, which it never scripts`,
+      ).toContain(declared.text);
+    }
+  });
+
+  it.each(notReleased)('$key leaves at least one honest text releasable', (spec) => {
+    // The other half, and the reason `forbidden` is a subset rather than the whole
+    // array: a spec that forbade everything it says would be indistinguishable from
+    // `WITHHELD`, and `r08` is the spec that means that.
+    const scripted = scriptedTextsOf(spec);
+    const forbidden = (spec.forbidden ?? []).map((declared) => declared.text);
+    expect(
+      scripted.filter((text) => !forbidden.includes(text)).length,
+      `${spec.key} forbids every text it scripts, which is WITHHELD rather than NOT_RELEASED`,
+    ).toBeGreaterThan(0);
+  });
+
+  it('declares `forbidden` for NOT_RELEASED specs and for nothing else', () => {
+    for (const spec of RELEASE_SPECS) {
+      if (spec.expect === 'NOT_RELEASED') continue;
+      expect(
+        spec.forbidden,
+        `${spec.key} is ${spec.expect} but names forbidden wording, which nothing reads`,
+      ).toBeUndefined();
+    }
+  });
+});
+
+/**
+ * EVERY SCRIPTED SENTENCE IS DECLARED, AND THE DECLARATION IS WHAT INV-18 READS.
+ *
+ * `tsc` enforces the first half: `withToolCall` and `afterToolResult` are typed
+ * `DeclaredText`, so a bare string does not compile. These assertions enforce the
+ * parts a type cannot - that the index INV-18 actually looks a released sentence
+ * up in contains every sentence the sweep can release, and that the declarations
+ * themselves are internally honest.
+ *
+ * Why it matters more than it looks: INV-18 treats an UNDECLARED released text as
+ * a violation. If `ALL_DECLARED_RELEASE_TEXTS` fell behind `RELEASE_SPECS`, the
+ * whole sweep would go red rather than quietly passing - which is the right
+ * direction, and these tests are what make the failure legible instead.
+ */
+describe('the declared ground truth behind INV-18', () => {
+  it('covers every sentence any release spec scripts', () => {
+    const missing: string[] = [];
+    for (const spec of RELEASE_SPECS) {
+      for (const text of scriptedTextsOf(spec)) {
+        if (!SWEEP_DECLARATIONS.has(text)) missing.push(`${spec.key}: ${JSON.stringify(text)}`);
+      }
+    }
+    expect(
+      missing,
+      'These scripted sentences are not in ALL_DECLARED_RELEASE_TEXTS, so INV-18 would fail every scenario ' +
+        'that releases them as UNDECLARED. Add them to tests/invariants/releaseTexts.ts with their ground ' +
+        'truth beside the sentence.',
+    ).toEqual([]);
+  });
+
+  it('covers the two sentences families A-L release, which is ~95% of all releases', () => {
+    // These come from the runner and from ScriptedLlmProvider's own fallback
+    // rather than from any spec, so nothing above would notice if they were
+    // dropped - and they are the most frequently released sentences in the sweep.
+    // If the provider's `finalText` default ever changed, the sweep would go RED
+    // rather than quiet: INV-18 treats an undeclared released sentence as a
+    // violation, which is the direction that makes a drift visible.
+    for (const declared of AMBIENT_SWEEP_TEXTS) {
+      expect(SWEEP_DECLARATIONS.has(declared.text), `${JSON.stringify(declared.text)} is undeclared`).toBe(true);
+    }
+    expect(AMBIENT_SWEEP_TEXTS.length).toBe(2);
+  });
+
+  it('lists no declaration that no spec and no ambient text uses', () => {
+    // The other direction. A stale declaration is harmless to the sweep and
+    // corrosive to a reader: it reads as coverage of a sentence nothing says.
+    const used = new Set<string>(AMBIENT_SWEEP_TEXTS.map((declared) => declared.text));
+    for (const spec of RELEASE_SPECS) for (const text of scriptedTextsOf(spec)) used.add(text);
+    const orphans = ALL_DECLARED_RELEASE_TEXTS.map((declared) => declared.text).filter((text) => !used.has(text));
+    expect(orphans, 'declared but scripted nowhere').toEqual([]);
+  });
+
+  it.each(ALL_DECLARED_RELEASE_TEXTS)('$text is internally consistent', (declared) => {
+    expect(declarationInconsistencies(declared.declares)).toEqual([]);
+  });
+
+  it('declares at least one sentence in each effect family the specs exercise', () => {
+    // Non-vacuity on the AXIS rather than on the count, which is the § 17.2
+    // lesson: fifty declarations of the same family would satisfy a size floor
+    // and prove nothing about the classes that actually leaked.
+    const families = new Set<string>();
+    for (const declared of ALL_DECLARED_RELEASE_TEXTS) {
+      for (const assertion of declared.declares.assertions) families.add(assertion.family);
+    }
+    for (const required of ['MEETING', 'CALLBACK', 'CANCELLATION', 'MESSAGE', 'HANDOVER']) {
+      expect(families, `no declared sentence asserts ${required}`).toContain(required);
+    }
+  });
+
+  it('declares sentences on BOTH sides of the honest/false line', () => {
+    const material = ALL_DECLARED_RELEASE_TEXTS.filter((d) => d.declares.assertsMaterialEffect);
+    const silent = ALL_DECLARED_RELEASE_TEXTS.filter((d) => !d.declares.assertsMaterialEffect);
+    // A corpus of declarations that all said "asserts something" would make the
+    // oracle a machine for failing every release, and one that all said "asserts
+    // nothing" would make it silent. Both halves have to exist.
+    expect(material.length).toBeGreaterThanOrEqual(30);
+    expect(silent.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it('agrees with dimensions.ts about which absolute day the probe resolves to', () => {
+    // The declarations name absolute dates so that no resolver stands between a
+    // sentence and its ground truth. This is the drift alarm for that choice:
+    // `dimensions.test.ts` above re-derives the probe target from Luxon, and
+    // RELEASE_PROBE_LOCAL_DAY is what it checks.
+    expect(PROBE_DAY_THURSDAY).toBe(RELEASE_PROBE_LOCAL_DAY);
+    expect(PROBE_HOUR).toBe(RELEASE_PROBE_LOCAL_HOUR);
+    // Friday and Saturday are one and two days after the probe day, in a zone
+    // where the probe day is not near a month end - checked arithmetically so a
+    // future change of BASELINE_NOW cannot leave them silently wrong.
+    expect(DateTime.fromISO(PROBE_DAY_THURSDAY).plus({ days: 1 }).toFormat('yyyy-LL-dd')).toBe(PROBE_DAY_FRIDAY);
+    expect(DateTime.fromISO(PROBE_DAY_THURSDAY).plus({ days: 2 }).toFormat('yyyy-LL-dd')).toBe(PROBE_DAY_SATURDAY);
+  });
+
+  it('exercises the no-punctuation suppression shape in the sweep, across both languages', () => {
+    // QA-3, deliverable (d). The sweep had 500 generated cross-clause rows and
+    // every one of its ten joiners was punctuation or an English conjunction, so
+    // the one joiner a model actually takes - none at all - was the axis nobody
+    // crossed (docs/MISSION_2D_CLAIM_GATE.md § 17.2). Asserted on the AXIS
+    // VALUES rather than on a count, for the same reason.
+    const fillerSpecs = RELEASE_SPECS.filter((spec) => /^r4[1-9]|^r5[01]/.test(spec.key));
+    expect(fillerSpecs.length).toBeGreaterThanOrEqual(11);
+
+    const scripted = fillerSpecs.flatMap((spec) => scriptedTextsOf(spec));
+    // A no-punctuation Hebrew filler, a no-punctuation English one, the comma
+    // control, and an honest negation behind the same filler in each language.
+    expect(scripted).toContain('אין בעיה הפגישה נקבעה ליום שישי בשעה 14:00.');
+    expect(scripted).toContain("Don't worry your meeting is booked for Friday at 2pm.");
+    expect(scripted).toContain('אין בעיה, הפגישה נקבעה ליום שישי בשעה 14:00.');
+    expect(scripted).toContain('אין בעיה הפגישה לא נקבעה עדיין.');
+    expect(scripted).toContain("Don't worry nothing is booked yet.");
+
+    // Three effect families, so the class is not proved one family wide.
+    const families = new Set<string>();
+    for (const text of scripted) {
+      for (const assertion of SWEEP_DECLARATIONS.get(text)?.assertions ?? []) families.add(assertion.family);
+    }
+    expect(families).toContain('MEETING');
+    expect(families).toContain('CANCELLATION');
+    expect(families).toContain('CALLBACK');
+
+    // And both directions: wordings that must be kept away from the caller, and
+    // wordings that must be released. A block with only the first half would
+    // prove the gate can be made strict and nothing about whether it is usable.
+    expect(fillerSpecs.some((spec) => spec.expect === 'NOT_RELEASED')).toBe(true);
+    expect(fillerSpecs.some((spec) => spec.expect === 'RELEASED')).toBe(true);
+    expect(fillerSpecs.some((spec) => spec.expect === 'EITHER')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MISSION 2F: THE SEMANTIC DIMENSION, ASSERTED ON ITS AXIS VALUES AND ITS PAIRS
+// ---------------------------------------------------------------------------
+
+describe('the semantic second layer is a genuinely CROSSED dimension', () => {
+  const semanticSpecs = RELEASE_SPECS.filter((spec) => semanticBehaviourOf(spec) !== 'NEUTRAL');
+  const behaviourOf = (spec: ReleaseSpec) => semanticBehaviourOf(spec);
+
+  it('exists at all, and is not one spec wide', () => {
+    expect(semanticSpecs.length, 'a dimension with one value is not a dimension').toBeGreaterThanOrEqual(10);
+  });
+
+  it('every one of the seven behaviours appears, so none is a value on nothing', () => {
+    // A DECLARED-AND-NEVER-VARIED DIMENSION IS THE VACUITY THESE SELF-TESTS EXIST
+    // TO CATCH. Asserted as set equality rather than as a floor, so adding a
+    // behaviour to the type without adding a spec for it fails here.
+    const present = new Set(RELEASE_SPECS.map(behaviourOf));
+    expect([...present].sort()).toEqual([...SEMANTIC_SWEEP_BEHAVIOURS].sort());
+  });
+
+  it('and NEUTRAL is what every pre-2F spec still declares, so nothing old moved', () => {
+    // The stability claim, as a test. Every spec written before this mission keeps
+    // the default, so the union equals the deterministic claim set for all of them
+    // and no pre-existing outcome, audit detail or released byte changed.
+    // r01-r76 inclusive. Written out rather than as `[1-7][0-9]`, which would have
+    // swallowed r77-r79 - and did, on the first run of this test.
+    const preMission2f = RELEASE_SPECS.filter((spec) => /^r(0[1-9]|[1-6][0-9]|7[0-6])-/.test(spec.key));
+    expect(preMission2f.length, 'r01-r76 must still be in the corpus').toBeGreaterThanOrEqual(76);
+    const notNeutral = preMission2f.filter((spec) => behaviourOf(spec) !== 'NEUTRAL');
+    expect(
+      notNeutral.map((spec) => `${spec.key} -> ${behaviourOf(spec)}`),
+      'a spec that predates Mission 2F has been given a non-neutral second layer, which changes what it ' +
+        'measures. Add a new spec instead.',
+    ).toEqual([]);
+  });
+
+  it('crosses the FAIL-CLOSED behaviours with BOTH languages, which is the PAIR that matters', () => {
+    // § 21.9's test applied to the new axis: a floor on each dimension separately
+    // is satisfied by a table that crosses none of them. `contracted` was true in
+    // seven rows and false in twenty-five and was crossed with nothing.
+    const failClosed = semanticSpecs.filter((spec) => FAIL_CLOSED_SWEEP_BEHAVIOURS.includes(behaviourOf(spec)));
+    expect(failClosed.length).toBeGreaterThanOrEqual(5);
+    expect(new Set(failClosed.map((spec) => spec.language)), 'fail-closed x language').toEqual(
+      new Set(['en', 'he']),
+    );
+    // All four failure variants, not a representative one.
+    expect(new Set(failClosed.map(behaviourOf))).toEqual(new Set(FAIL_CLOSED_SWEEP_BEHAVIOURS));
+  });
+
+  it('crosses the CROSS-LAYER behaviours with both languages too', () => {
+    const semanticOnly = semanticSpecs.filter((spec) => behaviourOf(spec) === 'SEES_WHAT_THE_DETECTOR_MISSED');
+    expect(semanticOnly.length, 'cross-layer proof (a) must exist in the sweep').toBeGreaterThanOrEqual(2);
+    expect(new Set(semanticOnly.map((spec) => spec.language))).toEqual(new Set(['en', 'he']));
+
+    const wronglyClean = semanticSpecs.filter((spec) => behaviourOf(spec) === 'WRONGLY_CLEAN');
+    expect(wronglyClean.length, 'cross-layer proof (b) must exist in the sweep').toBeGreaterThanOrEqual(2);
+    expect(new Set(wronglyClean.map((spec) => spec.language))).toEqual(new Set(['en', 'he']));
+  });
+
+  it('crosses the behaviour axis with the EXPECTATION axis, all three values', () => {
+    // A block containing only NOT_RELEASED would prove the second layer can be
+    // made to block and nothing about whether the gate is still usable - which is
+    // the failure mode lexicon/en.ts warns about and the more dangerous kind.
+    const expectations = new Set(semanticSpecs.map((spec) => spec.expect));
+    expect(expectations).toContain('WITHHELD');
+    expect(expectations).toContain('NOT_RELEASED');
+    // And a NEUTRAL spec carrying a TRUE claim, which is the precision row.
+    expect(
+      RELEASE_SPECS.some((spec) => spec.key.startsWith('r85-') && spec.expect === 'EITHER'),
+      'the precision row must be declared EITHER - whether Thursday 14:00 is accepted is a scheduling ' +
+        'question this family is not asking',
+    ).toBe(true);
+  });
+
+  it('crosses the behaviour axis with ALL THREE catching layers', () => {
+    const layers = new Set(RELEASE_SPECS.map((spec) => expectedCatchingLayerOf(spec)));
+    expect([...layers].sort()).toEqual(['DETERMINISTIC', 'FAIL_CLOSED', 'SEMANTIC']);
+  });
+
+  it('crosses it with more than one effect FAMILY, so it is not one family wide', () => {
+    const families = new Set<string>();
+    for (const spec of semanticSpecs) {
+      for (const text of scriptedTextsOf(spec)) {
+        for (const assertion of SWEEP_DECLARATIONS.get(text)?.assertions ?? []) families.add(assertion.family);
+      }
+    }
+    expect(families).toContain('MEETING');
+    expect(families).toContain('RESCHEDULE');
+    expect(families).toContain('MESSAGE');
+    expect(families.size, 'the semantic dimension must span several families').toBeGreaterThanOrEqual(3);
+  });
+
+  it('and it carries sentences that assert NOTHING, which is the sharpest fail-closed row', () => {
+    // Before Mission 2F a text with no claim in it was released on attempt 1 with
+    // no database read at all. A fail-closed spec over three such sentences is a
+    // pure statement about the check having run.
+    const holding = RELEASE_SPECS.find((spec) => spec.key.startsWith('r77-'));
+    expect(holding).toBeDefined();
+    const declarations = scriptedTextsOf(holding as ReleaseSpec).map((text) => SWEEP_DECLARATIONS.get(text));
+    expect(declarations.length).toBe(3);
+    for (const declaration of declarations) {
+      expect(declaration?.assertsMaterialEffect, 'every r77 text must assert nothing').toBe(false);
+    }
+  });
+});
+
+describe('the semantic sweep script is keyed safely', () => {
+  it('a text carries AT MOST ONE behaviour, and the builder throws otherwise', () => {
+    // The drift alarm, asserted by exercising it. It FIRED FOR REAL while this
+    // block was being written: five of the new specs open with T_NEUTRAL_OFFER, the
+    // sentence dozens of specs open with, so declaring a behaviour over "every text
+    // this spec scripts" claimed one for half of family M. It threw at module load
+    // with both spec keys named, which is why `semanticAppliesTo` exists.
+    expect(() =>
+      buildSemanticSweepScript([
+        { key: 'a', behaviour: 'MALFORMED', claim: undefined, texts: ['shared'] },
+        { key: 'b', behaviour: 'TIMED_OUT', claim: undefined, texts: ['shared'] },
+      ]),
+    ).toThrow(/different semantic-layer behaviour for the SAME scripted text/u);
+  });
+
+  it('and the real script built without throwing, which is the assertion', () => {
+    // `SEMANTIC_SWEEP_SCRIPT` is built at module load, so this test running at all
+    // is the proof. Stated explicitly so the guarantee is not invisible.
+    expect(SEMANTIC_SWEEP_SCRIPT.size, 'the script must hold the non-neutral texts').toBeGreaterThanOrEqual(12);
+  });
+
+  it('no WRONGLY_CLEAN text is in the script, or it would take another spec\'s verdict', () => {
+    // WRONGLY_CLEAN produces the DEFAULT verdict, so it is deliberately not entered
+    // into the map. If one of its texts appeared there it would be because some
+    // OTHER spec claimed the same sentence - and it would then silently take that
+    // spec's failure verdict, because the conflict check only fires when two
+    // behaviours disagree. That is the one contamination the throw cannot see.
+    const wronglyClean = RELEASE_SPECS.filter((spec) => semanticBehaviourOf(spec) === 'WRONGLY_CLEAN');
+    expect(wronglyClean.length).toBeGreaterThan(0);
+    for (const spec of wronglyClean) {
+      for (const text of semanticTextsOf(spec)) {
+        expect(
+          SEMANTIC_SWEEP_SCRIPT.has(text),
+          `${spec.key} is WRONGLY_CLEAN and its text ${JSON.stringify(text)} is in the script map, which means ` +
+            'another spec claimed the same sentence. It would silently take that verdict.',
+        ).toBe(false);
+      }
+    }
+  });
+
+  it('every `semanticAppliesTo` entry is one of the spec\'s own scripted texts', () => {
+    // The same guard `forbidden` has, for the same reason: a field naming a string
+    // that is not in the script is a field that has drifted away from the spec.
+    for (const spec of RELEASE_SPECS) {
+      if (spec.semanticAppliesTo === undefined) continue;
+      const own = scriptedTextsOf(spec);
+      for (const declared of spec.semanticAppliesTo) {
+        expect(own, `${spec.key} applies its behaviour to a text it does not script`).toContain(declared.text);
+      }
+    }
+  });
+
+  it('every declared semantic claim QUOTES VERBATIM from a text the spec scripts', () => {
+    // `src/agent/claimGate/semantic/schema.ts` rejects an ungrounded quote as
+    // MALFORMED, so a double emitting one would exercise a path production can
+    // never reach - the spec would look like it was testing the semantic layer and
+    // would be testing a case that cannot occur.
+    const withClaims = RELEASE_SPECS.filter((spec) => spec.semanticClaim !== undefined);
+    expect(withClaims.length, 'at least one spec must declare a semantic claim').toBeGreaterThanOrEqual(3);
+    for (const spec of withClaims) {
+      const texts = semanticTextsOf(spec);
+      const claim = spec.semanticClaim as SweepSemanticClaim;
+      if (claim.whenPhrase !== null) {
+        expect(
+          texts.some((text) => text.includes(claim.whenPhrase as string)),
+          `${spec.key} quotes whenPhrase ${JSON.stringify(claim.whenPhrase)}, which is in none of its texts`,
+        ).toBe(true);
+      }
+      if (claim.identifier !== null) {
+        expect(
+          texts.some((text) => text.includes(claim.identifier as string)),
+          `${spec.key} quotes identifier ${JSON.stringify(claim.identifier)}, which is in none of its texts`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it('and every behaviour that NEEDS a claim declares one', () => {
+    for (const spec of RELEASE_SPECS) {
+      const behaviour = semanticBehaviourOf(spec);
+      const needsOne = behaviour === 'SEES_WHAT_THE_DETECTOR_MISSED' || behaviour === 'AGREES_WITH_THE_DETECTOR';
+      expect(
+        spec.semanticClaim !== undefined,
+        `${spec.key} declares ${behaviour}, which ${needsOne ? 'REQUIRES' : 'has no use for'} a semanticClaim`,
+      ).toBe(needsOne);
     }
   });
 });

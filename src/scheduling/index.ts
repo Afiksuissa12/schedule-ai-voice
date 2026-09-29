@@ -9,6 +9,7 @@
 export * from './businessHours.js';
 export * from './checkLog.js';
 export * from './dateTimeResolver.js';
+export * from './lexicon/index.js';
 export * from './meetingSchedulingService.js';
 export * from './naturalLanguage.js';
 export * from './policy.js';

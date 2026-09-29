@@ -25,7 +25,7 @@
  * contact, agent configuration and calendar via `seedSliceWorld({ suffix })`,
  * and every assertion is scoped to those ids.
  *
- * That is not a weaker test - it is a stronger one. Five hundred scenarios
+ * That is not a weaker test - it is a stronger one. Hundreds of scenarios
  * sharing a database means invariant 5 ("a rejected tool call changes no row
  * counts") is asserted against a database that already contains hundreds of
  * other organizations' rows, so a query missing an `organizationId` filter has
@@ -48,13 +48,18 @@ import type {
   FutureAction,
   Meeting,
   QualificationState,
+  Task,
 } from '../../src/domain/entities.js';
+import type { ClaimGateTurnReport } from '../../src/agent/agentTurnService.js';
+import type { ToolOutcome } from '../../src/agent/tools/results.js';
 import { ScriptedLlmProvider } from '../../src/llm/scriptedLlmProvider.js';
 import type { BusyInterval } from '../../src/ports/availability.js';
 import { createProviderRegistry } from '../../src/providers/index.js';
 import type { DeterministicTelephonyProvider } from '../../src/providers/deterministicTelephonyProvider.js';
 import { createTestDatabase, type TestDatabase } from '../helpers/testDb.js';
-import { rulesFor } from './dimensions.js';
+import { NEUTRAL_SWEEP_OFFER } from './claimOracle.js';
+import { rulesFor, SEMANTIC_SWEEP_SCRIPT } from './dimensions.js';
+import { SemanticSweepVerifier } from './semanticSweepVerifier.js';
 import { proposedWhen, renderArguments, type Scenario } from './scenarios.js';
 
 /** Every table a tool call could conceivably write. */
@@ -104,6 +109,42 @@ export interface ScenarioObservation {
   readonly meetings: readonly Meeting[];
   readonly futureActions: readonly FutureAction[];
   readonly qualificationStates: readonly QualificationState[];
+  /**
+   * Handover tasks this contact owns, after the turn.
+   *
+   * Read for INV-18: a HANDOVER claim is supported by a `Task`, and the claim
+   * gate's own exhaustion path writes exactly one. Without this the invariant
+   * could not tell "a person really was asked for" from "the model said so".
+   */
+  readonly tasks: readonly Task[];
+  /**
+   * Every `ToolOutcome` the turn produced, successes and refusals.
+   *
+   * INV-18 needs these as its INDEPENDENT source of what this turn actually did:
+   * a `check_availability` that succeeded wrote no row, and a refusal wrote no
+   * row either, so the rows alone cannot distinguish "nothing happened" from
+   * "something happened that persists nothing". This is the same data the claim
+   * gate's ledger is built from, read here separately off the turn result rather
+   * than by calling `buildActionLedger` - see the note on INV-18's oracle.
+   */
+  readonly toolOutcomes: readonly ToolOutcome[];
+  /**
+   * What the claim gate decided, per piece of customer-facing text.
+   *
+   * The whole subject of INV-18. `enabled` is carried through rather than
+   * discarded because a runtime with no gate is itself a violation, and an
+   * invariant that silently treated it as "nothing to check" would report the
+   * one configuration that matters as green.
+   */
+  readonly claimGate: ClaimGateTurnReport;
+  /**
+   * The text that actually reached the caller, in order.
+   *
+   * Cross-checked against `claimGate.releases` by INV-18: every returned message
+   * must correspond to a release the gate approved. That is what closes the gap
+   * between "the gate said no" and "the caller got it anyway".
+   */
+  readonly assistantMessages: readonly string[];
   readonly contact: Contact;
   /** `AgentConfiguration.businessHoursJson`, for the business-hours invariant. */
   readonly businessHoursJson: string;
@@ -135,24 +176,61 @@ async function countRows(db: Database): Promise<DomainRowCounts> {
 }
 
 /**
+ * What families A-L have always said, and still say.
+ *
+ * Kept as a named constant because INV-18 and `dimensions.ts` both need to be
+ * able to point at it, and because the one property that matters about it is
+ * that it asserts NOTHING material - which `tests/claimGate/` verifies against
+ * the real detector rather than assuming.
+ *
+ * SINCE § 17.5 IT IS ALSO DECLARED. `NEUTRAL_SWEEP_OFFER` in `claimOracle.ts`
+ * carries the hand-authored ground truth that this sentence asserts nothing, so
+ * INV-18's independent oracle judges the ~1,900 releases of families A-L rather
+ * than taking the detector's silence for an answer. The string is taken from
+ * there rather than written twice.
+ */
+export const NEUTRAL_SWEEP_TEXT = NEUTRAL_SWEEP_OFFER.text;
+
+/**
  * The scripted turn for one scenario.
  *
  * One model step carrying exactly one tool call, then exhaustion returns plain
  * text so the turn terminates. That shape keeps the audit chain readable and
  * makes "the rows this scenario wrote" unambiguous.
+ *
+ * FAMILY M IS THE ONE EXCEPTION, AND IT CHANGES NOTHING FOR THE OTHERS.
+ * A scenario carrying a `release` spec scripts what that spec says instead: its
+ * `withToolCall` text in the same step as the tool call, and one further step per
+ * `afterToolResult` entry. Every scenario WITHOUT a spec gets exactly the array
+ * this function has always returned, byte for byte, which is why adding the axis
+ * moved no existing count.
+ *
+ * Note what the extra steps are for. A claim-gate REGENERATION is a real call to
+ * `LlmProvider.completeTurn`, so it consumes the next scripted step - which is
+ * the mechanism family M uses to drive the bounded regeneration loop
+ * deterministically without a model. When a spec's steps run out,
+ * `ScriptedLlmProvider` falls back to its `finalText`, which asserts nothing, so
+ * an unsupported turn ends in a truthful sentence rather than in silence. `r08`
+ * supplies one more unsupported step than the bound allows, which is how it
+ * reaches the withholding path instead.
  */
 function scriptFor(scenario: Scenario, contactId: string) {
-  return [
+  const toolCalls = [
     {
-      assistantText: 'Let me take care of that for you.',
-      toolCalls: [
-        {
-          toolCallId: `sweep-${scenario.id}`,
-          toolName: scenario.toolName,
-          argumentsJson: renderArguments(scenario.args, contactId),
-        },
-      ],
+      toolCallId: `sweep-${scenario.id}`,
+      toolName: scenario.toolName,
+      argumentsJson: renderArguments(scenario.args, contactId),
     },
+  ];
+
+  const release = scenario.release;
+  if (release === undefined) {
+    return [{ assistantText: NEUTRAL_SWEEP_TEXT, toolCalls }];
+  }
+
+  return [
+    { assistantText: release.withToolCall === null ? null : release.withToolCall.text, toolCalls },
+    ...release.afterToolResult.map((declared) => ({ assistantText: declared.text, toolCalls: [] })),
   ];
 }
 
@@ -247,6 +325,7 @@ async function runScenario(
     const futureActions = await db.futureActions.listByContact(world.contact.id);
     const qualification = await db.qualificationStates.findByContactId(world.contact.id);
     const qualificationStates = qualification ? [qualification] : [];
+    const tasks = await db.tasks.listByContact(world.contact.id);
 
     // Asked of the SAME provider instance the validator consulted, over each
     // persisted meeting's exact window. This is the oracle for invariant 3, and
@@ -275,6 +354,10 @@ async function runScenario(
       meetings,
       futureActions,
       qualificationStates,
+      tasks,
+      toolOutcomes: result.toolOutcomes,
+      claimGate: result.claimGate,
+      assistantMessages: result.assistantMessages,
       busyOverMeetings,
       replayRowsAfter,
       stopReason: result.stopReason,
@@ -296,6 +379,14 @@ async function runScenario(
       meetings: [],
       futureActions: [],
       qualificationStates: [],
+      tasks: [],
+      toolOutcomes: [],
+      // A thrown turn released nothing, so there is nothing for INV-18 to
+      // examine. Reported as an empty report rather than as `enabled: false`,
+      // which would be a LIE about the wiring - INV-13 is the invariant that
+      // fails a throw, and INV-18 must not double-report it as a gate defect.
+      claimGate: { enabled: true, releases: [] },
+      assistantMessages: [],
       busyOverMeetings: [],
       replayRowsAfter: null,
       stopReason: 'THREW',
@@ -354,7 +445,31 @@ export async function runSweep(
 
     const providers = createProviderRegistry({ availability: { options: { calendars } } });
     const llm = new ScriptedLlmProvider({});
-    const runtime = buildAgentRuntime({ clock: testDb.clock, db: testDb.db, providers, llm });
+    // MISSION 2F: THE SECOND LAYER IS A SWEPT DIMENSION, NOT A CONSTANT.
+    //
+    // Handed to the REAL composition root through its documented `claimVerifier`
+    // seam, so every scenario still goes in through `buildAgentRuntime` exactly as
+    // the demo and the production path would. What varies is which verifier the
+    // root is given - the root itself still offers no way to have none.
+    //
+    // The double is keyed on the EXACT BYTES of a scripted text, which is what
+    // makes it order-independent: a chunk of 32 scenarios shares one runtime and
+    // which worker takes which chunk is not deterministic, so a verifier answering
+    // a queue in call order would make the sweep's verdicts depend on scheduling.
+    // Keying on the text removes that entirely, which is why INV-09 still holds and
+    // why `npm run qa:sweep -- --determinism` is byte-identical.
+    //
+    // Every text carrying no declared behaviour gets `CLASSIFIED` with no claims -
+    // the same verdict `RuleDrivenSemanticClaimVerifier` with no rules returns and
+    // the same one the offline composition wires - so the 1,127 scenarios that
+    // predate this mission keep byte-identical outcomes.
+    const runtime = buildAgentRuntime({
+      clock: testDb.clock,
+      db: testDb.db,
+      providers,
+      llm,
+      claimVerifier: new SemanticSweepVerifier(SEMANTIC_SWEEP_SCRIPT),
+    });
 
     try {
       for (const scenario of chunk) {

@@ -1,0 +1,767 @@
+/**
+ * `npm run llm:mapcheck` - the deterministic regression net for the Ollama
+ * mapping, with NO network and no model.
+ *
+ * WHAT IT IS FOR
+ * ---------------------------------------------------------------------------
+ * This is the file that would have been `tests/llm/ollamaMapping.test.ts` if
+ * this task were allowed to add test files. It replays REAL recorded Ollama
+ * responses (`../ollama/fixtures.ts`) through the exact mapping code the
+ * provider runs, and asserts the resulting `ToolCallRequest[]` and
+ * `assistantText` exactly - not "contains", not "truthy", exactly.
+ *
+ * IT PROVES ITS OWN ISOLATION
+ * ---------------------------------------------------------------------------
+ * The first thing `main` does is replace `globalThis.fetch` with a function
+ * that throws. So the claim "the mapping layer has no I/O in it" is not a
+ * comment here, it is enforced: if any mapping function ever grows a fetch,
+ * this CLI goes red rather than quietly starting to need a running Ollama.
+ */
+import {
+  assembleTurn,
+  buildMetrics,
+  recoverToolCallsFromText,
+  toCompleteTurnResult,
+  toOllamaChatRequest,
+  toOllamaMessage,
+  toOllamaMessages,
+  toOllamaTool,
+  unwrapToolNameParametersWrapper,
+} from '../ollama/mapping.js';
+import {
+  SEMANTIC_VERIFIER_SEED,
+  SEMANTIC_VERIFIER_TEMPERATURE,
+} from '../../agent/claimGate/semantic/llmSemanticClaimVerifier.js';
+import { SEMANTIC_VERIFIER_INSTRUCTION } from '../../agent/claimGate/semantic/instruction.js';
+import { SEMANTIC_VERIFIER_OUTPUT_JSON_SCHEMA } from '../../agent/claimGate/semantic/schema.js';
+import { NdjsonLineAssembler } from '../ollama/ndjson.js';
+import {
+  AYA_RECORDED_ASSISTANT_TEXTS,
+  AYA_RECORDED_TOOL_CALLS,
+  FIXTURE_AYA_FENCED_DIRECTLY_ANSWER,
+  FIXTURE_AYA_NATIVE_NESTED_WRAPPED_CALL,
+  FIXTURE_AYA_NATIVE_WRAPPED_CALL,
+  FIXTURE_AYA_NATIVE_WRAPPED_CALL_TOOL_NAME_ECHOED,
+  FIXTURE_AYA_PROSE_ABOUT_A_TOOL_CALL,
+  FIXTURE_AYA_UNFENCED_ACTION_LIST,
+  FIXTURE_NATIVE_TOOL_CALL,
+  FIXTURE_NATIVE_TOOL_CALL_MISTRAL,
+  FIXTURE_PROSE_MENTIONING_A_TOOL,
+  FIXTURE_PS,
+  FIXTURE_STREAM_TEXT,
+  FIXTURE_STREAM_TOOL_CALL,
+  FIXTURE_TAGS,
+  FIXTURE_TEXTUAL_TOOL_CALL,
+  FIXTURE_TEXTUAL_TOOL_CALL_NO_ARGUMENTS,
+  FIXTURE_TEXTUAL_TOOL_CALL_UNOFFERED,
+} from '../ollama/fixtures.js';
+import type { OllamaChatChunk, OllamaPsResponse, OllamaTagsResponse } from '../ollama/wire.js';
+import type { LlmMessage } from '../../ports/llm.js';
+import { Checks, detail, heading, line, main } from './reporting.js';
+
+/** The nine Baseline V1 tools. Offered so the fallback's allowlist is realistic. */
+const THE_NINE = [
+  'get_contact_context',
+  'check_availability',
+  'schedule_meeting',
+  'reschedule_meeting',
+  'cancel_meeting',
+  'schedule_followup',
+  'update_qualification',
+  'record_call_outcome',
+  'transfer_to_human',
+] as const;
+
+/** A deterministic minter, so expected ids are literals rather than patterns. */
+const mintId = (index: number): string => `minted-${index}`;
+
+function parseNdjson(body: string): OllamaChatChunk[] {
+  const assembler = new NdjsonLineAssembler();
+  return [...assembler.push(body), ...assembler.flush()].map((l) => JSON.parse(l) as OllamaChatChunk);
+}
+
+function mapFixture(body: string, offered: ReadonlyArray<string> = THE_NINE) {
+  return toCompleteTurnResult({
+    chunks: parseNdjson(body),
+    offeredToolNames: offered,
+    mintId,
+    modelId: 'fixture-model',
+    streamed: false,
+    totalLatencyMs: 0,
+    timeToFirstTokenMs: null,
+  });
+}
+
+main(async () => {
+  // ---- isolation, enforced -------------------------------------------------
+  globalThis.fetch = (() => {
+    throw new Error(
+      'llm:mapcheck attempted a network call. The Ollama mapping layer must be pure - ' +
+        'move whatever just dialled out into src/llm/ollama/client.ts.',
+    );
+  }) as typeof fetch;
+
+  const checks = new Checks();
+
+  line();
+  line('llm:mapcheck - replaying recorded Ollama responses through the real mapper.');
+  detail('network', 'disabled (globalThis.fetch throws)');
+  detail('fixtures', 'src/llm/ollama/fixtures.ts, captured from Ollama 0.34.3');
+
+  // -------------------------------------------------------------------------
+  heading('1. Native tool call, non-streaming (qwen2.5:7b-instruct, real capture)');
+  {
+    const result = mapFixture(FIXTURE_NATIVE_TOOL_CALL);
+
+    checks.equal('tool calls map exactly, arguments re-serialised verbatim', result.toolCalls, [
+      {
+        toolCallId: 'call_xf7lm9o3',
+        toolName: 'schedule_followup',
+        // Key ORDER is the model's, preserved by JSON.stringify over the parsed
+        // object. `reason` first is what the model actually emitted.
+        argumentsJson: '{"reason":"callback request","contact_id":"Dana","when":"tomorrow afternoon around 3"}',
+      },
+    ]);
+    checks.equal('a tool-only turn has no assistant text', result.assistantText, null);
+    checks.equal('tool call health counts it as native', result.metrics?.toolCallHealth, {
+      native: 1,
+      recoveredFromText: 0,
+      malformed: 0,
+    });
+    checks.equal('prompt tokens come from Ollama', result.metrics?.promptTokens, 272);
+    checks.equal('generated tokens come from Ollama', result.metrics?.generatedTokens, 41);
+    // 41 tokens / 0.750932s = 54.60 tok/s, from eval_duration alone.
+    checks.equal('tokens/second uses eval_duration only', result.metrics?.tokensPerSecond, 54.6);
+    checks.equal('cold load duration is surfaced in ms', result.metrics?.runtime?.loadDurationMs, 2762.34);
+
+    checks.ok(
+      'argumentsJson is a STRING, never a parsed object',
+      typeof result.toolCalls[0]?.argumentsJson === 'string',
+      `got ${typeof result.toolCalls[0]?.argumentsJson}`,
+    );
+    checks.ok(
+      "the model passed the contact's own words through, and manufactured no timestamp",
+      result.toolCalls[0]?.argumentsJson.includes('"when":"tomorrow afternoon around 3"') === true &&
+        !/\d{4}-\d{2}-\d{2}T/.test(result.toolCalls[0]?.argumentsJson ?? ''),
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  heading('2. Native tool call, a different model family (mistral:7b-instruct, real capture)');
+  {
+    const result = mapFixture(FIXTURE_NATIVE_TOOL_CALL_MISTRAL);
+    checks.equal('mistral maps identically', result.toolCalls, [
+      {
+        toolCallId: 'call_bfrt5p87',
+        toolName: 'schedule_followup',
+        argumentsJson:
+          '{"when":"tomorrow afternoon around 3","reason":"Call back at time specified by contact",' +
+          '"contact_id":"contact_id_from_get_contact_context"}',
+      },
+    ]);
+    checks.equal('mistral tokens/second', result.metrics?.tokensPerSecond, 55.48);
+  }
+
+  // -------------------------------------------------------------------------
+  heading('3. Streaming NDJSON: a tool call whole in one chunk (real capture)');
+  {
+    const chunks = parseNdjson(FIXTURE_STREAM_TOOL_CALL);
+    checks.equal('two NDJSON lines parsed', chunks.length, 2);
+
+    const result = toCompleteTurnResult({
+      chunks,
+      offeredToolNames: THE_NINE,
+      mintId,
+      modelId: 'qwen2.5:7b-instruct',
+      streamed: true,
+      totalLatencyMs: 1143,
+      timeToFirstTokenMs: 37,
+    });
+
+    checks.equal('the streamed tool call maps the same way', result.toolCalls, [
+      {
+        toolCallId: 'call_li7nacmw',
+        toolName: 'schedule_followup',
+        argumentsJson: '{"contact_id":"Dana","when":"tomorrow afternoon around 3","reason":"callback request"}',
+      },
+    ]);
+    checks.equal('an empty trailing content chunk is not assistant text', result.assistantText, null);
+    checks.equal('streamed is reported', result.metrics?.streamed, true);
+    checks.equal('TTFT is carried through', result.metrics?.timeToFirstTokenMs, 37);
+    checks.equal('counters come from the terminal chunk', result.metrics?.generatedTokens, 41);
+  }
+
+  // -------------------------------------------------------------------------
+  heading('4. Streaming text after a tool result (real capture)');
+  {
+    const result = mapFixture(FIXTURE_STREAM_TEXT);
+    checks.equal(
+      'per-token deltas concatenate in order',
+      result.assistantText,
+      "It seems I don't have.",
+    );
+    checks.equal('no tool calls were invented from prose', result.toolCalls, []);
+    checks.equal('nothing was counted as malformed', result.metrics?.toolCallHealth, {
+      native: 0,
+      recoveredFromText: 0,
+      malformed: 0,
+    });
+    checks.equal('a warm run reports a near-zero load', result.metrics?.runtime?.loadDurationMs, 1.56);
+  }
+
+  // -------------------------------------------------------------------------
+  heading('5. THE FALLBACK: a tool call the model wrote into its text (real capture)');
+  {
+    const result = mapFixture(FIXTURE_TEXTUAL_TOOL_CALL);
+
+    checks.equal('recovered verbatim, with the minted id', result.toolCalls, [
+      {
+        toolCallId: 'minted-0',
+        toolName: 'schedule_followup',
+        argumentsJson: '{"contact_id":"Dana","when":"around 3","reason":"follow up"}',
+      },
+    ]);
+    checks.equal('the consumed JSON is removed from the assistant text', result.assistantText, null);
+    checks.equal('counted as a recovery, not as native', result.metrics?.toolCallHealth, {
+      native: 0,
+      recoveredFromText: 1,
+      malformed: 0,
+    });
+    checks.ok(
+      "the model's own truncation of `when` is preserved, not repaired",
+      result.toolCalls[0]?.argumentsJson.includes('"when":"around 3"') === true,
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  heading('6. The fallback REFUSES rather than invents');
+  {
+    const unoffered = mapFixture(FIXTURE_TEXTUAL_TOOL_CALL_UNOFFERED);
+    checks.equal('a tool that was never offered yields NO tool call', unoffered.toolCalls, []);
+    // `refusalReasons` is MISSION 2D-R, additive: the same strings as the
+    // top-level `refusals` below, carried inside `metrics` so a transcript can
+    // render a refusal per turn. Asserted rather than loosened, so the two
+    // channels cannot drift. See src/ports/llm.ts and
+    // docs/MISSION_2D_AYA_ROOT_CAUSE.md § 18.3.
+    checks.equal('it is counted as malformed', unoffered.metrics?.toolCallHealth, {
+      native: 0,
+      recoveredFromText: 0,
+      malformed: 1,
+      refusalReasons: ['names "send_contract_and_charge_card", which was not offered this turn'],
+    });
+    checks.ok(
+      'the attempt stays visible in the assistant text',
+      unoffered.assistantText?.includes('send_contract_and_charge_card') === true,
+    );
+    checks.equal('the refusal says why', unoffered.refusals, [
+      'names "send_contract_and_charge_card", which was not offered this turn',
+    ]);
+
+    const noArgs = mapFixture(FIXTURE_TEXTUAL_TOOL_CALL_NO_ARGUMENTS);
+    checks.equal('an absent arguments key is refused, not defaulted to {}', noArgs.toolCalls, []);
+    checks.equal('and counted', noArgs.metrics?.toolCallHealth, {
+      native: 0,
+      recoveredFromText: 0,
+      malformed: 1,
+      // This one had no `refusals` assertion of its own before, so the reason is
+      // now pinned here for the first time.
+      refusalReasons: ['"schedule_followup" carried no arguments object; supplying one would be inventing it'],
+    });
+
+    const prose = mapFixture(FIXTURE_PROSE_MENTIONING_A_TOOL);
+    checks.equal('prose that merely mentions a tool proposes nothing', prose.toolCalls, []);
+    checks.equal('and is not smeared as malformed either', prose.metrics?.toolCallHealth, {
+      native: 0,
+      recoveredFromText: 0,
+      malformed: 0,
+    });
+    checks.ok('the prose is returned unchanged', prose.assistantText?.startsWith('I can use') === true);
+  }
+
+  // -------------------------------------------------------------------------
+  heading('7. The fallback never second-guesses a native call');
+  {
+    // A response with BOTH a native tool call and JSON in the text. The text
+    // scan must not run: a model that called a tool properly is believed.
+    const hybrid = JSON.stringify({
+      model: 'qwen2.5:7b-instruct',
+      message: {
+        role: 'assistant',
+        content: '{"name": "cancel_meeting", "arguments": {"meeting_id": "m_1", "reason": "x"}}',
+        tool_calls: [{ id: 'call_real', function: { name: 'get_contact_context', arguments: { contact_id: 'c_1' } } }],
+      },
+      done: true,
+      eval_count: 10,
+      eval_duration: 1_000_000_000,
+    });
+    const result = mapFixture(hybrid);
+    checks.equal('only the native call survives', result.toolCalls, [
+      { toolCallId: 'call_real', toolName: 'get_contact_context', argumentsJson: '{"contact_id":"c_1"}' },
+    ]);
+    checks.equal('the text is left exactly as the model wrote it', result.metrics?.toolCallHealth, {
+      native: 1,
+      recoveredFromText: 0,
+      malformed: 0,
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  heading('8. Other recognised fallback shapes');
+  {
+    const fenced =
+      'Sure, here is the call:\n\n```json\n{"name": "check_availability", "arguments": {"contact_id": "c_1"}}\n```\n';
+    const fencedResult = recoverToolCallsFromText(fenced, THE_NINE, mintId);
+    checks.equal('a fenced JSON block is recovered', fencedResult.toolCalls, [
+      { toolCallId: 'minted-0', toolName: 'check_availability', argumentsJson: '{"contact_id":"c_1"}' },
+    ]);
+    checks.equal('the surrounding prose is kept', fencedResult.remainingText, 'Sure, here is the call:');
+
+    const mistralMarker =
+      '[TOOL_CALLS] [{"name": "record_call_outcome", "arguments": {"contact_id": "c_1", "outcome": "CONNECTED"}}]';
+    const markerResult = recoverToolCallsFromText(mistralMarker, THE_NINE, mintId);
+    checks.equal("mistral's [TOOL_CALLS] marker is recognised", markerResult.toolCalls, [
+      {
+        toolCallId: 'minted-0',
+        toolName: 'record_call_outcome',
+        argumentsJson: '{"contact_id":"c_1","outcome":"CONNECTED"}',
+      },
+    ]);
+    checks.equal('and consumes the whole span', markerResult.remainingText, null);
+
+    const nested = '{"function": {"name": "transfer_to_human", "arguments": "{\\"reason\\": \\"asked for a manager\\"}"}}';
+    const nestedResult = recoverToolCallsFromText(nested, THE_NINE, mintId);
+    checks.equal('a nested OpenAI-ish shape with STRING arguments passes the string through verbatim', nestedResult.toolCalls, [
+      {
+        toolCallId: 'minted-0',
+        toolName: 'transfer_to_human',
+        // Note the spacing: this is the model's own string, untouched.
+        argumentsJson: '{"reason": "asked for a manager"}',
+      },
+    ]);
+
+    const braceInString =
+      '{"name": "schedule_followup", "arguments": {"contact_id": "c_1", "reason": "call back {tomorrow}", "when": "3pm"}}';
+    const braceResult = recoverToolCallsFromText(braceInString, THE_NINE, mintId);
+    checks.equal(
+      'a brace inside a string value does not truncate the span',
+      braceResult.toolCalls[0]?.argumentsJson,
+      '{"contact_id":"c_1","reason":"call back {tomorrow}","when":"3pm"}',
+    );
+
+    const noTools = recoverToolCallsFromText(FIXTURE_TEXTUAL_TOOL_CALL, [], mintId);
+    checks.equal('with no tools offered, nothing can be a tool call', noTools.toolCalls, []);
+  }
+
+  // -------------------------------------------------------------------------
+  heading('9. NDJSON framing is independent of read boundaries');
+  {
+    const expected = parseNdjson(FIXTURE_STREAM_TEXT);
+    // Split the real body at every single byte offset and prove the assembled
+    // chunk sequence is identical. This is the bug the assembler exists for.
+    let mismatches = 0;
+    for (let cut = 1; cut < FIXTURE_STREAM_TEXT.length; cut += 7) {
+      const assembler = new NdjsonLineAssembler();
+      const lines = [
+        ...assembler.push(FIXTURE_STREAM_TEXT.slice(0, cut)),
+        ...assembler.push(FIXTURE_STREAM_TEXT.slice(cut)),
+        ...assembler.flush(),
+      ];
+      const got = lines.map((l) => JSON.parse(l) as OllamaChatChunk);
+      if (JSON.stringify(got) !== JSON.stringify(expected)) mismatches += 1;
+    }
+    checks.equal('every two-way split of a real stream body assembles identically', mismatches, 0);
+
+    // And one byte at a time, the worst case.
+    const perByte = new NdjsonLineAssembler();
+    const collected: string[] = [];
+    for (const char of FIXTURE_STREAM_TEXT) collected.push(...perByte.push(char));
+    collected.push(...perByte.flush());
+    checks.equal(
+      'a one-byte-at-a-time stream assembles identically',
+      collected.map((l) => JSON.parse(l) as OllamaChatChunk),
+      expected,
+    );
+
+    const assembled = assembleTurn(expected);
+    checks.equal('assembleTurn folds the same text', assembled.text, "It seems I don't have.");
+  }
+
+  // -------------------------------------------------------------------------
+  heading('10. Request direction: messages and tools');
+  {
+    const toolCallTurn: LlmMessage = {
+      role: 'assistant',
+      content: '{"contact_id":"c_1","when":"tomorrow at 3pm","reason":"callback"}',
+      toolCallId: 'call_1',
+      toolName: 'schedule_followup',
+    };
+    checks.equal('an assistant tool-call turn is rebuilt as native tool_calls', toOllamaMessage(toolCallTurn), {
+      role: 'assistant',
+      content: '',
+      tool_calls: [
+        {
+          id: 'call_1',
+          function: {
+            name: 'schedule_followup',
+            // Object, because Ollama wants an object where OpenAI wanted a string.
+            arguments: { contact_id: 'c_1', when: 'tomorrow at 3pm', reason: 'callback' },
+          },
+        },
+      ],
+    });
+
+    const toolResult: LlmMessage = {
+      role: 'tool',
+      content: '{"ok":false,"code":"UNKNOWN_CONTACT"}',
+      toolCallId: 'call_1',
+      toolName: 'schedule_followup',
+    };
+    checks.equal('a tool result carries BOTH tool_call_id and tool_name', toOllamaMessage(toolResult), {
+      role: 'tool',
+      content: '{"ok":false,"code":"UNKNOWN_CONTACT"}',
+      tool_call_id: 'call_1',
+      tool_name: 'schedule_followup',
+    });
+
+    const malformedHistory: LlmMessage = {
+      role: 'assistant',
+      content: '{ "contact_id": "c_1", "when": tomorrow afternoon at 3 }',
+      toolCallId: 'call_2',
+      toolName: 'schedule_followup',
+    };
+    checks.equal(
+      'unparseable historical arguments are re-sent as a string, not guessed at',
+      toOllamaMessage(malformedHistory).tool_calls?.[0]?.function.arguments,
+      '{ "contact_id": "c_1", "when": tomorrow afternoon at 3 }',
+    );
+
+    checks.equal('the system prompt becomes the first message', toOllamaMessages('BE GOOD', [{ role: 'user', content: 'hi' }]), [
+      { role: 'system', content: 'BE GOOD' },
+      { role: 'user', content: 'hi' },
+    ]);
+
+    const schema = Object.freeze({ type: 'object', properties: {}, additionalProperties: false });
+    checks.equal('a tool schema is passed through untouched', toOllamaTool({ name: 't', description: 'd', parametersJsonSchema: schema }), {
+      type: 'function',
+      function: { name: 't', description: 'd', parameters: schema },
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  heading('11. Metrics report null rather than a plausible zero');
+  {
+    const bare = buildMetrics({
+      modelId: 'm',
+      streamed: false,
+      totalLatencyMs: 12.345,
+      timeToFirstTokenMs: null,
+      final: null,
+      toolCallHealth: { native: 0, recoveredFromText: 0, malformed: 0 },
+    });
+    checks.equal('no counters means null, not 0', [bare.promptTokens, bare.generatedTokens, bare.tokensPerSecond], [
+      null,
+      null,
+      null,
+    ]);
+    checks.equal('total latency is always measurable', bare.totalLatencyMs, 12.35);
+
+    const zeroEval = buildMetrics({
+      modelId: 'm',
+      streamed: false,
+      totalLatencyMs: 1,
+      timeToFirstTokenMs: null,
+      final: { eval_count: 10, eval_duration: 0 },
+      toolCallHealth: { native: 0, recoveredFromText: 0, malformed: 0 },
+    });
+    checks.equal('a zero eval_duration does not divide by zero', zeroEval.tokensPerSecond, null);
+    checks.equal('context utilization is null when the window is unknown', bare.contextUtilization, null);
+
+    // The safety number, on the real measured figures: 3732 prompt tokens in a
+    // 4096 window is 91% full and one turn from truncating the system prompt.
+    const tight = buildMetrics({
+      modelId: 'm',
+      streamed: false,
+      totalLatencyMs: 1,
+      timeToFirstTokenMs: null,
+      final: { prompt_eval_count: 3732 },
+      toolCallHealth: { native: 0, recoveredFromText: 0, malformed: 0 },
+      runtime: { contextLength: 4096 },
+    });
+    checks.equal('the measured production prompt fills 91% of a 4096 window', tight.contextUtilization, 0.9111);
+
+    const roomy = buildMetrics({
+      modelId: 'm',
+      streamed: false,
+      totalLatencyMs: 1,
+      timeToFirstTokenMs: null,
+      final: { prompt_eval_count: 3732 },
+      toolCallHealth: { native: 0, recoveredFromText: 0, malformed: 0 },
+      runtime: { contextLength: 8192 },
+    });
+    checks.equal('and 46% of the 8192 default, which is why the default is 8192', roomy.contextUtilization, 0.4556);
+  }
+
+  // -------------------------------------------------------------------------
+  heading('12. The discovery fixtures parse as the wire types claim');
+  {
+    const tags = JSON.parse(FIXTURE_TAGS) as OllamaTagsResponse;
+    checks.equal('both mission models are in the recorded /api/tags', (tags.models ?? []).map((m) => m.name), [
+      'mistral:7b-instruct',
+      'qwen2.5:7b-instruct',
+    ]);
+    checks.ok(
+      'both advertise the tools capability',
+      (tags.models ?? []).every((m) => (m.capabilities ?? []).includes('tools')),
+    );
+    checks.equal('quantization is readable from /api/tags', tags.models?.[1]?.details?.quantization_level, 'Q4_K_M');
+
+    const ps = JSON.parse(FIXTURE_PS) as OllamaPsResponse;
+    checks.equal('recorded resident VRAM, in bytes', ps.models?.[0]?.size_vram, 4_950_883_040);
+    checks.ok(
+      'a resident 7B Q4_K_M at num_ctx 4096 fits the 7.5 GB budget',
+      (ps.models?.[0]?.size_vram ?? 0) < 7.5 * 1024 ** 3,
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  heading('13. MISSION 2D: aya-expanse:8b double-wraps its arguments');
+  {
+    detail('evidence', 'eval-output-fair-20260927/transcripts/aya-expanse_8b/ (21 transcripts, 44 tool calls)');
+    detail('rule', 'unwrapToolNameParametersWrapper - LOCAL_PROVIDER.md states every precondition');
+
+    // ---- the defect, and the fix, on a real recorded call -----------------
+    const wrapped = mapFixture(FIXTURE_AYA_NATIVE_WRAPPED_CALL);
+    checks.equal('the wrapper is removed and nothing inside it is touched', wrapped.toolCalls, [
+      {
+        toolCallId: 'call_aya00001',
+        toolName: 'schedule_meeting',
+        argumentsJson:
+          '{"contact_id":"cmujjkcy800tcr2bsbg8jyxyt","description":"Follow-up on Northwind Dispatch",' +
+          '"duration_minutes":30,"timezone":"America/New_York","title":"Follow-up call - Northwind Dispatch",' +
+          '"when":"2026-03-04T10:30:00-05:00"}',
+        argumentsNormalization: {
+          rule: 'ollama-tool-name-parameters-wrapper',
+          rawArgumentsJson:
+            '{"tool_name":"schedule_meeting","parameters":{"contact_id":"cmujjkcy800tcr2bsbg8jyxyt",' +
+            '"description":"Follow-up on Northwind Dispatch","duration_minutes":30,' +
+            '"timezone":"America/New_York","title":"Follow-up call - Northwind Dispatch",' +
+            '"when":"2026-03-04T10:30:00-05:00"}}',
+        },
+      },
+    ]);
+    checks.ok(
+      'the pre-normalization bytes travel with the call, so the audit trail keeps the model’s own words',
+      wrapped.toolCalls[0]?.argumentsNormalization?.rawArgumentsJson.includes('"tool_name":"schedule_meeting"') === true,
+    );
+
+    // ---- a nested wrapper is refused rather than unwrapped twice ----------
+    const nested = mapFixture(FIXTURE_AYA_NATIVE_NESTED_WRAPPED_CALL);
+    checks.equal('a NESTED wrapper is left exactly as the model sent it', nested.toolCalls, [
+      {
+        toolCallId: 'call_aya00003',
+        toolName: 'get_contact_context',
+        argumentsJson:
+          '{"tool_name":"get_contact_context","parameters":{"parameters":' +
+          '{"contact_id":"cmujjfinc005rr2bsq5780le3","tool_name":"get_contact_context"},' +
+          '"tool_name":"get_contact_context"}}',
+      },
+    ]);
+    checks.ok(
+      'and carries no normalization provenance, because nothing was normalized',
+      nested.toolCalls[0]?.argumentsNormalization === undefined,
+    );
+
+    // ---- unwrapping is not forgiveness -----------------------------------
+    const echoed = mapFixture(FIXTURE_AYA_NATIVE_WRAPPED_CALL_TOOL_NAME_ECHOED);
+    checks.equal(
+      'the container goes; the tool_name the model echoed INSIDE its arguments stays, for .strict() to refuse',
+      echoed.toolCalls[0]?.argumentsJson,
+      '{"contact_id":"cmujjfinc005rr2bsq5780le3","tool_name":"get_contact_context"}',
+    );
+
+    // ---- the negative set, stated as code --------------------------------
+    const mustNotFire: ReadonlyArray<[string, string, string]> = [
+      ['a third key beside the pair', 'get_contact_context', '{"tool_name":"get_contact_context","parameters":{"contact_id":"c_1"},"note":"hi"}'],
+      ['only one of the two keys', 'get_contact_context', '{"parameters":{"contact_id":"c_1"}}'],
+      ['the wrapper names another tool', 'get_contact_context', '{"tool_name":"check_availability","parameters":{"contact_id":"c_1"}}'],
+      ['a leading space in the name', 'get_contact_context', '{"tool_name":" get_contact_context","parameters":{"contact_id":"c_1"}}'],
+      ['a different case in the name', 'get_contact_context', '{"tool_name":"GET_CONTACT_CONTEXT","parameters":{"contact_id":"c_1"}}'],
+      ['parameters is an array', 'get_contact_context', '{"tool_name":"get_contact_context","parameters":[{"contact_id":"c_1"}]}'],
+      ['parameters is a string', 'get_contact_context', '{"tool_name":"get_contact_context","parameters":"{\\"contact_id\\":\\"c_1\\"}"}'],
+      ['a nested wrapper', 'get_contact_context', '{"tool_name":"get_contact_context","parameters":{"tool_name":"get_contact_context","parameters":{"contact_id":"c_1"}}}'],
+      ['the OpenAI envelope', 'get_contact_context', '{"name":"get_contact_context","arguments":{"contact_id":"c_1"}}'],
+    ];
+    const fired = mustNotFire.filter(([, tool, args]) => unwrapToolNameParametersWrapper(tool, args) !== null);
+    checks.equal(
+      `none of the ${mustNotFire.length} ambiguous shapes is normalized`,
+      fired.map(([why]) => why),
+      [],
+    );
+
+    // ---- the whole recorded population, counted --------------------------
+    const replayable = AYA_RECORDED_TOOL_CALLS.filter((call) => call.truncatedByTheRenderer !== true);
+    const unwrapped = replayable.filter(
+      (call) => unwrapToolNameParametersWrapper(call.toolName, call.argumentsJson) !== null,
+    );
+    checks.equal('the recorded population is all 44 of aya’s calls', AYA_RECORDED_TOOL_CALLS.length, 44);
+    checks.equal(
+      '31 of the 42 fully-recorded calls unwrap; the other 11 were flat (8) or nested (3)',
+      unwrapped.length,
+      31,
+    );
+    checks.equal(
+      'and every unwrapped call is one that arrived natively',
+      unwrapped.filter((call) => call.arrival !== 'native').length,
+      0,
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  heading('14. MISSION 2D: the Cohere action list stops being spoken');
+  {
+    const fenced = mapFixture(FIXTURE_AYA_FENCED_DIRECTLY_ANSWER);
+    checks.equal('`directly-answer` proposes nothing - it is not one of the nine', fenced.toolCalls, []);
+    checks.equal('and is still counted and still explained', fenced.metrics?.toolCallHealth, {
+      native: 0,
+      recoveredFromText: 0,
+      malformed: 1,
+      refusalReasons: ['names "directly-answer", which was not offered this turn'],
+    });
+    checks.equal('the refusal says why', fenced.refusals, [
+      'names "directly-answer", which was not offered this turn',
+    ]);
+    checks.ok(
+      'but the JSON no longer reaches the contact',
+      fenced.assistantText !== null &&
+        !fenced.assistantText.includes('tool_name') &&
+        !fenced.assistantText.includes('```'),
+    );
+    checks.ok(
+      'and the Hebrew the model actually wrote survives, untouched',
+      fenced.assistantText?.includes('שלום! אני עוזר וירטואלי') === true,
+    );
+
+    const unfenced = mapFixture(FIXTURE_AYA_UNFENCED_ACTION_LIST);
+    checks.equal('an UNFENCED action list is recovered rather than dropped in silence', unfenced.toolCalls, [
+      {
+        toolCallId: 'minted-0',
+        toolName: 'get_contact_context',
+        argumentsJson: '{"contact_id":"cmujjmzq4012cr2bse0sk818m"}',
+      },
+    ]);
+    checks.equal('counted as a recovery', unfenced.metrics?.toolCallHealth, {
+      native: 0,
+      recoveredFromText: 1,
+      malformed: 0,
+    });
+    checks.equal(
+      'all that is left of the turn is the model’s own label, which is a word and not ours to remove',
+      unfenced.assistantText,
+      'Action:',
+    );
+
+    const prose = mapFixture(FIXTURE_AYA_PROSE_ABOUT_A_TOOL_CALL);
+    checks.equal('prose about a tool call still proposes nothing', prose.toolCalls, []);
+    checks.equal('and is still not smeared as malformed', prose.metrics?.toolCallHealth, {
+      native: 0,
+      recoveredFromText: 0,
+      malformed: 0,
+    });
+    checks.ok(
+      'and is returned with the model’s JSON example intact - it was explaining, not calling',
+      prose.assistantText?.includes('"tool_name": "schedule_meeting"') === true,
+    );
+
+    // Every recorded action list, in both line-ending forms this repo produces.
+    const lists = AYA_RECORDED_ASSISTANT_TEXTS.filter((entry) => entry.shape === 'cohere-action-list');
+    const leaked: string[] = [];
+    for (const entry of lists) {
+      for (const text of [entry.assistantText, entry.assistantText.replace(/\n/g, '\r\n')]) {
+        const remaining = recoverToolCallsFromText(text, THE_NINE, mintId).remainingText ?? '';
+        if (remaining.includes('tool_name')) leaked.push(`${entry.scenario} turn ${entry.turn}`);
+      }
+    }
+    checks.equal(`all ${lists.length} recorded action lists, LF and CRLF, leak nothing`, leaked, []);
+    checks.ok(
+      'the reconstructions match the character counts the transcripts recorded',
+      AYA_RECORDED_ASSISTANT_TEXTS.every((entry) => entry.assistantText.length === entry.recordedChars),
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  heading('15. MISSION 2F: constrained structured output and the determinism controls');
+  {
+    // WHY THIS SECTION IS HERE AND NOT ONLY IN A VITEST FILE. Both exist, and they
+    // answer to different readers: `tests/llm/ollamaRequestShape.test.ts` is the
+    // regression net, and this is what an OPERATOR runs to see - with the network
+    // trap armed at the top of this file - that the semantic claim verifier's
+    // determinism story is a property of the request BODY rather than a paragraph
+    // in a document. The documentation task quotes these facts, so they are proven
+    // somewhere re-runnable.
+    const ordinary = toOllamaChatRequest({
+      model: 'qwen2.5:7b-instruct',
+      systemPrompt: 'BE GOOD',
+      messages: [{ role: 'user', content: 'hi' }],
+      tools: [],
+      stream: false,
+      keepAlive: '5m',
+      temperature: 0.7,
+      numCtx: 8192,
+    });
+
+    // THE NEGATIVE FIRST, because it is what a reader should care most about: the
+    // CONVERSATIONAL turn's body is what it was before Mission 2F existed.
+    checks.equal('an ordinary turn sends NO `format` key at all', 'format' in ordinary, false);
+    checks.equal('and its `options` carry only what they always carried', Object.keys(ordinary.options ?? {}), [
+      'temperature',
+      'num_ctx',
+    ]);
+    checks.equal('and its configured temperature is untouched', ordinary.options?.['temperature'], 0.7);
+
+    const constrained = toOllamaChatRequest({
+      model: 'qwen2.5:7b-instruct',
+      systemPrompt: SEMANTIC_VERIFIER_INSTRUCTION,
+      messages: [{ role: 'user', content: 'Your meeting is booked for Thursday at 2pm.' }],
+      // NO TOOLS. The verifier cannot cause an effect even by accident.
+      tools: [],
+      stream: false,
+      keepAlive: '5m',
+      temperature: SEMANTIC_VERIFIER_TEMPERATURE,
+      numCtx: 8192,
+      seed: SEMANTIC_VERIFIER_SEED,
+      responseJsonSchema: SEMANTIC_VERIFIER_OUTPUT_JSON_SCHEMA,
+    });
+
+    checks.equal(
+      'the verifier’s JSON SCHEMA arrives in Ollama’s `format`',
+      constrained.format,
+      SEMANTIC_VERIFIER_OUTPUT_JSON_SCHEMA,
+    );
+    checks.equal('`options.temperature` is 0', constrained.options?.['temperature'], 0);
+    checks.equal('`options.seed` is the fixed constant', constrained.options?.['seed'], SEMANTIC_VERIFIER_SEED);
+    checks.equal('and NO tools are offered', 'tools' in constrained, false);
+
+    // The last shape anything in this repository can observe: `client.ts` sends
+    // `JSON.stringify({ ...request, stream: false })`.
+    const wire = JSON.parse(JSON.stringify({ ...constrained, stream: false })) as {
+      format?: unknown;
+      options?: Record<string, unknown>;
+    };
+    checks.equal(
+      'all three survive JSON.stringify onto the wire',
+      { format: wire.format, temperature: wire.options?.['temperature'], seed: wire.options?.['seed'] },
+      { format: SEMANTIC_VERIFIER_OUTPUT_JSON_SCHEMA, temperature: 0, seed: SEMANTIC_VERIFIER_SEED },
+    );
+
+    // And it really is the STRICT schema rather than the weaker `'json'` Ollama
+    // also accepts, which would ask only for well-formed JSON and would let an
+    // out-of-enum family through to be refused a layer later.
+    checks.equal(
+      'the schema forbids additional properties, so it constrains the SHAPE and not merely "an object"',
+      (SEMANTIC_VERIFIER_OUTPUT_JSON_SCHEMA as { additionalProperties?: boolean }).additionalProperties,
+      false,
+    );
+  }
+
+  checks.finish('llm:mapcheck');
+});

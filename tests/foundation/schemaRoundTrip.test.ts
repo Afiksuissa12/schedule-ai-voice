@@ -388,8 +388,25 @@ describe('Meeting', () => {
   });
 
   it('is retrievable by idempotency key, and the key is unique', async () => {
-    const byKey = await harness.db.meetings.findByIdempotencyKey('meeting-round-trip-1');
+    // SELF-SUFFICIENT ON PURPOSE - see the note on FutureAction's key test below.
+    // This used to look up `meeting-round-trip-1`, which only exists because the
+    // PREVIOUS test created it, so under `--sequence.shuffle` it failed with
+    // "expected null not to be null". It now writes the row it then reads back.
+    const key = 'meeting-idempotency-key-guard';
+    const created = await harness.db.meetings.create({
+      organizationId: fixtures.organization.id,
+      contactId: fixtures.contact.id,
+      title: 'Idempotency key guard',
+      startUtc: '2026-03-12T18:00:00.000Z',
+      endUtc: '2026-03-12T18:30:00.000Z',
+      timezone: 'America/New_York',
+      idempotencyKey: key,
+      validationProvenanceJson: testProvenanceJson(),
+    });
+
+    const byKey = await harness.db.meetings.findByIdempotencyKey(key);
     expect(byKey).not.toBeNull();
+    expect(byKey?.id).toBe(created.id);
 
     await expect(
       harness.db.meetings.create({
@@ -399,7 +416,7 @@ describe('Meeting', () => {
         startUtc: '2026-03-12T18:00:00.000Z',
         endUtc: '2026-03-12T18:30:00.000Z',
         timezone: 'America/New_York',
-        idempotencyKey: 'meeting-round-trip-1',
+        idempotencyKey: key,
         validationProvenanceJson: testProvenanceJson(),
       }),
     ).rejects.toThrow(/unique constraint/i);
@@ -420,12 +437,28 @@ describe('Meeting', () => {
   });
 
   it('finds overlapping meetings and ignores cancelled ones', async () => {
+    // SELF-SUFFICIENT ON PURPOSE. This used to look for `meeting-round-trip-1`,
+    // a row the FIRST test in this describe creates, so under `--sequence.shuffle`
+    // it failed with "expected [] to include 'meeting-round-trip-1'". It now
+    // creates the 18:00-18:30 meeting whose boundaries it is reasoning about.
+    const key = 'meeting-overlap-guard';
+    await harness.db.meetings.create({
+      organizationId: fixtures.organization.id,
+      contactId: fixtures.contact.id,
+      title: 'Overlap guard',
+      startUtc: '2026-03-11T18:00:00.000Z',
+      endUtc: '2026-03-11T18:30:00.000Z',
+      timezone: 'America/New_York',
+      idempotencyKey: key,
+      validationProvenanceJson: testProvenanceJson(),
+    });
+
     const overlapping = await harness.db.meetings.listOverlapping(
       fixtures.organization.id,
       '2026-03-11T18:15:00.000Z',
       '2026-03-11T19:00:00.000Z',
     );
-    expect(overlapping.map((meeting) => meeting.idempotencyKey)).toContain('meeting-round-trip-1');
+    expect(overlapping.map((meeting) => meeting.idempotencyKey)).toContain(key);
 
     const adjacent = await harness.db.meetings.listOverlapping(
       fixtures.organization.id,
@@ -434,7 +467,7 @@ describe('Meeting', () => {
     );
     // Half-open intervals: a meeting ending exactly when the window opens does
     // not overlap it.
-    expect(adjacent.map((meeting) => meeting.idempotencyKey)).not.toContain('meeting-round-trip-1');
+    expect(adjacent.map((meeting) => meeting.idempotencyKey)).not.toContain(key);
   });
 });
 
@@ -462,17 +495,35 @@ describe('FutureAction', () => {
   });
 
   it('enforces a unique idempotency key', async () => {
+    // SELF-SUFFICIENT ON PURPOSE - IT DID NOT USED TO BE.
+    //
+    // This test used to collide with `future-round-trip-1`, the key the PREVIOUS
+    // test's row happens to hold. That made it pass only when it ran second, and
+    // it is a real order dependence rather than a style point: run this file with
+    // `--sequence.shuffle` and either this test passes vacuously (its `create`
+    // succeeds because nothing had taken the key yet, so `rejects` fails) or the
+    // round-trip test above collides on a key it did not expect to exist. Both
+    // were observed; `docs/MISSION_2G_VERIFIER_ROUND.md` § 11 records the run.
+    //
+    // It now establishes its own precondition, which also makes it a STRONGER
+    // test: it proves the constraint directly, over two rows it created itself,
+    // instead of inferring it from a sibling test's leftover state.
+    const key = 'future-unique-key-guard';
+    const base = {
+      organizationId: fixtures.organization.id,
+      contactId: fixtures.contact.id,
+      scheduledForUtc: '2026-03-07T14:00:00.000Z',
+      timezone: 'America/New_York',
+      payloadJson: '{}',
+      idempotencyKey: key,
+      validationProvenanceJson: testProvenanceJson(),
+    } as const;
+
+    const first = await harness.db.futureActions.create({ ...base, type: 'CALL_CONTACT' });
+    expect(first.idempotencyKey).toBe(key);
+
     await expect(
-      harness.db.futureActions.create({
-        organizationId: fixtures.organization.id,
-        contactId: fixtures.contact.id,
-        type: 'SEND_FOLLOWUP_MESSAGE',
-        scheduledForUtc: '2026-03-07T14:00:00.000Z',
-        timezone: 'America/New_York',
-        payloadJson: '{}',
-        idempotencyKey: 'future-round-trip-1',
-        validationProvenanceJson: testProvenanceJson(),
-      }),
+      harness.db.futureActions.create({ ...base, type: 'SEND_FOLLOWUP_MESSAGE' }),
     ).rejects.toThrow(/unique constraint/i);
   });
 });

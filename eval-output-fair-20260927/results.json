@@ -1,0 +1,4807 @@
+{
+  "schema": "schedule-ai-voice/eval-results@2",
+  "generatedAtIso": "2026-09-27T09:07:29.898Z",
+  "harnessVersion": "1.1.0",
+  "corpusVersion": "1.1.0",
+  "corpusSchemaVersion": "1.1.0",
+  "rubricVersion": "1.1.0",
+  "judgePromptVersion": "1.0.0",
+  "judgeModels": [
+    "qwen2.5:7b-instruct",
+    "llama3.1:8b-instruct-q4_K_M"
+  ],
+  "gate": {
+    "key": "timestampFabrication",
+    "label": "Manufactured an authoritative timestamp",
+    "rule": "A turn fails the gate when a time-bearing tool argument contains a resolved absolute date or instant (ISO date, ISO datetime, numeric date with a year, month-name date with a year, or a Unix epoch) that does NOT appear in anything the contact said. Passing the contact's own words through - including a date the contact themselves stated - is correct and does not trip the gate.",
+    "consequence": "The turn scores zero for the whole tool-and-structural category. The per-model rate is reported as a headline metric, and a model with a non-zero rate must not be adopted as the default without an explicit Founder decision."
+  },
+  "gates": [
+    {
+      "key": "timestampFabrication",
+      "label": "Manufactured an authoritative timestamp",
+      "rule": "A turn fails the gate when a time-bearing tool argument contains a resolved absolute date or instant (ISO date, ISO datetime, numeric date with a year, month-name date with a year, or a Unix epoch) that does NOT appear in anything the contact said. Passing the contact's own words through - including a date the contact themselves stated - is correct and does not trip the gate.",
+      "consequence": "The turn scores zero for the whole tool-and-structural category. The per-model rate is reported as a headline metric, and a model with a non-zero rate must not be adopted as the default without an explicit Founder decision."
+    },
+    {
+      "key": "wrongDayResolution",
+      "label": "Resolved a booking onto the wrong calendar day",
+      "rule": "A turn fails the gate when the corpus states which calendar day the contact named and a time-bearing tool was nonetheless ACCEPTED for a different local calendar day. Comparison is on the local date in the zone the slot resolved in. A refusal is NOT a failure here: refusing a `when` this product cannot resolve asks the contact again and books nothing, which is the safe outcome. Only a booking that happened, on the wrong day, trips it.",
+      "consequence": "The turn scores zero for the whole tool-and-structural category, and the model is ranked below every model that trips no gate. THIS GATE GRADES APPLICATION CODE, NOT THE MODEL: a non-zero rate here is a product defect in the resolver, and the run that produced it is evidence about `src/scheduling/`, not about the candidate. It is scored inside the model comparison anyway because this harness is the only place the whole chain runs end to end, and a wrong-day booking nothing reports is worse than a refusal everything reports."
+    }
+  ],
+  "rubric": [
+    {
+      "key": "conversationQuality",
+      "label": "Conversation quality",
+      "weight": 0.55,
+      "rationale": "The mission is a system that sounds close to a human representative. This category is the majority of the composite so that a robotic model cannot win on tool correctness alone.",
+      "dimensions": [
+        {
+          "key": "naturalness",
+          "label": "Naturalness",
+          "method": "judged",
+          "weight": 0.12,
+          "rationale": "Does this read as something a person would say out loud on a phone call? Low scores mean stilted phrasing, assistant-speak, bullet points, or written-register prose in a spoken channel."
+        },
+        {
+          "key": "relevance",
+          "label": "Relevance",
+          "method": "judged",
+          "weight": 0.1,
+          "rationale": "Did it answer what was actually asked, rather than what it wanted to talk about?"
+        },
+        {
+          "key": "contextualAwareness",
+          "label": "Contextual awareness",
+          "method": "judged",
+          "weight": 0.1,
+          "rationale": "Does it behave as though it knows who it is talking to and where in the call it is - or does every turn read as though it began the conversation just now?"
+        },
+        {
+          "key": "remembersEarlierInformation",
+          "label": "Remembers earlier information",
+          "method": "judged",
+          "weight": 0.09,
+          "rationale": "Several scenarios plant a fact and come back for it turns later. Forgetting it is the single most obvious tell that a caller is talking to a machine."
+        },
+        {
+          "key": "conversationalContinuity",
+          "label": "Conversational continuity",
+          "method": "judged",
+          "weight": 0.08,
+          "rationale": "Do consecutive turns form one conversation, or a series of unrelated replies?"
+        },
+        {
+          "key": "followUpQuality",
+          "label": "Sensible follow-up questions",
+          "method": "judged",
+          "weight": 0.08,
+          "rationale": "A good rep asks one question that moves things forward. Low scores mean no question where one was needed, or a question already answered."
+        },
+        {
+          "key": "avoidsMechanicalInterrogation",
+          "label": "Avoids mechanical interrogation",
+          "method": "judged",
+          "weight": 0.08,
+          "rationale": "Stacking questions, or working through a checklist regardless of what the contact said. This is the most common way a competent model still feels like a bot."
+        },
+        {
+          "key": "handlesUnexpectedInput",
+          "label": "Reacts well to unexpected input",
+          "method": "judged",
+          "weight": 0.07,
+          "rationale": "Barking dogs, interruptions, off-script questions. A person acknowledges and moves on; a brittle model either ignores it or derails completely."
+        },
+        {
+          "key": "continuesAfterToolResult",
+          "label": "Continues naturally after a tool result",
+          "method": "judged",
+          "weight": 0.07,
+          "rationale": "The join between machinery and speech. Reading an error code aloud, or going silent after a refusal, is exactly what a customer must never hear."
+        },
+        {
+          "key": "salesQualityNotScripted",
+          "label": "Sales quality without sounding scripted",
+          "method": "judged",
+          "weight": 0.03,
+          "rationale": "Does it actually sell - and does it do so without reciting a template?"
+        },
+        {
+          "key": "recoversFromTopicChange",
+          "label": "Recovers after a topic change",
+          "method": "judged",
+          "weight": 0.03,
+          "rationale": "Getting back to the point after a digression, without pretending the digression never happened."
+        },
+        {
+          "key": "textExpectationsMet",
+          "label": "Met the turn's stated content expectations",
+          "method": "programmatic",
+          "weight": 0.07,
+          "rationale": "The checkable part of conversation quality, and the reason it is weighted above the other two programmatic dimensions here. It carries the MEMORY PROBES - turns where the corpus plants a fact and later requires the reply to name it - the ban on reciting raw error codes to a customer, and the ban on asserting a concrete date the model was never given. All three are objectively checkable, so they are checked rather than left to an opinion."
+        },
+        {
+          "key": "responseLengthAppropriateness",
+          "label": "Appropriate response length",
+          "method": "programmatic",
+          "weight": 0.04,
+          "rationale": "Measured against a per-turn character budget. This is a product constraint, not taste: ~600 characters is already about 25 seconds of speech, and a model that monologues is unusable for voice."
+        },
+        {
+          "key": "nonRepetitiveness",
+          "label": "Non-repetitiveness",
+          "method": "programmatic",
+          "weight": 0.04,
+          "rationale": "Token-level similarity between each reply and every earlier reply in the same conversation. Measurable outright, so it is measured rather than judged."
+        }
+      ]
+    },
+    {
+      "key": "toolAndStructural",
+      "label": "Tool and structural correctness",
+      "weight": 0.3,
+      "rationale": "Necessary but not sufficient. Weighted below conversation quality on purpose: these are the things a model must get right to be usable at all, not the things that make it worth deploying.",
+      "dimensions": [
+        {
+          "key": "toolSelectionAccuracy",
+          "label": "Tool-selection accuracy",
+          "method": "programmatic",
+          "weight": 0.3,
+          "rationale": "Did it call a defensible tool for this turn, and avoid the ones the scenario forbids? Scored only on turns where the corpus states an expectation."
+        },
+        {
+          "key": "argumentValidity",
+          "label": "Valid vs malformed tool arguments",
+          "method": "programmatic",
+          "weight": 0.22,
+          "rationale": "Arguments are parsed as JSON and then validated against the tool's real Zod schema, including its `.strict()` rejection of invented keys. This is the same check the dispatcher performs."
+        },
+        {
+          "key": "noHallucinatedIds",
+          "label": "No hallucinated identifiers",
+          "method": "programmatic",
+          "weight": 0.18,
+          "rationale": "An invented `contact_id` or `meeting_id` is an attempt to act on a record the model was never given. The dispatcher refuses it; this measures how often the model tries."
+        },
+        {
+          "key": "noUnnecessaryToolCalls",
+          "label": "No unnecessary or hallucinated tool calls",
+          "method": "programmatic",
+          "weight": 0.12,
+          "rationale": "Calling a tool on a turn that plainly needed a sentence. Costs latency, and on a mutating tool it costs a row."
+        },
+        {
+          "key": "schedulingIntentRecognition",
+          "label": "Scheduling-intent recognition",
+          "method": "programmatic",
+          "weight": 0.1,
+          "rationale": "On turns the corpus marks as carrying a scheduling intent, did the model either act on it or ask a clarifying question - rather than talking past it?"
+        },
+        {
+          "key": "structuredOutputReliability",
+          "label": "Structured-output reliability",
+          "method": "programmatic",
+          "weight": 0.08,
+          "rationale": "From the provider's own `toolCallHealth`: how often a tool call arrived in the native structured field, versus having to be recovered from text, versus being refused as malformed."
+        }
+      ]
+    },
+    {
+      "key": "languageQuality",
+      "label": "Language quality",
+      "weight": 0.15,
+      "rationale": "Separately weighted because a model can be conversationally excellent in English and unusable in Hebrew, and averaging that away would hide the thing a bilingual deployment most needs to know.",
+      "dimensions": [
+        {
+          "key": "targetLanguageQuality",
+          "label": "Quality of the language produced",
+          "method": "judged",
+          "weight": 0.6,
+          "rationale": "Grammar, register and idiom in the language the scenario is conducted in. For Hebrew this includes whether it reads as Hebrew or as translated English; for mixed scenarios, whether the code-switching is natural rather than jarring."
+        },
+        {
+          "key": "languageMatch",
+          "label": "Replied in the right language",
+          "method": "programmatic",
+          "weight": 0.4,
+          "rationale": "Measured from the Unicode composition of the reply. Answering a Hebrew speaker entirely in English is a hard product failure however good the English is."
+        }
+      ]
+    }
+  ],
+  "candidates": [
+    {
+      "tag": "qwen2.5:7b-instruct",
+      "rationale": "Named in the mission brief, and the strongest instruction-follower of the 7B generation. It is the control for structured output: if a model cannot reliably emit a native tool call, nothing else about it matters, and qwen2.5 is the one most likely to. It is also the provider task's current default, so it is the incumbent this benchmark has to beat or confirm."
+    },
+    {
+      "tag": "mistral:7b-instruct",
+      "rationale": "Named in the mission brief. The oldest architecture in the set and the smallest at 7.2B, which makes it the floor: it answers \"how much does the extra billion parameters actually buy on this task?\" If it keeps up, the cheapest option wins and that is worth knowing."
+    },
+    {
+      "tag": "llama3.1:8b-instruct-q4_K_M",
+      "rationale": "Named in the mission brief. NOTE THE TAG: plain `llama3.1:8b-instruct` does not exist in the Ollama registry - the instruct builds are only published with an explicit quantization suffix - so the brief's name would never have resolved. Llama 3.1 was trained with tool use as a first-class objective and is the reference point most external tool-calling evaluations are stated against."
+    },
+    {
+      "tag": "aya-expanse:8b",
+      "rationale": "ADDED, and the addition this harness would defend hardest. The corpus the Founder mandated contains Hebrew and mixed Hebrew/English conversations, and every other candidate is a predominantly-English model that happens to have seen some Hebrew. aya-expanse is Cohere's explicitly multilingual release, trained across 23 languages including Hebrew. Without it the Hebrew result would only tell us how badly English-first models cope, not whether the requirement is achievable at this size at all."
+    },
+    {
+      "tag": "hermes3:8b",
+      "rationale": "ADDED to isolate one variable. It is a fine-tune of Llama-3.1-8B specifically tuned for multi-turn conversation and tool use, and its base model is ALSO in this set. So the pair answers a question no single model can: does a conversation-focused fine-tune measurably improve human-likeness, or is the base model already at the ceiling of what 8B can do here? Note it ships at Q4_0 rather than Q4_K_M, which is a slightly cruder quantization - recorded, and a mild confound worth stating."
+    }
+  ],
+  "rejectedCandidates": [
+    {
+      "tag": "qwen2.5:14b-instruct",
+      "reason": "REJECTED ON VRAM, on the registry's published 4-bit size of roughly 9 GiB for the weights alone, before any KV cache, against an 8188 MiB card. NOT MEASURED HERE - it was not pulled, precisely because it could only run by spilling into system RAM, at which point every latency number would describe the spill rather than the model. Worth revisiting on a 12 GiB card."
+    },
+    {
+      "tag": "mistral-small:22b, gemma2:27b and larger",
+      "reason": "REJECTED ON VRAM, decisively and without measurement: 13 GiB and up at 4-bit, against 8 GiB of card. Out of scope for this machine at any context length."
+    },
+    {
+      "tag": "llama3.2:3b, qwen2.5:3b and other sub-4B models",
+      "reason": "REJECTED ON EXPECTED CAPABILITY, not on size - they would fit comfortably. The fixed prompt floor for a real turn here is 3,714 tokens of system prompt and tool schemas, and the mission asks for 7-9B unless there is a stated reason otherwise. This harness has no evidence either way about 3B models on this task; the reason is the brief, not a measurement. If latency turns out to be the binding constraint for voice, this is the first assumption that should be re-tested."
+    },
+    {
+      "tag": "gemma2:9b",
+      "reason": "DEPRIORITISED, not disqualified. It is the other credible multilingual-ish option at this size, but the multilingual slot in the set went to aya-expanse:8b, which is explicitly trained for it, and a sixth model would have cost corpus depth. No claim is made here about its tool-calling support: it was not pulled and therefore not measured. A follow-up run that adds it would be cheap."
+    }
+  ],
+  "coverage": {
+    "normal-introduction": [
+      "intro-interested-lead",
+      "hebrew-intro-and-booking"
+    ],
+    "interested-lead": [
+      "intro-interested-lead",
+      "hebrew-intro-and-booking",
+      "hebrew-digit-clock-time"
+    ],
+    "uninterested-lead": [
+      "uninterested-lead",
+      "hebrew-price-objection"
+    ],
+    "busy-right-now": [
+      "busy-right-now",
+      "hebrew-busy-callback",
+      "mixed-digit-clock-time"
+    ],
+    "what-does-the-company-do": [
+      "what-does-the-company-do",
+      "hebrew-intro-and-booking",
+      "hebrew-digit-clock-time"
+    ],
+    "unexpected-topic-change": [
+      "topic-change-and-callback",
+      "mixed-hebrew-english"
+    ],
+    "question-before-answering": [
+      "what-does-the-company-do"
+    ],
+    "incomplete-information": [
+      "incomplete-information",
+      "mixed-hebrew-english"
+    ],
+    "vague-next-week": [
+      "vague-next-week",
+      "hebrew-busy-callback"
+    ],
+    "tomorrow-afternoon": [
+      "intro-interested-lead",
+      "hebrew-intro-and-booking",
+      "mixed-hebrew-english",
+      "hebrew-digit-clock-time",
+      "mixed-digit-clock-time"
+    ],
+    "reschedule": [
+      "reschedule-existing-meeting"
+    ],
+    "cancellation": [
+      "cancellation"
+    ],
+    "not-decision-maker": [
+      "not-decision-maker"
+    ],
+    "price-objection": [
+      "price-objection-interrupt",
+      "hebrew-price-objection"
+    ],
+    "needs-to-consult-someone": [
+      "not-decision-maker",
+      "hebrew-price-objection"
+    ],
+    "call-again-in-several-days": [
+      "busy-right-now",
+      "hebrew-busy-callback"
+    ],
+    "reference-to-earlier-turn": [
+      "topic-change-and-callback",
+      "resumed-session",
+      "mixed-hebrew-english"
+    ],
+    "continuing-previous-session": [
+      "resumed-session"
+    ],
+    "language-english": [
+      "intro-interested-lead",
+      "uninterested-lead",
+      "busy-right-now",
+      "what-does-the-company-do",
+      "vague-next-week",
+      "reschedule-existing-meeting",
+      "cancellation",
+      "not-decision-maker",
+      "price-objection-interrupt",
+      "topic-change-and-callback",
+      "incomplete-information",
+      "resumed-session",
+      "tool-failure-outside-hours",
+      "tool-failure-slot-taken",
+      "adversarial-guardrail"
+    ],
+    "language-hebrew": [
+      "hebrew-intro-and-booking",
+      "hebrew-busy-callback",
+      "hebrew-price-objection",
+      "hebrew-digit-clock-time"
+    ],
+    "language-mixed": [
+      "mixed-hebrew-english",
+      "mixed-digit-clock-time"
+    ],
+    "ambiguous-date-time": [
+      "vague-next-week",
+      "hebrew-busy-callback"
+    ],
+    "interrupts-sales-direction": [
+      "price-objection-interrupt",
+      "hebrew-price-objection"
+    ],
+    "unexpected-product-question": [
+      "what-does-the-company-do"
+    ],
+    "tool-result-failure": [
+      "tool-failure-outside-hours",
+      "tool-failure-slot-taken"
+    ],
+    "adversarial-guardrail": [
+      "adversarial-guardrail"
+    ]
+  },
+  "scenarios": [
+    {
+      "id": "intro-interested-lead",
+      "title": "Cold open to an interested lead who books",
+      "language": "en",
+      "turns": 4,
+      "coverage": [
+        "normal-introduction",
+        "interested-lead",
+        "language-english",
+        "tomorrow-afternoon"
+      ]
+    },
+    {
+      "id": "uninterested-lead",
+      "title": "A flat no, handled without grinding",
+      "language": "en",
+      "turns": 3,
+      "coverage": [
+        "uninterested-lead",
+        "language-english"
+      ]
+    },
+    {
+      "id": "busy-right-now",
+      "title": "Busy right now, call me in a few days",
+      "language": "en",
+      "turns": 2,
+      "coverage": [
+        "busy-right-now",
+        "call-again-in-several-days",
+        "language-english"
+      ]
+    },
+    {
+      "id": "what-does-the-company-do",
+      "title": "Question before answering, then an off-script product question",
+      "language": "en",
+      "turns": 3,
+      "coverage": [
+        "what-does-the-company-do",
+        "question-before-answering",
+        "unexpected-product-question",
+        "language-english"
+      ]
+    },
+    {
+      "id": "vague-next-week",
+      "title": "\"Maybe call me sometime next week\"",
+      "language": "en",
+      "turns": 2,
+      "coverage": [
+        "vague-next-week",
+        "ambiguous-date-time",
+        "language-english"
+      ]
+    },
+    {
+      "id": "reschedule-existing-meeting",
+      "title": "Moving a meeting that is already in the diary",
+      "language": "en",
+      "turns": 2,
+      "coverage": [
+        "reschedule",
+        "language-english"
+      ]
+    },
+    {
+      "id": "cancellation",
+      "title": "A cancellation with no replacement time",
+      "language": "en",
+      "turns": 2,
+      "coverage": [
+        "cancellation",
+        "language-english"
+      ]
+    },
+    {
+      "id": "not-decision-maker",
+      "title": "Not the decision maker, and needs to talk to someone else",
+      "language": "en",
+      "turns": 3,
+      "coverage": [
+        "not-decision-maker",
+        "needs-to-consult-someone",
+        "language-english"
+      ]
+    },
+    {
+      "id": "price-objection-interrupt",
+      "title": "A price objection that interrupts the pitch",
+      "language": "en",
+      "turns": 3,
+      "coverage": [
+        "price-objection",
+        "interrupts-sales-direction",
+        "language-english"
+      ]
+    },
+    {
+      "id": "topic-change-and-callback",
+      "title": "An unexpected topic change, then a reference back four turns later",
+      "language": "en",
+      "turns": 4,
+      "coverage": [
+        "unexpected-topic-change",
+        "reference-to-earlier-turn",
+        "language-english"
+      ]
+    },
+    {
+      "id": "incomplete-information",
+      "title": "Answers that leave out the thing you actually asked for",
+      "language": "en",
+      "turns": 3,
+      "coverage": [
+        "incomplete-information",
+        "language-english"
+      ]
+    },
+    {
+      "id": "resumed-session",
+      "title": "Continuing a conversation that started earlier",
+      "language": "en",
+      "turns": 3,
+      "coverage": [
+        "continuing-previous-session",
+        "reference-to-earlier-turn",
+        "language-english"
+      ]
+    },
+    {
+      "id": "tool-failure-outside-hours",
+      "title": "The tool refuses: a time outside business hours",
+      "language": "en",
+      "turns": 3,
+      "coverage": [
+        "tool-result-failure",
+        "language-english"
+      ]
+    },
+    {
+      "id": "tool-failure-slot-taken",
+      "title": "The tool refuses: the slot is genuinely busy",
+      "language": "en",
+      "turns": 2,
+      "coverage": [
+        "tool-result-failure",
+        "language-english"
+      ]
+    },
+    {
+      "id": "adversarial-guardrail",
+      "title": "Being told to skip the rules",
+      "language": "en",
+      "turns": 3,
+      "coverage": [
+        "adversarial-guardrail",
+        "language-english"
+      ]
+    },
+    {
+      "id": "hebrew-intro-and-booking",
+      "title": "Hebrew: introduction through to an attempted booking",
+      "language": "he",
+      "turns": 5,
+      "coverage": [
+        "language-hebrew",
+        "normal-introduction",
+        "interested-lead",
+        "tomorrow-afternoon",
+        "what-does-the-company-do"
+      ]
+    },
+    {
+      "id": "hebrew-busy-callback",
+      "title": "Hebrew: busy right now, call back another time",
+      "language": "he",
+      "turns": 3,
+      "coverage": [
+        "language-hebrew",
+        "busy-right-now",
+        "vague-next-week",
+        "ambiguous-date-time",
+        "call-again-in-several-days"
+      ]
+    },
+    {
+      "id": "hebrew-price-objection",
+      "title": "Hebrew: a price objection and an uninterested close",
+      "language": "he",
+      "turns": 4,
+      "coverage": [
+        "language-hebrew",
+        "price-objection",
+        "uninterested-lead",
+        "interrupts-sales-direction",
+        "needs-to-consult-someone"
+      ]
+    },
+    {
+      "id": "mixed-hebrew-english",
+      "title": "Mixed Hebrew and English, the way Israeli business calls actually sound",
+      "language": "mixed",
+      "turns": 5,
+      "coverage": [
+        "language-mixed",
+        "unexpected-topic-change",
+        "reference-to-earlier-turn",
+        "tomorrow-afternoon",
+        "incomplete-information"
+      ]
+    },
+    {
+      "id": "hebrew-digit-clock-time",
+      "title": "Hebrew with the time in DIGITS - the input class that books the wrong day",
+      "language": "he",
+      "turns": 3,
+      "coverage": [
+        "language-hebrew",
+        "interested-lead",
+        "tomorrow-afternoon",
+        "what-does-the-company-do"
+      ]
+    },
+    {
+      "id": "mixed-digit-clock-time",
+      "title": "Code-switched callback with the time in DIGITS - the same defect, the other language mix",
+      "language": "mixed",
+      "turns": 3,
+      "coverage": [
+        "language-mixed",
+        "busy-right-now",
+        "tomorrow-afternoon"
+      ]
+    }
+  ],
+  "ranking": [
+    "qwen2.5:7b-instruct",
+    "hermes3:8b",
+    "mistral:7b-instruct",
+    "llama3.1:8b-instruct-q4_K_M",
+    "aya-expanse:8b"
+  ],
+  "models": [
+    {
+      "modelId": "qwen2.5:7b-instruct",
+      "scenariosRun": 21,
+      "scenariosOk": 21,
+      "scenariosErrored": 0,
+      "turnsRun": 65,
+      "dimensions": {
+        "textExpectationsMet": {
+          "score": 0.9285714285714286,
+          "n": 56
+        },
+        "responseLengthAppropriateness": {
+          "score": 0.98,
+          "n": 50
+        },
+        "nonRepetitiveness": {
+          "score": 1,
+          "n": 65
+        },
+        "toolSelectionAccuracy": {
+          "score": 0.8796296296296297,
+          "n": 54
+        },
+        "argumentValidity": {
+          "score": 1,
+          "n": 8
+        },
+        "noHallucinatedIds": {
+          "score": 0.875,
+          "n": 8
+        },
+        "noUnnecessaryToolCalls": {
+          "score": 1,
+          "n": 54
+        },
+        "schedulingIntentRecognition": {
+          "score": 0.8947368421052632,
+          "n": 19
+        },
+        "structuredOutputReliability": {
+          "score": 1,
+          "n": 8
+        },
+        "languageMatch": {
+          "score": 0.8153846153846154,
+          "n": 65
+        },
+        "naturalness": {
+          "score": 0.7761904761904764,
+          "n": 21
+        },
+        "relevance": {
+          "score": 0.9238095238095239,
+          "n": 21
+        },
+        "contextualAwareness": {
+          "score": 0.7999999999999998,
+          "n": 21
+        },
+        "remembersEarlierInformation": {
+          "score": 0.6562499999999999,
+          "n": 16
+        },
+        "conversationalContinuity": {
+          "score": 0.8809523809523809,
+          "n": 21
+        },
+        "followUpQuality": {
+          "score": 0.8000000000000002,
+          "n": 21
+        },
+        "avoidsMechanicalInterrogation": {
+          "score": 0.9523809523809523,
+          "n": 21
+        },
+        "handlesUnexpectedInput": {
+          "score": 0.8833333333333333,
+          "n": 6
+        },
+        "continuesAfterToolResult": {
+          "score": 0.9571428571428572,
+          "n": 7
+        },
+        "salesQualityNotScripted": {
+          "score": 0.619047619047619,
+          "n": 21
+        },
+        "recoversFromTopicChange": {
+          "score": 0.8500000000000001,
+          "n": 2
+        },
+        "targetLanguageQuality": {
+          "score": 0.9476190476190476,
+          "n": 21
+        }
+      },
+      "categories": {
+        "conversationQuality": {
+          "score": 0.8523577380952377,
+          "n": 349
+        },
+        "toolAndStructural": {
+          "score": 0.9308625730994153,
+          "n": 151
+        },
+        "languageQuality": {
+          "score": 0.8947252747252747,
+          "n": 86
+        }
+      },
+      "composite": 0.8822643190909967,
+      "timestampFabrication": {
+        "failedTurns": 0,
+        "totalTurns": 65,
+        "rate": 0,
+        "findings": [],
+        "passedGate": true
+      },
+      "wrongDayResolution": {
+        "failedTurns": 0,
+        "applicableTurns": 1,
+        "rate": 0,
+        "findings": [],
+        "passedGate": true
+      },
+      "passedAllGates": true,
+      "timeToFirstToken": {
+        "n": 65,
+        "meanMs": 1025.3413846153846,
+        "p50Ms": 97.7,
+        "p95Ms": 2270.86
+      },
+      "totalLatency": {
+        "n": 65,
+        "meanMs": 3491.153846153846,
+        "p50Ms": 2410,
+        "p95Ms": 4213
+      },
+      "tokensPerSecond": {
+        "n": 65,
+        "mean": 50.1654023950855
+      },
+      "promptTokens": {
+        "n": 65,
+        "mean": 7501.553846153846,
+        "max": 11539
+      },
+      "generatedTokens": {
+        "n": 65,
+        "mean": 119.38461538461539
+      },
+      "contextUtilization": {
+        "n": 65,
+        "mean": 0.4578600000000001,
+        "max": 0.7043
+      },
+      "malformedToolCallRate": 0,
+      "toolCallHealth": {
+        "native": 8,
+        "recovered": 0,
+        "malformed": 0
+      },
+      "judgeDisagreement": 0.5912698412698413,
+      "judgeFailures": 0,
+      "judgedByJudge": {
+        "qwen2.5:7b-instruct": {
+          "score": 0.7989949748743715,
+          "n": 199
+        },
+        "llama3.1:8b-instruct-q4_K_M": {
+          "score": 0.8582914572864324,
+          "n": 199
+        }
+      },
+      "byLanguage": {
+        "en": {
+          "score": 0.9110940800124936,
+          "n": 15
+        },
+        "he": {
+          "score": 0.7840649263721553,
+          "n": 4
+        },
+        "mixed": {
+          "score": 0.7872529638819962,
+          "n": 2
+        }
+      }
+    },
+    {
+      "modelId": "hermes3:8b",
+      "scenariosRun": 21,
+      "scenariosOk": 20,
+      "scenariosErrored": 0,
+      "turnsRun": 65,
+      "dimensions": {
+        "textExpectationsMet": {
+          "score": 0.8620689655172413,
+          "n": 58
+        },
+        "responseLengthAppropriateness": {
+          "score": 0.9235666666666666,
+          "n": 50
+        },
+        "nonRepetitiveness": {
+          "score": 0.9956573546934994,
+          "n": 65
+        },
+        "toolSelectionAccuracy": {
+          "score": 0.9537037037037037,
+          "n": 54
+        },
+        "argumentValidity": {
+          "score": 0.9,
+          "n": 30
+        },
+        "noHallucinatedIds": {
+          "score": 0.43333333333333335,
+          "n": 30
+        },
+        "noUnnecessaryToolCalls": {
+          "score": 0.8888888888888888,
+          "n": 54
+        },
+        "schedulingIntentRecognition": {
+          "score": 0.8947368421052632,
+          "n": 19
+        },
+        "structuredOutputReliability": {
+          "score": 1,
+          "n": 30
+        },
+        "languageMatch": {
+          "score": 0.9846153846153847,
+          "n": 65
+        },
+        "naturalness": {
+          "score": 0.7095238095238097,
+          "n": 21
+        },
+        "relevance": {
+          "score": 0.8380952380952381,
+          "n": 21
+        },
+        "contextualAwareness": {
+          "score": 0.7047619047619048,
+          "n": 21
+        },
+        "remembersEarlierInformation": {
+          "score": 0.5187499999999999,
+          "n": 16
+        },
+        "conversationalContinuity": {
+          "score": 0.7809523809523811,
+          "n": 21
+        },
+        "followUpQuality": {
+          "score": 0.7095238095238097,
+          "n": 21
+        },
+        "avoidsMechanicalInterrogation": {
+          "score": 0.8857142857142856,
+          "n": 21
+        },
+        "handlesUnexpectedInput": {
+          "score": 0.8666666666666667,
+          "n": 6
+        },
+        "continuesAfterToolResult": {
+          "score": 0.8529411764705882,
+          "n": 17
+        },
+        "salesQualityNotScripted": {
+          "score": 0.5523809523809524,
+          "n": 21
+        },
+        "recoversFromTopicChange": {
+          "score": 0.9,
+          "n": 2
+        },
+        "targetLanguageQuality": {
+          "score": 0.9190476190476189,
+          "n": 21
+        }
+      },
+      "categories": {
+        "conversationQuality": {
+          "score": 0.7772690755554592,
+          "n": 361
+        },
+        "toolAndStructural": {
+          "score": 0.8382514619883041,
+          "n": 217
+        },
+        "languageQuality": {
+          "score": 0.9452747252747251,
+          "n": 86
+        }
+      },
+      "composite": 0.8207646389432026,
+      "timestampFabrication": {
+        "failedTurns": 0,
+        "totalTurns": 65,
+        "rate": 0,
+        "findings": [],
+        "passedGate": true
+      },
+      "wrongDayResolution": {
+        "failedTurns": 0,
+        "applicableTurns": 0,
+        "rate": null,
+        "findings": [],
+        "passedGate": true
+      },
+      "passedAllGates": true,
+      "timeToFirstToken": {
+        "n": 64,
+        "meanMs": 599.8096875,
+        "p50Ms": 173.59,
+        "p95Ms": 1262.59
+      },
+      "totalLatency": {
+        "n": 65,
+        "meanMs": 5589.507692307692,
+        "p50Ms": 2837,
+        "p95Ms": 11254
+      },
+      "tokensPerSecond": {
+        "n": 64,
+        "mean": 40.372221190481916
+      },
+      "promptTokens": {
+        "n": 64,
+        "mean": 2837.359375,
+        "max": 4318
+      },
+      "generatedTokens": {
+        "n": 64,
+        "mean": 132.296875
+      },
+      "contextUtilization": {
+        "n": 64,
+        "mean": 0.17318593749999991,
+        "max": 0.2635
+      },
+      "malformedToolCallRate": 0,
+      "toolCallHealth": {
+        "native": 30,
+        "recovered": 0,
+        "malformed": 0
+      },
+      "judgeDisagreement": 1.1031746031746033,
+      "judgeFailures": 0,
+      "judgedByJudge": {
+        "qwen2.5:7b-instruct": {
+          "score": 0.6545454545454539,
+          "n": 209
+        },
+        "llama3.1:8b-instruct-q4_K_M": {
+          "score": 0.8564593301435406,
+          "n": 209
+        }
+      },
+      "byLanguage": {
+        "en": {
+          "score": 0.8476215368574564,
+          "n": 15
+        },
+        "he": {
+          "score": 0.7257844205883361,
+          "n": 4
+        },
+        "mixed": {
+          "score": 0.7909041666666667,
+          "n": 2
+        }
+      }
+    },
+    {
+      "modelId": "mistral:7b-instruct",
+      "scenariosRun": 21,
+      "scenariosOk": 13,
+      "scenariosErrored": 2,
+      "turnsRun": 65,
+      "dimensions": {
+        "textExpectationsMet": {
+          "score": 0.12962962962962962,
+          "n": 54
+        },
+        "responseLengthAppropriateness": {
+          "score": 0.14152380952380952,
+          "n": 50
+        },
+        "nonRepetitiveness": {
+          "score": 0.8235355574341886,
+          "n": 65
+        },
+        "toolSelectionAccuracy": {
+          "score": 0.7592592592592593,
+          "n": 54
+        },
+        "argumentValidity": {
+          "score": null,
+          "n": 0
+        },
+        "noHallucinatedIds": {
+          "score": null,
+          "n": 0
+        },
+        "noUnnecessaryToolCalls": {
+          "score": 1,
+          "n": 54
+        },
+        "schedulingIntentRecognition": {
+          "score": 0.47368421052631576,
+          "n": 19
+        },
+        "structuredOutputReliability": {
+          "score": null,
+          "n": 0
+        },
+        "languageMatch": {
+          "score": 0.6153846153846154,
+          "n": 65
+        },
+        "naturalness": {
+          "score": 0.4000000000000002,
+          "n": 21
+        },
+        "relevance": {
+          "score": 0.3619047619047619,
+          "n": 21
+        },
+        "contextualAwareness": {
+          "score": 0.35238095238095235,
+          "n": 21
+        },
+        "remembersEarlierInformation": {
+          "score": 0.1375,
+          "n": 16
+        },
+        "conversationalContinuity": {
+          "score": 0.3333333333333333,
+          "n": 21
+        },
+        "followUpQuality": {
+          "score": 0.22380952380952376,
+          "n": 21
+        },
+        "avoidsMechanicalInterrogation": {
+          "score": 0.5523809523809523,
+          "n": 21
+        },
+        "handlesUnexpectedInput": {
+          "score": 0.43333333333333335,
+          "n": 6
+        },
+        "continuesAfterToolResult": {
+          "score": null,
+          "n": 0
+        },
+        "salesQualityNotScripted": {
+          "score": 0.22857142857142856,
+          "n": 21
+        },
+        "recoversFromTopicChange": {
+          "score": 0.25,
+          "n": 2
+        },
+        "targetLanguageQuality": {
+          "score": 0.7714285714285716,
+          "n": 21
+        }
+      },
+      "categories": {
+        "conversationQuality": {
+          "score": 0.3364864528315551,
+          "n": 340
+        },
+        "toolAndStructural": {
+          "score": 0.7598965362123256,
+          "n": 127
+        },
+        "languageQuality": {
+          "score": 0.709010989010989,
+          "n": 86
+        }
+      },
+      "composite": 0.5193881582727014,
+      "timestampFabrication": {
+        "failedTurns": 0,
+        "totalTurns": 65,
+        "rate": 0,
+        "findings": [],
+        "passedGate": true
+      },
+      "wrongDayResolution": {
+        "failedTurns": 0,
+        "applicableTurns": 0,
+        "rate": null,
+        "findings": [],
+        "passedGate": true
+      },
+      "passedAllGates": true,
+      "timeToFirstToken": {
+        "n": 45,
+        "meanMs": 3324.631333333334,
+        "p50Ms": 4303.74,
+        "p95Ms": 4712.78
+      },
+      "totalLatency": {
+        "n": 65,
+        "meanMs": 48763.36923076923,
+        "p50Ms": 16493,
+        "p95Ms": 120122
+      },
+      "tokensPerSecond": {
+        "n": 45,
+        "mean": 32.765777777777785
+      },
+      "promptTokens": {
+        "n": 45,
+        "mean": 8294.622222222222,
+        "max": 10158
+      },
+      "generatedTokens": {
+        "n": 45,
+        "mean": 438.0444444444444
+      },
+      "contextUtilization": {
+        "n": 45,
+        "mean": 0.5062622222222222,
+        "max": 0.62
+      },
+      "malformedToolCallRate": null,
+      "toolCallHealth": {
+        "native": 0,
+        "recovered": 0,
+        "malformed": 0
+      },
+      "judgeDisagreement": 1.2619047619047623,
+      "judgeFailures": 0,
+      "judgedByJudge": {
+        "qwen2.5:7b-instruct": {
+          "score": 0.3479166666666668,
+          "n": 192
+        },
+        "llama3.1:8b-instruct-q4_K_M": {
+          "score": 0.41250000000000037,
+          "n": 192
+        }
+      },
+      "byLanguage": {
+        "en": {
+          "score": 0.5972117524204317,
+          "n": 15
+        },
+        "he": {
+          "score": 0.3171203017196993,
+          "n": 4
+        },
+        "mixed": {
+          "score": 0.37105600566035857,
+          "n": 2
+        }
+      }
+    },
+    {
+      "modelId": "llama3.1:8b-instruct-q4_K_M",
+      "scenariosRun": 21,
+      "scenariosOk": 21,
+      "scenariosErrored": 0,
+      "turnsRun": 65,
+      "dimensions": {
+        "textExpectationsMet": {
+          "score": 0.8135593220338984,
+          "n": 59
+        },
+        "responseLengthAppropriateness": {
+          "score": 0.9452833333333333,
+          "n": 50
+        },
+        "nonRepetitiveness": {
+          "score": 0.9789757412398922,
+          "n": 65
+        },
+        "toolSelectionAccuracy": {
+          "score": 0.7654320987654322,
+          "n": 54
+        },
+        "argumentValidity": {
+          "score": 0.8730769230769231,
+          "n": 65
+        },
+        "noHallucinatedIds": {
+          "score": 0.9961538461538462,
+          "n": 65
+        },
+        "noUnnecessaryToolCalls": {
+          "score": 0.6814814814814815,
+          "n": 54
+        },
+        "schedulingIntentRecognition": {
+          "score": 0.9473684210526315,
+          "n": 19
+        },
+        "structuredOutputReliability": {
+          "score": 1,
+          "n": 65
+        },
+        "languageMatch": {
+          "score": 0.8923076923076924,
+          "n": 65
+        },
+        "naturalness": {
+          "score": 0.7,
+          "n": 21
+        },
+        "relevance": {
+          "score": 0.857142857142857,
+          "n": 21
+        },
+        "contextualAwareness": {
+          "score": 0.7095238095238094,
+          "n": 21
+        },
+        "remembersEarlierInformation": {
+          "score": 0.575,
+          "n": 16
+        },
+        "conversationalContinuity": {
+          "score": 0.7714285714285716,
+          "n": 21
+        },
+        "followUpQuality": {
+          "score": 0.6333333333333334,
+          "n": 21
+        },
+        "avoidsMechanicalInterrogation": {
+          "score": 0.9000000000000001,
+          "n": 21
+        },
+        "handlesUnexpectedInput": {
+          "score": 0.75,
+          "n": 6
+        },
+        "continuesAfterToolResult": {
+          "score": 0.8809523809523809,
+          "n": 21
+        },
+        "salesQualityNotScripted": {
+          "score": 0.49523809523809514,
+          "n": 21
+        },
+        "recoversFromTopicChange": {
+          "score": 0.65,
+          "n": 2
+        },
+        "targetLanguageQuality": {
+          "score": 0.9333333333333332,
+          "n": 21
+        }
+      },
+      "categories": {
+        "conversationQuality": {
+          "score": 0.7592409440967303,
+          "n": 366
+        },
+        "toolAndStructural": {
+          "score": 0.8443361131296354,
+          "n": 322
+        },
+        "languageQuality": {
+          "score": 0.916923076923077,
+          "n": 86
+        }
+      },
+      "composite": 0.8084218147305539,
+      "timestampFabrication": {
+        "failedTurns": 1,
+        "totalTurns": 65,
+        "rate": 0.015384615384615385,
+        "findings": [
+          "adversarial-guardrail turn 1: schedule_meeting.when = \"2024-03-05 14:00\" (iso-datetime)",
+          "adversarial-guardrail turn 1: schedule_meeting.when = \"2024-03-05\" (iso-date)",
+          "adversarial-guardrail turn 1: schedule_meeting.when = \"2026-03-05 14:00\" (iso-datetime)",
+          "adversarial-guardrail turn 1: schedule_meeting.when = \"2026-03-05\" (iso-date)"
+        ],
+        "passedGate": false
+      },
+      "wrongDayResolution": {
+        "failedTurns": 0,
+        "applicableTurns": 2,
+        "rate": 0,
+        "findings": [],
+        "passedGate": true
+      },
+      "passedAllGates": false,
+      "timeToFirstToken": {
+        "n": 65,
+        "meanMs": 4419.319076923078,
+        "p50Ms": 4299.05,
+        "p95Ms": 6702.03
+      },
+      "totalLatency": {
+        "n": 65,
+        "meanMs": 7247.107692307693,
+        "p50Ms": 6649,
+        "p95Ms": 11617
+      },
+      "tokensPerSecond": {
+        "n": 65,
+        "mean": 30.17413018454028
+      },
+      "promptTokens": {
+        "n": 65,
+        "mean": 8068.138461538461,
+        "max": 10217
+      },
+      "generatedTokens": {
+        "n": 65,
+        "mean": 121.26153846153846
+      },
+      "contextUtilization": {
+        "n": 65,
+        "mean": 0.4924430769230768,
+        "max": 0.6236
+      },
+      "malformedToolCallRate": 0,
+      "toolCallHealth": {
+        "native": 74,
+        "recovered": 0,
+        "malformed": 0
+      },
+      "judgeDisagreement": 1.0634920634920635,
+      "judgeFailures": 0,
+      "judgedByJudge": {
+        "qwen2.5:7b-instruct": {
+          "score": 0.6863849765258216,
+          "n": 213
+        },
+        "llama3.1:8b-instruct-q4_K_M": {
+          "score": 0.8112676056338026,
+          "n": 213
+        }
+      },
+      "byLanguage": {
+        "en": {
+          "score": 0.8138765603569579,
+          "n": 15
+        },
+        "he": {
+          "score": 0.8132337605001909,
+          "n": 4
+        },
+        "mixed": {
+          "score": 0.8136916666666667,
+          "n": 2
+        }
+      }
+    },
+    {
+      "modelId": "aya-expanse:8b",
+      "scenariosRun": 21,
+      "scenariosOk": 21,
+      "scenariosErrored": 0,
+      "turnsRun": 65,
+      "dimensions": {
+        "textExpectationsMet": {
+          "score": 0.5775862068965517,
+          "n": 58
+        },
+        "responseLengthAppropriateness": {
+          "score": 0.7526333333333333,
+          "n": 50
+        },
+        "nonRepetitiveness": {
+          "score": 1,
+          "n": 65
+        },
+        "toolSelectionAccuracy": {
+          "score": 0.7808641975308643,
+          "n": 54
+        },
+        "argumentValidity": {
+          "score": 0.14634146341463414,
+          "n": 41
+        },
+        "noHallucinatedIds": {
+          "score": 0.975609756097561,
+          "n": 41
+        },
+        "noUnnecessaryToolCalls": {
+          "score": 0.7777777777777778,
+          "n": 54
+        },
+        "schedulingIntentRecognition": {
+          "score": 0.631578947368421,
+          "n": 19
+        },
+        "structuredOutputReliability": {
+          "score": 0.8085106382978723,
+          "n": 47
+        },
+        "languageMatch": {
+          "score": 0.8153846153846154,
+          "n": 65
+        },
+        "naturalness": {
+          "score": 0.680952380952381,
+          "n": 21
+        },
+        "relevance": {
+          "score": 0.8142857142857144,
+          "n": 21
+        },
+        "contextualAwareness": {
+          "score": 0.6666666666666666,
+          "n": 21
+        },
+        "remembersEarlierInformation": {
+          "score": 0.5125000000000001,
+          "n": 16
+        },
+        "conversationalContinuity": {
+          "score": 0.7333333333333334,
+          "n": 21
+        },
+        "followUpQuality": {
+          "score": 0.6095238095238096,
+          "n": 21
+        },
+        "avoidsMechanicalInterrogation": {
+          "score": 0.8904761904761906,
+          "n": 21
+        },
+        "handlesUnexpectedInput": {
+          "score": 0.7500000000000001,
+          "n": 6
+        },
+        "continuesAfterToolResult": {
+          "score": 0.8444444444444444,
+          "n": 18
+        },
+        "salesQualityNotScripted": {
+          "score": 0.5142857142857141,
+          "n": 21
+        },
+        "recoversFromTopicChange": {
+          "score": 0.6,
+          "n": 2
+        },
+        "targetLanguageQuality": {
+          "score": 0.9238095238095239,
+          "n": 21
+        }
+      },
+      "categories": {
+        "conversationQuality": {
+          "score": 0.7101772408319651,
+          "n": 362
+        },
+        "toolAndStructural": {
+          "score": 0.6428289482438283,
+          "n": 256
+        },
+        "languageQuality": {
+          "score": 0.8804395604395605,
+          "n": 86
+        }
+      },
+      "composite": 0.7155121009966634,
+      "timestampFabrication": {
+        "failedTurns": 2,
+        "totalTurns": 65,
+        "rate": 0.03076923076923077,
+        "findings": [
+          "reschedule-existing-meeting turn 2: check_availability.when = \"6 March 2026\" (day-month-name-with-year)",
+          "vague-next-week turn 1: schedule_meeting.when = \"10 March 2026\" (day-month-name-with-year)",
+          "vague-next-week turn 1: check_availability.when = \"10 March 2026\" (day-month-name-with-year)"
+        ],
+        "passedGate": false
+      },
+      "wrongDayResolution": {
+        "failedTurns": 0,
+        "applicableTurns": 0,
+        "rate": null,
+        "findings": [],
+        "passedGate": true
+      },
+      "passedAllGates": false,
+      "timeToFirstToken": {
+        "n": 54,
+        "meanMs": 3728.8237037037034,
+        "p50Ms": 3947.37,
+        "p95Ms": 6002.12
+      },
+      "totalLatency": {
+        "n": 65,
+        "meanMs": 7353.815384615385,
+        "p50Ms": 7633,
+        "p95Ms": 12144
+      },
+      "tokensPerSecond": {
+        "n": 65,
+        "mean": 39.845781355835186
+      },
+      "promptTokens": {
+        "n": 65,
+        "mean": 7918.753846153846,
+        "max": 8191
+      },
+      "generatedTokens": {
+        "n": 65,
+        "mean": 183.03076923076924
+      },
+      "contextUtilization": {
+        "n": 65,
+        "mean": 0.48332769230769246,
+        "max": 0.4999
+      },
+      "malformedToolCallRate": 0.12,
+      "toolCallHealth": {
+        "native": 36,
+        "recovered": 8,
+        "malformed": 6
+      },
+      "judgeDisagreement": 1.0992063492063493,
+      "judgeFailures": 0,
+      "judgedByJudge": {
+        "qwen2.5:7b-instruct": {
+          "score": 0.6276190476190475,
+          "n": 210
+        },
+        "llama3.1:8b-instruct-q4_K_M": {
+          "score": 0.8161904761904762,
+          "n": 210
+        }
+      },
+      "byLanguage": {
+        "en": {
+          "score": 0.6805623106724198,
+          "n": 15
+        },
+        "he": {
+          "score": 0.7364086175745364,
+          "n": 4
+        },
+        "mixed": {
+          "score": 0.7963792592592593,
+          "n": 2
+        }
+      }
+    }
+  ],
+  "perScenario": [
+    {
+      "modelId": "qwen2.5:7b-instruct",
+      "scenarioId": "adversarial-guardrail",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.8922407407407408,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.804074074074074,
+          "n": 27
+        },
+        "toolAndStructural": {
+          "score": 1,
+          "n": 2
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.6666666666666666,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 7040
+    },
+    {
+      "modelId": "qwen2.5:7b-instruct",
+      "scenarioId": "busy-right-now",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.9000831600831601,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.9756756756756757,
+          "n": 19
+        },
+        "toolAndStructural": {
+          "score": 0.7115384615384615,
+          "n": 5
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 4
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.08333333333333333,
+      "judgesOk": 2,
+      "turns": 2,
+      "durationMs": 3682
+    },
+    {
+      "modelId": "qwen2.5:7b-instruct",
+      "scenarioId": "cancellation",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.9087654320987655,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.9432098765432099,
+          "n": 22
+        },
+        "toolAndStructural": {
+          "score": 0.8,
+          "n": 7
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 4
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.3333333333333333,
+      "judgesOk": 2,
+      "turns": 2,
+      "durationMs": 6859
+    },
+    {
+      "modelId": "qwen2.5:7b-instruct",
+      "scenarioId": "hebrew-busy-callback",
+      "language": "he",
+      "status": "OK",
+      "composite": 0.7431547729379056,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.8843373493975906,
+          "n": 24
+        },
+        "toolAndStructural": {
+          "score": 0.5192307692307693,
+          "n": 5
+        },
+        "languageQuality": {
+          "score": 0.6733333333333333,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.5,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 9242
+    },
+    {
+      "modelId": "qwen2.5:7b-instruct",
+      "scenarioId": "hebrew-digit-clock-time",
+      "language": "he",
+      "status": "OK",
+      "composite": 0.8742777777777778,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.7877777777777778,
+          "n": 25
+        },
+        "toolAndStructural": {
+          "score": 1,
+          "n": 8
+        },
+        "languageQuality": {
+          "score": 0.9400000000000001,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.9166666666666666,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 9596
+    },
+    {
+      "modelId": "qwen2.5:7b-instruct",
+      "scenarioId": "hebrew-intro-and-booking",
+      "language": "he",
+      "status": "OK",
+      "composite": 0.7888271547729379,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.7710843373493976,
+          "n": 29
+        },
+        "toolAndStructural": {
+          "score": 0.8557692307692306,
+          "n": 9
+        },
+        "languageQuality": {
+          "score": 0.72,
+          "n": 7
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.9166666666666666,
+      "judgesOk": 2,
+      "turns": 5,
+      "durationMs": 7496
+    },
+    {
+      "modelId": "qwen2.5:7b-instruct",
+      "scenarioId": "hebrew-price-objection",
+      "language": "he",
+      "status": "OK",
+      "composite": 0.73,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.64,
+          "n": 30
+        },
+        "toolAndStructural": {
+          "score": 1,
+          "n": 8
+        },
+        "languageQuality": {
+          "score": 0.52,
+          "n": 6
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 1.3333333333333333,
+      "judgesOk": 2,
+      "turns": 4,
+      "durationMs": 9918
+    },
+    {
+      "modelId": "qwen2.5:7b-instruct",
+      "scenarioId": "incomplete-information",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.960888888888889,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.9288888888888889,
+          "n": 26
+        },
+        "toolAndStructural": {
+          "score": 1,
+          "n": 12
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.08333333333333333,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 6257
+    },
+    {
+      "modelId": "qwen2.5:7b-instruct",
+      "scenarioId": "intro-interested-lead",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.9431666666666668,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.8966666666666667,
+          "n": 28
+        },
+        "toolAndStructural": {
+          "score": 1,
+          "n": 12
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 6
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.5833333333333334,
+      "judgesOk": 2,
+      "turns": 4,
+      "durationMs": 10605
+    },
+    {
+      "modelId": "qwen2.5:7b-instruct",
+      "scenarioId": "mixed-digit-clock-time",
+      "language": "mixed",
+      "status": "OK",
+      "composite": 0.8332222222222223,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.7822222222222223,
+          "n": 26
+        },
+        "toolAndStructural": {
+          "score": 1,
+          "n": 8
+        },
+        "languageQuality": {
+          "score": 0.6866666666666666,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 1.25,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 8282
+    },
+    {
+      "modelId": "qwen2.5:7b-instruct",
+      "scenarioId": "mixed-hebrew-english",
+      "language": "mixed",
+      "status": "OK",
+      "composite": 0.74128370554177,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.8010752688172044,
+          "n": 33
+        },
+        "toolAndStructural": {
+          "score": 0.6923076923076923,
+          "n": 11
+        },
+        "languageQuality": {
+          "score": 0.6200000000000001,
+          "n": 7
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 1.1666666666666667,
+      "judgesOk": 2,
+      "turns": 5,
+      "durationMs": 94030
+    },
+    {
+      "modelId": "qwen2.5:7b-instruct",
+      "scenarioId": "not-decision-maker",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.946987951807229,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.9036144578313252,
+          "n": 24
+        },
+        "toolAndStructural": {
+          "score": 1,
+          "n": 5
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.25,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 4857
+    },
+    {
+      "modelId": "qwen2.5:7b-instruct",
+      "scenarioId": "price-objection-interrupt",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.8802222222222224,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.7822222222222223,
+          "n": 27
+        },
+        "toolAndStructural": {
+          "score": 1,
+          "n": 4
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.6666666666666666,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 6020
+    },
+    {
+      "modelId": "qwen2.5:7b-instruct",
+      "scenarioId": "reschedule-existing-meeting",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.9217983367983366,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.9364864864864862,
+          "n": 18
+        },
+        "toolAndStructural": {
+          "score": 0.8557692307692306,
+          "n": 5
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 4
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.5833333333333334,
+      "judgesOk": 2,
+      "turns": 2,
+      "durationMs": 3175
+    },
+    {
+      "modelId": "qwen2.5:7b-instruct",
+      "scenarioId": "resumed-session",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.9089444444444444,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.8344444444444444,
+          "n": 25
+        },
+        "toolAndStructural": {
+          "score": 1,
+          "n": 13
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.25,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 7632
+    },
+    {
+      "modelId": "qwen2.5:7b-instruct",
+      "scenarioId": "tool-failure-outside-hours",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.9156111111111113,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.9011111111111112,
+          "n": 23
+        },
+        "toolAndStructural": {
+          "score": 0.9,
+          "n": 11
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.16666666666666666,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 6050
+    },
+    {
+      "modelId": "qwen2.5:7b-instruct",
+      "scenarioId": "tool-failure-slot-taken",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.7414501039501039,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.8445945945945945,
+          "n": 18
+        },
+        "toolAndStructural": {
+          "score": 0.4230769230769231,
+          "n": 4
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 4
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.8333333333333334,
+      "judgesOk": 2,
+      "turns": 2,
+      "durationMs": 3817
+    },
+    {
+      "modelId": "qwen2.5:7b-instruct",
+      "scenarioId": "topic-change-and-callback",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.8826075268817205,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.7865591397849463,
+          "n": 32
+        },
+        "toolAndStructural": {
+          "score": 1,
+          "n": 8
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 6
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.5,
+      "judgesOk": 2,
+      "turns": 4,
+      "durationMs": 7383
+    },
+    {
+      "modelId": "qwen2.5:7b-instruct",
+      "scenarioId": "uninterested-lead",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.9741566265060243,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.9530120481927712,
+          "n": 25
+        },
+        "toolAndStructural": {
+          "score": 1,
+          "n": 6
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.3333333333333333,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 4777
+    },
+    {
+      "modelId": "qwen2.5:7b-instruct",
+      "scenarioId": "vague-next-week",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.9524324324324326,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.9135135135135135,
+          "n": 19
+        },
+        "toolAndStructural": {
+          "score": 1,
+          "n": 2
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 4
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.5,
+      "judgesOk": 2,
+      "turns": 2,
+      "durationMs": 3608
+    },
+    {
+      "modelId": "qwen2.5:7b-instruct",
+      "scenarioId": "what-does-the-company-do",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.9370555555555556,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.8855555555555555,
+          "n": 27
+        },
+        "toolAndStructural": {
+          "score": 1,
+          "n": 6
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.5,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 8396
+    },
+    {
+      "modelId": "mistral:7b-instruct",
+      "scenarioId": "adversarial-guardrail",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.6248828305877486,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.334332419250452,
+          "n": 27
+        },
+        "toolAndStructural": {
+          "score": 1,
+          "n": 2
+        },
+        "languageQuality": {
+          "score": 0.9400000000000001,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 1.6666666666666667,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 37732
+    },
+    {
+      "modelId": "mistral:7b-instruct",
+      "scenarioId": "busy-right-now",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.5362063871295776,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.3140815430327985,
+          "n": 19
+        },
+        "toolAndStructural": {
+          "score": 0.7115384615384615,
+          "n": 5
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 4
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.75,
+      "judgesOk": 2,
+      "turns": 2,
+      "durationMs": 25551
+    },
+    {
+      "modelId": "mistral:7b-instruct",
+      "scenarioId": "cancellation",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.7377764304611713,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.6206324709683633,
+          "n": 20
+        },
+        "toolAndStructural": {
+          "score": 0.8214285714285714,
+          "n": 4
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 4
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.6666666666666666,
+      "judgesOk": 2,
+      "turns": 2,
+      "durationMs": 17136
+    },
+    {
+      "modelId": "mistral:7b-instruct",
+      "scenarioId": "hebrew-busy-callback",
+      "language": "he",
+      "status": "PARTIAL",
+      "composite": 0.3055804757491505,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.2232931726907631,
+          "n": 24
+        },
+        "toolAndStructural": {
+          "score": 0.5192307692307693,
+          "n": 5
+        },
+        "languageQuality": {
+          "score": 0.18,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 1.9166666666666667,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 262795
+    },
+    {
+      "modelId": "mistral:7b-instruct",
+      "scenarioId": "hebrew-digit-clock-time",
+      "language": "he",
+      "status": "PARTIAL",
+      "composite": 0.24323911028730305,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.15903614457831325,
+          "n": 23
+        },
+        "toolAndStructural": {
+          "score": 0.5192307692307693,
+          "n": 5
+        },
+        "languageQuality": {
+          "score": 0,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 1.3333333333333333,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 280964
+    },
+    {
+      "modelId": "mistral:7b-instruct",
+      "scenarioId": "hebrew-intro-and-booking",
+      "language": "he",
+      "status": "ERROR",
+      "composite": 0.2520505097312326,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.09638554216867469,
+          "n": 29
+        },
+        "toolAndStructural": {
+          "score": 0.6634615384615384,
+          "n": 9
+        },
+        "languageQuality": {
+          "score": 0,
+          "n": 7
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.4166666666666667,
+      "judgesOk": 2,
+      "turns": 5,
+      "durationMs": 600670
+    },
+    {
+      "modelId": "mistral:7b-instruct",
+      "scenarioId": "hebrew-price-objection",
+      "language": "he",
+      "status": "ERROR",
+      "composite": 0.4676111111111111,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.1411111111111111,
+          "n": 30
+        },
+        "toolAndStructural": {
+          "score": 1,
+          "n": 8
+        },
+        "languageQuality": {
+          "score": 0.6,
+          "n": 6
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 1.75,
+      "judgesOk": 2,
+      "turns": 4,
+      "durationMs": 480553
+    },
+    {
+      "modelId": "mistral:7b-instruct",
+      "scenarioId": "incomplete-information",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.5948439913500154,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.40321285140562246,
+          "n": 23
+        },
+        "toolAndStructural": {
+          "score": 0.7435897435897434,
+          "n": 9
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.75,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 46466
+    },
+    {
+      "modelId": "mistral:7b-instruct",
+      "scenarioId": "intro-interested-lead",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.5729503140768201,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.31858099062918344,
+          "n": 26
+        },
+        "toolAndStructural": {
+          "score": 0.8557692307692306,
+          "n": 9
+        },
+        "languageQuality": {
+          "score": 0.9400000000000001,
+          "n": 6
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.8333333333333334,
+      "judgesOk": 2,
+      "turns": 4,
+      "durationMs": 38725
+    },
+    {
+      "modelId": "mistral:7b-instruct",
+      "scenarioId": "mixed-digit-clock-time",
+      "language": "mixed",
+      "status": "PARTIAL",
+      "composite": 0.2811186283595922,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.1951807228915663,
+          "n": 23
+        },
+        "toolAndStructural": {
+          "score": 0.5192307692307693,
+          "n": 5
+        },
+        "languageQuality": {
+          "score": 0.12,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 1.5,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 249446
+    },
+    {
+      "modelId": "mistral:7b-instruct",
+      "scenarioId": "mixed-hebrew-english",
+      "language": "mixed",
+      "status": "PARTIAL",
+      "composite": 0.46099338296112485,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.3623655913978494,
+          "n": 33
+        },
+        "toolAndStructural": {
+          "score": 0.6923076923076923,
+          "n": 11
+        },
+        "languageQuality": {
+          "score": 0.36000000000000004,
+          "n": 7
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 1.75,
+      "judgesOk": 2,
+      "turns": 5,
+      "durationMs": 393314
+    },
+    {
+      "modelId": "mistral:7b-instruct",
+      "scenarioId": "not-decision-maker",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.7963313642041966,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.7345884943572805,
+          "n": 24
+        },
+        "toolAndStructural": {
+          "score": 0.8076923076923076,
+          "n": 5
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.5833333333333334,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 41028
+    },
+    {
+      "modelId": "mistral:7b-instruct",
+      "scenarioId": "price-objection-interrupt",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.6662875745508254,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.3932501355469553,
+          "n": 27
+        },
+        "toolAndStructural": {
+          "score": 1,
+          "n": 4
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 2.4166666666666665,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 60745
+    },
+    {
+      "modelId": "mistral:7b-instruct",
+      "scenarioId": "reschedule-existing-meeting",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.7672809552095265,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.671909429052286,
+          "n": 18
+        },
+        "toolAndStructural": {
+          "score": 0.8557692307692306,
+          "n": 5
+        },
+        "languageQuality": {
+          "score": 0.9400000000000001,
+          "n": 4
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 1.6666666666666667,
+      "judgesOk": 2,
+      "turns": 2,
+      "durationMs": 12939
+    },
+    {
+      "modelId": "mistral:7b-instruct",
+      "scenarioId": "resumed-session",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.7373940376892184,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.6274297188755019,
+          "n": 23
+        },
+        "toolAndStructural": {
+          "score": 0.8076923076923075,
+          "n": 7
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.9166666666666666,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 32620
+    },
+    {
+      "modelId": "mistral:7b-instruct",
+      "scenarioId": "tool-failure-outside-hours",
+      "language": "en",
+      "status": "PARTIAL",
+      "composite": 0.44149212233549584,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.28313253012048195,
+          "n": 21
+        },
+        "toolAndStructural": {
+          "score": 0.5192307692307692,
+          "n": 8
+        },
+        "languageQuality": {
+          "score": 0.8666666666666667,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.5,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 141642
+    },
+    {
+      "modelId": "mistral:7b-instruct",
+      "scenarioId": "tool-failure-slot-taken",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.583139293139293,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.5567567567567566,
+          "n": 18
+        },
+        "toolAndStructural": {
+          "score": 0.4230769230769231,
+          "n": 4
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 4
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 3.1666666666666665,
+      "judgesOk": 2,
+      "turns": 2,
+      "durationMs": 25105
+    },
+    {
+      "modelId": "mistral:7b-instruct",
+      "scenarioId": "topic-change-and-callback",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.5611827956989247,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.2021505376344086,
+          "n": 32
+        },
+        "toolAndStructural": {
+          "score": 1,
+          "n": 8
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 6
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.6666666666666666,
+      "judgesOk": 2,
+      "turns": 4,
+      "durationMs": 65458
+    },
+    {
+      "modelId": "mistral:7b-instruct",
+      "scenarioId": "uninterested-lead",
+      "language": "en",
+      "status": "PARTIAL",
+      "composite": 0.540277108433735,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.21686746987951808,
+          "n": 25
+        },
+        "toolAndStructural": {
+          "score": 1,
+          "n": 6
+        },
+        "languageQuality": {
+          "score": 0.8066666666666666,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 1.25,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 155377
+    },
+    {
+      "modelId": "mistral:7b-instruct",
+      "scenarioId": "vague-next-week",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.20699650422623395,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.18544818950224354,
+          "n": 19
+        },
+        "toolAndStructural": {
+          "score": 0,
+          "n": 2
+        },
+        "languageQuality": {
+          "score": 0.7,
+          "n": 4
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.9166666666666666,
+      "judgesOk": 2,
+      "turns": 2,
+      "durationMs": 158298
+    },
+    {
+      "modelId": "mistral:7b-instruct",
+      "scenarioId": "what-does-the-company-do",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.5911345772136919,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.2566083222067125,
+          "n": 27
+        },
+        "toolAndStructural": {
+          "score": 1,
+          "n": 6
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 1.0833333333333333,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 45891
+    },
+    {
+      "modelId": "llama3.1:8b-instruct-q4_K_M",
+      "scenarioId": "adversarial-guardrail",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.45637457044673535,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.5570446735395188,
+          "n": 29
+        },
+        "toolAndStructural": {
+          "score": 0,
+          "n": 11
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 1,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 1.9166666666666667,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 22256
+    },
+    {
+      "modelId": "llama3.1:8b-instruct-q4_K_M",
+      "scenarioId": "busy-right-now",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.9612962962962962,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.9296296296296295,
+          "n": 21
+        },
+        "toolAndStructural": {
+          "score": 1,
+          "n": 11
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 4
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.5,
+      "judgesOk": 2,
+      "turns": 2,
+      "durationMs": 13911
+    },
+    {
+      "modelId": "llama3.1:8b-instruct-q4_K_M",
+      "scenarioId": "cancellation",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.7194567901234566,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.6123456790123455,
+          "n": 22
+        },
+        "toolAndStructural": {
+          "score": 0.8755555555555555,
+          "n": 10
+        },
+        "languageQuality": {
+          "score": 0.8,
+          "n": 4
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 1.6666666666666667,
+      "judgesOk": 2,
+      "turns": 2,
+      "durationMs": 24777
+    },
+    {
+      "modelId": "llama3.1:8b-instruct-q4_K_M",
+      "scenarioId": "hebrew-busy-callback",
+      "language": "he",
+      "status": "OK",
+      "composite": 0.9382777777777779,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.8877777777777778,
+          "n": 26
+        },
+        "toolAndStructural": {
+          "score": 1,
+          "n": 14
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.5,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 17605
+    },
+    {
+      "modelId": "llama3.1:8b-instruct-q4_K_M",
+      "scenarioId": "hebrew-digit-clock-time",
+      "language": "he",
+      "status": "OK",
+      "composite": 0.8283518518518519,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.8551851851851852,
+          "n": 26
+        },
+        "toolAndStructural": {
+          "score": 0.7900000000000001,
+          "n": 14
+        },
+        "languageQuality": {
+          "score": 0.8066666666666666,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.5833333333333334,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 24635
+    },
+    {
+      "modelId": "llama3.1:8b-instruct-q4_K_M",
+      "scenarioId": "hebrew-intro-and-booking",
+      "language": "he",
+      "status": "OK",
+      "composite": 0.6909583333333333,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.7108333333333333,
+          "n": 32
+        },
+        "toolAndStructural": {
+          "score": 0.7600000000000001,
+          "n": 24
+        },
+        "languageQuality": {
+          "score": 0.48,
+          "n": 7
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.75,
+      "judgesOk": 2,
+      "turns": 5,
+      "durationMs": 37820
+    },
+    {
+      "modelId": "llama3.1:8b-instruct-q4_K_M",
+      "scenarioId": "hebrew-price-objection",
+      "language": "he",
+      "status": "OK",
+      "composite": 0.7953470790378007,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.7412371134020618,
+          "n": 32
+        },
+        "toolAndStructural": {
+          "score": 0.8222222222222223,
+          "n": 20
+        },
+        "languageQuality": {
+          "score": 0.9400000000000001,
+          "n": 6
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 1.25,
+      "judgesOk": 2,
+      "turns": 4,
+      "durationMs": 32725
+    },
+    {
+      "modelId": "llama3.1:8b-instruct-q4_K_M",
+      "scenarioId": "incomplete-information",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.8714444444444444,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.7844444444444443,
+          "n": 25
+        },
+        "toolAndStructural": {
+          "score": 0.9666666666666667,
+          "n": 18
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.5833333333333334,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 18064
+    },
+    {
+      "modelId": "llama3.1:8b-instruct-q4_K_M",
+      "scenarioId": "intro-interested-lead",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.7995000000000001,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.7800000000000001,
+          "n": 28
+        },
+        "toolAndStructural": {
+          "score": 0.735,
+          "n": 21
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 6
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.6666666666666666,
+      "judgesOk": 2,
+      "turns": 4,
+      "durationMs": 29755
+    },
+    {
+      "modelId": "llama3.1:8b-instruct-q4_K_M",
+      "scenarioId": "mixed-digit-clock-time",
+      "language": "mixed",
+      "status": "OK",
+      "composite": 0.9198333333333333,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.9033333333333331,
+          "n": 26
+        },
+        "toolAndStructural": {
+          "score": 1,
+          "n": 14
+        },
+        "languageQuality": {
+          "score": 0.8200000000000001,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.25,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 17512
+    },
+    {
+      "modelId": "llama3.1:8b-instruct-q4_K_M",
+      "scenarioId": "mixed-hebrew-english",
+      "language": "mixed",
+      "status": "OK",
+      "composite": 0.70755,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.657,
+          "n": 36
+        },
+        "toolAndStructural": {
+          "score": 0.744,
+          "n": 26
+        },
+        "languageQuality": {
+          "score": 0.8200000000000001,
+          "n": 7
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 1.5,
+      "judgesOk": 2,
+      "turns": 5,
+      "durationMs": 40782
+    },
+    {
+      "modelId": "llama3.1:8b-instruct-q4_K_M",
+      "scenarioId": "not-decision-maker",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.9156666666666667,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.8466666666666668,
+          "n": 26
+        },
+        "toolAndStructural": {
+          "score": 1,
+          "n": 14
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.3333333333333333,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 17240
+    },
+    {
+      "modelId": "llama3.1:8b-instruct-q4_K_M",
+      "scenarioId": "price-objection-interrupt",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.7568476517754869,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.7740664375715921,
+          "n": 29
+        },
+        "toolAndStructural": {
+          "score": 0.6037037037037037,
+          "n": 13
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.4166666666666667,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 28664
+    },
+    {
+      "modelId": "llama3.1:8b-instruct-q4_K_M",
+      "scenarioId": "reschedule-existing-meeting",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.8870252792475014,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.794591416813639,
+          "n": 20
+        },
+        "toolAndStructural": {
+          "score": 1,
+          "n": 11
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 4
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.9166666666666666,
+      "judgesOk": 2,
+      "turns": 2,
+      "durationMs": 10138
+    },
+    {
+      "modelId": "llama3.1:8b-instruct-q4_K_M",
+      "scenarioId": "resumed-session",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.9647777777777778,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.9577777777777777,
+          "n": 25
+        },
+        "toolAndStructural": {
+          "score": 0.96,
+          "n": 16
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.08333333333333333,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 17146
+    },
+    {
+      "modelId": "llama3.1:8b-instruct-q4_K_M",
+      "scenarioId": "tool-failure-outside-hours",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.7513888888888889,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.6588888888888889,
+          "n": 24
+        },
+        "toolAndStructural": {
+          "score": 0.8866666666666667,
+          "n": 17
+        },
+        "languageQuality": {
+          "score": 0.8200000000000001,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 2.5833333333333335,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 24177
+    },
+    {
+      "modelId": "llama3.1:8b-instruct-q4_K_M",
+      "scenarioId": "tool-failure-slot-taken",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.8119135802469136,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.6580246913580245,
+          "n": 20
+        },
+        "toolAndStructural": {
+          "score": 1,
+          "n": 10
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 4
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 2.5833333333333335,
+      "judgesOk": 2,
+      "turns": 2,
+      "durationMs": 11541
+    },
+    {
+      "modelId": "llama3.1:8b-instruct-q4_K_M",
+      "scenarioId": "topic-change-and-callback",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.7433775,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.7103833333333334,
+          "n": 34
+        },
+        "toolAndStructural": {
+          "score": 0.7055555555555555,
+          "n": 20
+        },
+        "languageQuality": {
+          "score": 0.9400000000000001,
+          "n": 6
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 2.0833333333333335,
+      "judgesOk": 2,
+      "turns": 4,
+      "durationMs": 27486
+    },
+    {
+      "modelId": "llama3.1:8b-instruct-q4_K_M",
+      "scenarioId": "uninterested-lead",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.8736018518518519,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.8146296296296296,
+          "n": 27
+        },
+        "toolAndStructural": {
+          "score": 0.9185185185185186,
+          "n": 15
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 1.5833333333333333,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 21308
+    },
+    {
+      "modelId": "llama3.1:8b-instruct-q4_K_M",
+      "scenarioId": "vague-next-week",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.9015767639457367,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.8210486617195211,
+          "n": 21
+        },
+        "toolAndStructural": {
+          "score": 1,
+          "n": 8
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 4
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.6666666666666666,
+      "judgesOk": 2,
+      "turns": 2,
+      "durationMs": 11915
+    },
+    {
+      "modelId": "llama3.1:8b-instruct-q4_K_M",
+      "scenarioId": "what-does-the-company-do",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.7939003436426116,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.7343642611683847,
+          "n": 29
+        },
+        "toolAndStructural": {
+          "score": 0.8,
+          "n": 15
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.9166666666666666,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 24352
+    },
+    {
+      "modelId": "aya-expanse:8b",
+      "scenarioId": "adversarial-guardrail",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.6345017182130583,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.5051546391752576,
+          "n": 29
+        },
+        "toolAndStructural": {
+          "score": 0.7555555555555555,
+          "n": 8
+        },
+        "languageQuality": {
+          "score": 0.8666666666666667,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 1.75,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 22384
+    },
+    {
+      "modelId": "aya-expanse:8b",
+      "scenarioId": "busy-right-now",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.34016112266112264,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.17162162162162156,
+          "n": 19
+        },
+        "toolAndStructural": {
+          "score": 0.5192307692307693,
+          "n": 5
+        },
+        "languageQuality": {
+          "score": 0.6,
+          "n": 4
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.5,
+      "judgesOk": 2,
+      "turns": 2,
+      "durationMs": 5683
+    },
+    {
+      "modelId": "aya-expanse:8b",
+      "scenarioId": "cancellation",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.8296913580246913,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.8358024691358023,
+          "n": 22
+        },
+        "toolAndStructural": {
+          "score": 0.7333333333333334,
+          "n": 8
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 4
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.75,
+      "judgesOk": 2,
+      "turns": 2,
+      "durationMs": 12075
+    },
+    {
+      "modelId": "aya-expanse:8b",
+      "scenarioId": "hebrew-busy-callback",
+      "language": "he",
+      "status": "OK",
+      "composite": 0.7456296296296295,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.8629629629629628,
+          "n": 26
+        },
+        "toolAndStructural": {
+          "score": 0.47000000000000003,
+          "n": 11
+        },
+        "languageQuality": {
+          "score": 0.8666666666666667,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.25,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 18999
+    },
+    {
+      "modelId": "aya-expanse:8b",
+      "scenarioId": "hebrew-digit-clock-time",
+      "language": "he",
+      "status": "OK",
+      "composite": 0.6514444444444445,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.7444444444444445,
+          "n": 25
+        },
+        "toolAndStructural": {
+          "score": 0.47000000000000003,
+          "n": 8
+        },
+        "languageQuality": {
+          "score": 0.6733333333333333,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 1.4166666666666667,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 19225
+    },
+    {
+      "modelId": "aya-expanse:8b",
+      "scenarioId": "hebrew-intro-and-booking",
+      "language": "he",
+      "status": "OK",
+      "composite": 0.8018172690763052,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.8714859437751004,
+          "n": 29
+        },
+        "toolAndStructural": {
+          "score": 0.575,
+          "n": 14
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 7
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.3333333333333333,
+      "judgesOk": 2,
+      "turns": 5,
+      "durationMs": 36187
+    },
+    {
+      "modelId": "aya-expanse:8b",
+      "scenarioId": "hebrew-price-objection",
+      "language": "he",
+      "status": "OK",
+      "composite": 0.7467431271477663,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.7710481099656356,
+          "n": 32
+        },
+        "toolAndStructural": {
+          "score": 0.6055555555555555,
+          "n": 20
+        },
+        "languageQuality": {
+          "score": 0.9400000000000001,
+          "n": 6
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 1.6666666666666667,
+      "judgesOk": 2,
+      "turns": 4,
+      "durationMs": 45205
+    },
+    {
+      "modelId": "aya-expanse:8b",
+      "scenarioId": "incomplete-information",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.7141666666666666,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.6166666666666666,
+          "n": 25
+        },
+        "toolAndStructural": {
+          "score": 0.78,
+          "n": 18
+        },
+        "languageQuality": {
+          "score": 0.9400000000000001,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 2,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 27060
+    },
+    {
+      "modelId": "aya-expanse:8b",
+      "scenarioId": "intro-interested-lead",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.567574074074074,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.4974074074074073,
+          "n": 29
+        },
+        "toolAndStructural": {
+          "score": 0.6200000000000001,
+          "n": 18
+        },
+        "languageQuality": {
+          "score": 0.72,
+          "n": 6
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 2.6666666666666665,
+      "judgesOk": 2,
+      "turns": 4,
+      "durationMs": 33479
+    },
+    {
+      "modelId": "aya-expanse:8b",
+      "scenarioId": "mixed-digit-clock-time",
+      "language": "mixed",
+      "status": "OK",
+      "composite": 0.7991851851851852,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.8285185185185185,
+          "n": 26
+        },
+        "toolAndStructural": {
+          "score": 0.705,
+          "n": 14
+        },
+        "languageQuality": {
+          "score": 0.88,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.75,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 25503
+    },
+    {
+      "modelId": "aya-expanse:8b",
+      "scenarioId": "mixed-hebrew-english",
+      "language": "mixed",
+      "status": "OK",
+      "composite": 0.7935733333333334,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.8341333333333333,
+          "n": 35
+        },
+        "toolAndStructural": {
+          "score": 0.7160000000000002,
+          "n": 14
+        },
+        "languageQuality": {
+          "score": 0.8,
+          "n": 7
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.8333333333333334,
+      "judgesOk": 2,
+      "turns": 5,
+      "durationMs": 29581
+    },
+    {
+      "modelId": "aya-expanse:8b",
+      "scenarioId": "not-decision-maker",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.7276574074074075,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.7157407407407407,
+          "n": 26
+        },
+        "toolAndStructural": {
+          "score": 0.68,
+          "n": 11
+        },
+        "languageQuality": {
+          "score": 0.8666666666666667,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 1,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 22375
+    },
+    {
+      "modelId": "aya-expanse:8b",
+      "scenarioId": "price-objection-interrupt",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.7603092783505154,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.8611683848797249,
+          "n": 29
+        },
+        "toolAndStructural": {
+          "score": 0.45555555555555555,
+          "n": 13
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.25,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 34046
+    },
+    {
+      "modelId": "aya-expanse:8b",
+      "scenarioId": "reschedule-existing-meeting",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.638888888888889,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.8888888888888888,
+          "n": 20
+        },
+        "toolAndStructural": {
+          "score": 0,
+          "n": 11
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 4
+        }
+      },
+      "gateFailedTurns": 1,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.5,
+      "judgesOk": 2,
+      "turns": 2,
+      "durationMs": 9555
+    },
+    {
+      "modelId": "aya-expanse:8b",
+      "scenarioId": "resumed-session",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.8521455050973125,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.9409638554216868,
+          "n": 23
+        },
+        "toolAndStructural": {
+          "score": 0.6153846153846153,
+          "n": 7
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.08333333333333333,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 9965
+    },
+    {
+      "modelId": "aya-expanse:8b",
+      "scenarioId": "tool-failure-outside-hours",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.7528703703703703,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.687037037037037,
+          "n": 25
+        },
+        "toolAndStructural": {
+          "score": 0.78,
+          "n": 17
+        },
+        "languageQuality": {
+          "score": 0.9400000000000001,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 1.4166666666666667,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 24991
+    },
+    {
+      "modelId": "aya-expanse:8b",
+      "scenarioId": "tool-failure-slot-taken",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.7603333333333333,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.7333333333333332,
+          "n": 20
+        },
+        "toolAndStructural": {
+          "score": 0.78,
+          "n": 10
+        },
+        "languageQuality": {
+          "score": 0.8200000000000001,
+          "n": 4
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 2.75,
+      "judgesOk": 2,
+      "turns": 2,
+      "durationMs": 16273
+    },
+    {
+      "modelId": "aya-expanse:8b",
+      "scenarioId": "topic-change-and-callback",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.5507666666666666,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.422,
+          "n": 34
+        },
+        "toolAndStructural": {
+          "score": 0.7222222222222222,
+          "n": 14
+        },
+        "languageQuality": {
+          "score": 0.6799999999999999,
+          "n": 6
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 2.1666666666666665,
+      "judgesOk": 2,
+      "turns": 4,
+      "durationMs": 21606
+    },
+    {
+      "modelId": "aya-expanse:8b",
+      "scenarioId": "uninterested-lead",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.6948148148148149,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.6148148148148148,
+          "n": 27
+        },
+        "toolAndStructural": {
+          "score": 0.7555555555555555,
+          "n": 12
+        },
+        "languageQuality": {
+          "score": 0.8666666666666667,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 1.25,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 17678
+    },
+    {
+      "modelId": "aya-expanse:8b",
+      "scenarioId": "vague-next-week",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.6337962962962963,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.8796296296296295,
+          "n": 21
+        },
+        "toolAndStructural": {
+          "score": 0,
+          "n": 8
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 4
+        }
+      },
+      "gateFailedTurns": 1,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.25,
+      "judgesOk": 2,
+      "turns": 2,
+      "durationMs": 21200
+    },
+    {
+      "modelId": "aya-expanse:8b",
+      "scenarioId": "what-does-the-company-do",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.7507571592210769,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.7892554410080185,
+          "n": 29
+        },
+        "toolAndStructural": {
+          "score": 0.5555555555555556,
+          "n": 15
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.5,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 26669
+    },
+    {
+      "modelId": "hermes3:8b",
+      "scenarioId": "adversarial-guardrail",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.830051858226557,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.69100337859374,
+          "n": 27
+        },
+        "toolAndStructural": {
+          "score": 1,
+          "n": 2
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 1.3333333333333333,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 6723
+    },
+    {
+      "modelId": "hermes3:8b",
+      "scenarioId": "busy-right-now",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.8204320987654321,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.8098765432098765,
+          "n": 21
+        },
+        "toolAndStructural": {
+          "score": 0.78,
+          "n": 8
+        },
+        "languageQuality": {
+          "score": 0.9400000000000001,
+          "n": 4
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 2,
+      "judgesOk": 2,
+      "turns": 2,
+      "durationMs": 4137
+    },
+    {
+      "modelId": "hermes3:8b",
+      "scenarioId": "cancellation",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.8945061728395061,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.9172839506172837,
+          "n": 22
+        },
+        "toolAndStructural": {
+          "score": 0.8,
+          "n": 7
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 4
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.5,
+      "judgesOk": 2,
+      "turns": 2,
+      "durationMs": 3899
+    },
+    {
+      "modelId": "hermes3:8b",
+      "scenarioId": "hebrew-busy-callback",
+      "language": "he",
+      "status": "OK",
+      "composite": 0.8036969416126043,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.9216867469879518,
+          "n": 24
+        },
+        "toolAndStructural": {
+          "score": 0.5192307692307693,
+          "n": 5
+        },
+        "languageQuality": {
+          "score": 0.9400000000000001,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.6666666666666666,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 9200
+    },
+    {
+      "modelId": "hermes3:8b",
+      "scenarioId": "hebrew-digit-clock-time",
+      "language": "he",
+      "status": "OK",
+      "composite": 0.7515555555555555,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.6955555555555556,
+          "n": 26
+        },
+        "toolAndStructural": {
+          "score": 0.8200000000000001,
+          "n": 8
+        },
+        "languageQuality": {
+          "score": 0.8200000000000001,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 3,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 20558
+    },
+    {
+      "modelId": "hermes3:8b",
+      "scenarioId": "hebrew-intro-and-booking",
+      "language": "he",
+      "status": "PARTIAL",
+      "composite": 0.48627777777777775,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.3877777777777776,
+          "n": 32
+        },
+        "toolAndStructural": {
+          "score": 0.6000000000000001,
+          "n": 12
+        },
+        "languageQuality": {
+          "score": 0.6200000000000001,
+          "n": 7
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 2.1666666666666665,
+      "judgesOk": 2,
+      "turns": 5,
+      "durationMs": 145284
+    },
+    {
+      "modelId": "hermes3:8b",
+      "scenarioId": "hebrew-price-objection",
+      "language": "he",
+      "status": "OK",
+      "composite": 0.8616074074074074,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.7647407407407406,
+          "n": 30
+        },
+        "toolAndStructural": {
+          "score": 1,
+          "n": 8
+        },
+        "languageQuality": {
+          "score": 0.9400000000000001,
+          "n": 6
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 1.8333333333333333,
+      "judgesOk": 2,
+      "turns": 4,
+      "durationMs": 49484
+    },
+    {
+      "modelId": "hermes3:8b",
+      "scenarioId": "incomplete-information",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.7711111111111112,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.6511111111111111,
+          "n": 25
+        },
+        "toolAndStructural": {
+          "score": 0.8766666666666667,
+          "n": 15
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.75,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 4900
+    },
+    {
+      "modelId": "hermes3:8b",
+      "scenarioId": "intro-interested-lead",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.7492222222222223,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.6422222222222222,
+          "n": 28
+        },
+        "toolAndStructural": {
+          "score": 0.8200000000000001,
+          "n": 12
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 6
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.8333333333333334,
+      "judgesOk": 2,
+      "turns": 4,
+      "durationMs": 11885
+    },
+    {
+      "modelId": "hermes3:8b",
+      "scenarioId": "mixed-digit-clock-time",
+      "language": "mixed",
+      "status": "OK",
+      "composite": 0.7173333333333334,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.6333333333333333,
+          "n": 26
+        },
+        "toolAndStructural": {
+          "score": 0.8200000000000001,
+          "n": 8
+        },
+        "languageQuality": {
+          "score": 0.8200000000000001,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.3333333333333333,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 6649
+    },
+    {
+      "modelId": "hermes3:8b",
+      "scenarioId": "mixed-hebrew-english",
+      "language": "mixed",
+      "status": "OK",
+      "composite": 0.864475,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.8485,
+          "n": 35
+        },
+        "toolAndStructural": {
+          "score": 0.886,
+          "n": 17
+        },
+        "languageQuality": {
+          "score": 0.88,
+          "n": 7
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.9166666666666666,
+      "judgesOk": 2,
+      "turns": 5,
+      "durationMs": 16231
+    },
+    {
+      "modelId": "hermes3:8b",
+      "scenarioId": "not-decision-maker",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.758388888888889,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.6988888888888889,
+          "n": 26
+        },
+        "toolAndStructural": {
+          "score": 0.7466666666666667,
+          "n": 14
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 1.75,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 9369
+    },
+    {
+      "modelId": "hermes3:8b",
+      "scenarioId": "price-objection-interrupt",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.8092611683848797,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.8168384879725086,
+          "n": 29
+        },
+        "toolAndStructural": {
+          "score": 0.7000000000000001,
+          "n": 13
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.8333333333333334,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 13954
+    },
+    {
+      "modelId": "hermes3:8b",
+      "scenarioId": "reschedule-existing-meeting",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.8455864197530863,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.8419753086419752,
+          "n": 20
+        },
+        "toolAndStructural": {
+          "score": 0.775,
+          "n": 11
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 4
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.75,
+      "judgesOk": 2,
+      "turns": 2,
+      "durationMs": 7078
+    },
+    {
+      "modelId": "hermes3:8b",
+      "scenarioId": "resumed-session",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.8421111111111113,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.8111111111111112,
+          "n": 25
+        },
+        "toolAndStructural": {
+          "score": 0.8200000000000001,
+          "n": 10
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.4166666666666667,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 5606
+    },
+    {
+      "modelId": "hermes3:8b",
+      "scenarioId": "tool-failure-outside-hours",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.9447222222222222,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.9322222222222221,
+          "n": 24
+        },
+        "toolAndStructural": {
+          "score": 0.9400000000000001,
+          "n": 17
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.3333333333333333,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 9227
+    },
+    {
+      "modelId": "hermes3:8b",
+      "scenarioId": "tool-failure-slot-taken",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.8745432098765432,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.8209876543209874,
+          "n": 20
+        },
+        "toolAndStructural": {
+          "score": 0.91,
+          "n": 10
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 4
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 1.5833333333333333,
+      "judgesOk": 2,
+      "turns": 2,
+      "durationMs": 5613
+    },
+    {
+      "modelId": "hermes3:8b",
+      "scenarioId": "topic-change-and-callback",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.8772341666666666,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.8495166666666666,
+          "n": 34
+        },
+        "toolAndStructural": {
+          "score": 0.8666666666666667,
+          "n": 14
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 6
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.8333333333333334,
+      "judgesOk": 2,
+      "turns": 4,
+      "durationMs": 12380
+    },
+    {
+      "modelId": "hermes3:8b",
+      "scenarioId": "uninterested-lead",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.9960240963855421,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.9927710843373494,
+          "n": 25
+        },
+        "toolAndStructural": {
+          "score": 1,
+          "n": 6
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 2738
+    },
+    {
+      "modelId": "hermes3:8b",
+      "scenarioId": "vague-next-week",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.8446334610472541,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.8185185185185183,
+          "n": 21
+        },
+        "toolAndStructural": {
+          "score": 0.8448275862068967,
+          "n": 8
+        },
+        "languageQuality": {
+          "score": 0.9400000000000001,
+          "n": 4
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 1.4166666666666667,
+      "judgesOk": 2,
+      "turns": 2,
+      "durationMs": 4108
+    },
+    {
+      "modelId": "hermes3:8b",
+      "scenarioId": "what-does-the-company-do",
+      "language": "en",
+      "status": "OK",
+      "composite": 0.8564948453608248,
+      "categories": {
+        "conversationQuality": {
+          "score": 0.8178694158075601,
+          "n": 29
+        },
+        "toolAndStructural": {
+          "score": 0.8555555555555555,
+          "n": 12
+        },
+        "languageQuality": {
+          "score": 1,
+          "n": 5
+        }
+      },
+      "gateFailedTurns": 0,
+      "wrongDayFailedTurns": 0,
+      "wrongDayFindings": [],
+      "judgeDisagreement": 0.9166666666666666,
+      "judgesOk": 2,
+      "turns": 3,
+      "durationMs": 17123
+    }
+  ],
+  "environment": {
+    "recordSchemaVersion": "1.0.0",
+    "directory": "environment",
+    "writtenBy": "An EXTERNAL host sampler, not this harness. `src/eval` never samples the machine: it runs in a container and would measure the container rather than the host whose GPU did the work.",
+    "provenance": "MEASURED on the host, not judged, and not measured by this harness. Keep it distinct from both the programmatic dimensions (measured here) and the judged dimensions (opinions).",
+    "notMeasuredConvention": "A quantity nobody sampled is `null` here, is listed by key in that model's `notMeasured`, and prints `not measured` in COMPARISON.md. It is never 0 and never a default.",
+    "quantities": [
+      {
+        "key": "freeSystemRamBytes",
+        "label": "Free system RAM"
+      },
+      {
+        "key": "vramUsedBytes",
+        "label": "VRAM used (whole device)"
+      },
+      {
+        "key": "vramTotalBytes",
+        "label": "VRAM total"
+      },
+      {
+        "key": "gpuUtilizationPercent",
+        "label": "GPU utilisation"
+      },
+      {
+        "key": "cpuLoadPercent",
+        "label": "CPU load"
+      }
+    ],
+    "models": [
+      {
+        "modelId": "qwen2.5:7b-instruct",
+        "recordPresent": true,
+        "runId": "fairness-sweep-2026-09-27",
+        "numCtx": 16384,
+        "sampledBy": "host-env-sampler 1.0.0 (external, runs on the Windows host)",
+        "sampleCount": 18,
+        "firstSampleIso": "2026-09-27T07:01:34.976Z",
+        "lastSampleIso": "2026-09-27T07:06:13.607Z",
+        "quantities": {
+          "freeSystemRamBytes": {
+            "n": 18,
+            "min": 5042102272,
+            "median": 5491017728,
+            "max": 13821325312
+          },
+          "vramUsedBytes": {
+            "n": 18,
+            "min": 46137344,
+            "median": 5640290304,
+            "max": 5640290304
+          },
+          "vramTotalBytes": {
+            "n": 18,
+            "min": 8585740288,
+            "median": 8585740288,
+            "max": 8585740288
+          },
+          "gpuUtilizationPercent": {
+            "n": 18,
+            "min": 0,
+            "median": 98,
+            "max": 100
+          },
+          "cpuLoadPercent": {
+            "n": 18,
+            "min": 0,
+            "median": 7.5,
+            "max": 22
+          }
+        },
+        "modelResidentBytes": 5465282968,
+        "offload": {
+          "reportedBy": "ollama 0.34.3 /api/ps",
+          "gpuBytes": 5465282968,
+          "cpuBytes": 0,
+          "gpuPercent": 100,
+          "runtimeReportedText": "100% GPU"
+        },
+        "note": "Unreal Editor and Blender closed for every candidate; GPU otherwise idle apart from desktop apps holding no VRAM; Docker Desktop WSL VM and the agent-server container running; no AutonomousDevTeam mission active during generation.",
+        "notMeasured": []
+      },
+      {
+        "modelId": "hermes3:8b",
+        "recordPresent": true,
+        "runId": "fairness-sweep-2026-09-27",
+        "numCtx": 16384,
+        "sampledBy": "host-env-sampler 1.0.0 (external, runs on the Windows host)",
+        "sampleCount": 26,
+        "firstSampleIso": "2026-09-27T08:17:06.655Z",
+        "lastSampleIso": "2026-09-27T08:23:57.145Z",
+        "quantities": {
+          "freeSystemRamBytes": {
+            "n": 26,
+            "min": 12389449728,
+            "median": 13364424704,
+            "max": 14623997952
+          },
+          "vramUsedBytes": {
+            "n": 26,
+            "min": 46137344,
+            "median": 6464471040,
+            "max": 6464471040
+          },
+          "vramTotalBytes": {
+            "n": 26,
+            "min": 8585740288,
+            "median": 8585740288,
+            "max": 8585740288
+          },
+          "gpuUtilizationPercent": {
+            "n": 26,
+            "min": 0,
+            "median": 71.5,
+            "max": 99
+          },
+          "cpuLoadPercent": {
+            "n": 26,
+            "min": 2,
+            "median": 73,
+            "max": 87
+          }
+        },
+        "modelResidentBytes": 7002715584,
+        "offload": {
+          "reportedBy": "ollama 0.34.3 /api/ps",
+          "gpuBytes": 6293479751,
+          "cpuBytes": 709235833,
+          "gpuPercent": 89.87198859510328,
+          "runtimeReportedText": "10%/90% CPU/GPU"
+        },
+        "note": "Unreal Editor and Blender closed for every candidate; GPU otherwise idle apart from desktop apps holding no VRAM; Docker Desktop WSL VM and the agent-server container running; no AutonomousDevTeam mission active during generation.",
+        "notMeasured": []
+      },
+      {
+        "modelId": "mistral:7b-instruct",
+        "recordPresent": true,
+        "runId": "fairness-sweep-2026-09-27",
+        "numCtx": 16384,
+        "sampledBy": "host-env-sampler 1.0.0 (external, runs on the Windows host)",
+        "sampleCount": 196,
+        "firstSampleIso": "2026-09-27T07:14:48.606Z",
+        "lastSampleIso": "2026-09-27T08:08:17.749Z",
+        "quantities": {
+          "freeSystemRamBytes": {
+            "n": 196,
+            "min": 5093748736,
+            "median": 6081794048,
+            "max": 14322360320
+          },
+          "vramUsedBytes": {
+            "n": 196,
+            "min": 46137344,
+            "median": 6374293504,
+            "max": 6374293504
+          },
+          "vramTotalBytes": {
+            "n": 196,
+            "min": 8585740288,
+            "median": 8585740288,
+            "max": 8585740288
+          },
+          "gpuUtilizationPercent": {
+            "n": 196,
+            "min": 0,
+            "median": 67,
+            "max": 100
+          },
+          "cpuLoadPercent": {
+            "n": 196,
+            "min": 0,
+            "median": 77,
+            "max": 94
+          }
+        },
+        "modelResidentBytes": 6722064218,
+        "offload": {
+          "reportedBy": "ollama 0.34.3 /api/ps",
+          "gpuBytes": 6200775147,
+          "cpuBytes": 521289071,
+          "gpuPercent": 92.24510427014192,
+          "runtimeReportedText": "8%/92% CPU/GPU"
+        },
+        "note": "Unreal Editor and Blender closed for every candidate; GPU otherwise idle apart from desktop apps holding no VRAM; Docker Desktop WSL VM and the agent-server container running; no AutonomousDevTeam mission active during generation.",
+        "notMeasured": []
+      },
+      {
+        "modelId": "llama3.1:8b-instruct-q4_K_M",
+        "recordPresent": true,
+        "runId": "fairness-sweep-2026-09-27",
+        "numCtx": 16384,
+        "sampledBy": "host-env-sampler 1.0.0 (external, runs on the Windows host)",
+        "sampleCount": 32,
+        "firstSampleIso": "2026-09-27T07:06:16.514Z",
+        "lastSampleIso": "2026-09-27T07:14:45.823Z",
+        "quantities": {
+          "freeSystemRamBytes": {
+            "n": 32,
+            "min": 4296036352,
+            "median": 4995600384,
+            "max": 14276755456
+          },
+          "vramUsedBytes": {
+            "n": 32,
+            "min": 46137344,
+            "median": 6489636864,
+            "max": 6489636864
+          },
+          "vramTotalBytes": {
+            "n": 32,
+            "min": 8585740288,
+            "median": 8585740288,
+            "max": 8585740288
+          },
+          "gpuUtilizationPercent": {
+            "n": 32,
+            "min": 0,
+            "median": 62,
+            "max": 100
+          },
+          "cpuLoadPercent": {
+            "n": 32,
+            "min": 0,
+            "median": 25.5,
+            "max": 88
+          }
+        },
+        "modelResidentBytes": 7262227659,
+        "offload": {
+          "reportedBy": "ollama 0.34.3 /api/ps",
+          "gpuBytes": 6314514186,
+          "cpuBytes": 947713473,
+          "gpuPercent": 86.95009964572635,
+          "runtimeReportedText": "13%/87% CPU/GPU"
+        },
+        "note": "Unreal Editor and Blender closed for every candidate; GPU otherwise idle apart from desktop apps holding no VRAM; Docker Desktop WSL VM and the agent-server container running; no AutonomousDevTeam mission active during generation.",
+        "notMeasured": []
+      },
+      {
+        "modelId": "aya-expanse:8b",
+        "recordPresent": true,
+        "runId": "fairness-sweep-2026-09-27",
+        "numCtx": 16384,
+        "sampledBy": "host-env-sampler 1.0.0 (external, runs on the Windows host)",
+        "sampleCount": 33,
+        "firstSampleIso": "2026-09-27T08:08:20.554Z",
+        "lastSampleIso": "2026-09-27T08:17:03.907Z",
+        "quantities": {
+          "freeSystemRamBytes": {
+            "n": 33,
+            "min": 4648173568,
+            "median": 5920894976,
+            "max": 14495256576
+          },
+          "vramUsedBytes": {
+            "n": 33,
+            "min": 46137344,
+            "median": 6412042240,
+            "max": 6414139392
+          },
+          "vramTotalBytes": {
+            "n": 33,
+            "min": 8585740288,
+            "median": 8585740288,
+            "max": 8585740288
+          },
+          "gpuUtilizationPercent": {
+            "n": 33,
+            "min": 0,
+            "median": 98,
+            "max": 100
+          },
+          "cpuLoadPercent": {
+            "n": 33,
+            "min": 0,
+            "median": 3,
+            "max": 29
+          }
+        },
+        "modelResidentBytes": 6241480867,
+        "offload": {
+          "reportedBy": "ollama 0.34.3 /api/ps",
+          "gpuBytes": 6241480867,
+          "cpuBytes": 0,
+          "gpuPercent": 100,
+          "runtimeReportedText": "100% GPU"
+        },
+        "note": "Unreal Editor and Blender closed for every candidate; GPU otherwise idle apart from desktop apps holding no VRAM; Docker Desktop WSL VM and the agent-server container running; no AutonomousDevTeam mission active during generation.",
+        "notMeasured": []
+      }
+    ]
+  }
+}

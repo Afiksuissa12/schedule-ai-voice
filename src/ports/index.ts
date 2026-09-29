@@ -11,6 +11,7 @@
  */
 export * from './availability.js';
 export * from './calendar.js';
+export * from './claimVerifier.js';
 export * from './clock.js';
 export * from './llm.js';
 export * from './telephony.js';

@@ -20,6 +20,20 @@ dist/
 coverage/
 *.tsbuildinfo
 
+# Benchmark run output. The raw per-scenario records are large and regenerable,
+# so they stay out of git - but results.json, models.json, COMPARISON.md, the
+# transcripts AND environment/ are meant to be COMMITTED, because the Founder
+# Review depends on them and a judged score nobody can check against its
+# transcript is not evidence. See EVAL_HARNESS.md section 8.
+#
+# This ONE line is the whole rule: everything else under eval-output/ is
+# committed. In particular eval-output/environment/ is NOT ignored - those
+# host-sampled condition records are the only artefact here that cannot be
+# regenerated, because you cannot go back and re-measure what the machine was
+# doing during a run that has finished. They are also tiny.
+eval-output/runs/
+eval-output-*/runs/
+
 # agent coordination mailbox (runtime state, not source)
 .agent-inbox/
 .agent-outbox/

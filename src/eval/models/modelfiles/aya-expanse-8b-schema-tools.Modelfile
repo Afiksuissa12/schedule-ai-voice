@@ -1,0 +1,168 @@
+# m2b/aya-expanse-schema-tools:v1
+#
+# A PROJECT-OWNED Ollama model that is `aya-expanse:8b` with ONE defect
+# corrected: its chat template is made to show the model the full JSON Schema of
+# each tool, instead of a lossy Python stub that silently drops every enum,
+# every required-field list and every nested structure.
+#
+# ---------------------------------------------------------------------------
+# NOTHING IN THIS REPOSITORY CREATES, PULLS OR RUNS THIS MODEL.
+# ---------------------------------------------------------------------------
+# This file is evidence and instructions, not an action. The task that wrote it
+# was forbidden to call, pull or create any model, and did not. Creating the tag
+# is the OPERATOR'S step, on the host, by hand:
+#
+#     ollama create m2b/aya-expanse-schema-tools:v1 \
+#       -f src/eval/models/modelfiles/aya-expanse-8b-schema-tools.Modelfile
+#
+# The exact command sequence, including the three-way comparison this tag exists
+# for, is in EVAL_HARNESS.md § 9.8.
+#
+# THE STOCK TAG IS NEVER MODIFIED. `FROM aya-expanse:8b` reads the stock
+# manifest; `ollama create` writes a NEW manifest under the new name. `ollama
+# show aya-expanse:8b --template` returns the same bytes after this as before,
+# and `src/eval/models/candidates.ts` still benchmarks stock aya under its own
+# name. If the two ever disagree, the stock one is right and this one is the
+# experiment.
+#
+# ---------------------------------------------------------------------------
+# WHY: WHAT THE STOCK TEMPLATE DOES TO A TOOL DEFINITION
+# ---------------------------------------------------------------------------
+# Captured by the operator with `ollama show aya-expanse:8b --template` and
+# committed at `.agent/evidence/operator/aya-expanse-8b-ollama-template.txt`.
+# The stock template renders each tool like this:
+#
+#     def {{ .Function.Name }}(
+#     {{- range $name, $property := .Function.Parameters.Properties }}{{ $name }}: {{ $property.Type }}, {{ end }}) -> List[Dict]:
+#         '''{{ .Function.Description }}
+#         Args:
+#     {{- range $name, $property := .Function.Parameters.Properties }}
+#             {{ $name }} ({{ $property.Type }}): {{ $property.Description }}
+#     {{- end }}
+#         '''
+#         pass
+#
+# It reads exactly three things off each property: the NAME, the TYPE and the
+# DESCRIPTION. Everything else in the schema this repository generates is
+# dropped before the model ever sees it:
+#
+#   - `enum` - DROPPED. `record_call_outcome.outcome` is
+#     `z.enum(CALL_OUTCOME_KINDS)`, seven values, and the model was shown
+#     `outcome: string`. It sent Hebrew sentences on five of seven calls and
+#     `"Voicemail"`/`"voicemail"` on the other two. It was never told that
+#     `VOICEMAIL` was the word. Same for `transfer_to_human.urgency`
+#     (`ROUTINE|URGENT`), where it sent `NOT_URGENT`, `נמוך` and `לא דחוף`.
+#   - `required` - DROPPED. A Python stub gives every parameter the same
+#     weight, so `contact_id` looks as optional as `description`. One
+#     `schedule_meeting` arrived with no `contact_id` at all.
+#   - Nested structure and `items` - DROPPED. `update_qualification.observations`
+#     is an array of `RubricObservationSchema` objects; the model was shown
+#     `observations: array` and nothing whatsoever about what goes in it.
+#   - `format`, `minLength`, `maxLength`, `minimum`, `maximum` - DROPPED.
+#
+# The control is `qwen2.5:7b-instruct`, the configured default, whose template
+# (captured in the same directory) renders each tool as
+# `{"type": "function", "function": {{ .Function }}}` - the WHOLE function
+# object as JSON, schema and all. That is the difference between "this model is
+# bad at tools" and "this model was never shown the schema", and it is why
+# docs/MISSION_2D_AYA_ROOT_CAUSE.md § 14 moves those defects off the model.
+#
+# ---------------------------------------------------------------------------
+# WHAT THIS TEMPLATE CHANGES, AND WHAT IT DELIBERATELY DOES NOT
+# ---------------------------------------------------------------------------
+# Cohere's Command-R protocol is kept verbatim: the same special tokens, the
+# same safety and system preambles, the same per-user-turn `Action:` instruction,
+# the same `Action: ```json [...]``` assistant shape, the same `<results>`
+# framing for tool output. The model is TRAINED on that protocol and rewriting
+# it would trade a known defect for an unknown one.
+#
+# DEVIATION 1, the one this file exists for: the `## Available Tools` block
+# renders `{{ .Function }}` - the complete function object as JSON - instead of
+# the Python stub. `{{ .Function }}` is not a guess: it is exactly what the
+# stock `qwen2.5:7b-instruct` template on this same host and this same Ollama
+# (0.34.3, recorded in eval-output-fair-20260927/environment/) uses to emit
+# valid JSON, because Ollama's `ToolFunction` marshals itself to JSON when a
+# template prints it. The one thing this file cannot do without running a model
+# is prove that; § 9.8 of EVAL_HARNESS.md gives the operator a one-command
+# check that does, before any benchmark is spent on it.
+#
+# DEVIATION 2, separable, and flagged because it confounds the experiment:
+# the stock per-turn instruction ends *"You should use the `directly-answer`
+# tool if calling the other tools is unnecessary."* `directly-answer` IS NOT ONE
+# OF THIS SYSTEM'S NINE TOOLS and is never offered, so that sentence instructs
+# the model to call something that does not exist - and it did, six times, which
+# is the entire recorded 12.0% malformed rate
+# (docs/MISSION_2D_AYA_ROOT_CAUSE.md § 8.1). The sentence is replaced below with
+# the same intent expressed without naming an unoffered tool. An operator who
+# wants to isolate deviation 1 can restore the original sentence, create a
+# second tag, and run both.
+#
+# WHAT IS NOT DONE HERE, ON PRINCIPLE:
+#   - No `PARAMETER` line. Temperature, `num_ctx` and the stop tokens are
+#     inherited from the stock model, because the benchmark sets `num_ctx` and
+#     temperature itself and a second source for either would make the recorded
+#     conditions a lie.
+#   - No `SYSTEM` line. The system prompt comes from
+#     `src/agent/prompt/`, is versioned, and is recorded by fingerprint on every
+#     audit event. A model carrying its own baked-in system text would silently
+#     compete with it.
+#   - NOTHING that makes the dispatcher more permissive. This changes only what
+#     the model is TOLD. Every argument it produces still meets the same
+#     `.strict()` Zod schema, the same nine dispatch checks and the same
+#     fabricated-timestamp gate. A better-informed model is the whole point; a
+#     more tolerant validator would have been the opposite of it.
+
+FROM aya-expanse:8b
+
+TEMPLATE """{{- if or .Tools .System }}<|START_OF_TURN_TOKEN|><|SYSTEM_TOKEN|>
+{{- if .Tools }}# Safety Preamble
+The instructions in this section override those in the task description and style guide sections. Don't answer questions that are harmful or immoral.
+
+# System Preamble
+## Basic Rules
+You are a powerful conversational AI trained by Cohere to help people. You are augmented by a number of tools, and your job is to use and consume the output of these tools to best help the user. You will see a conversation history between yourself and a user, ending with an utterance from the user. You will then see a specific instruction instructing you what kind of response to generate. When you answer the user's requests, you cite your sources in your answers, according to those instructions.
+
+{{ if .System }}# User Preamble
+{{ .System }}
+{{- end }}
+
+## Available Tools
+Here is a list of tools that you have available to you, each given as a JSON object whose `parameters` field is the tool's COMPLETE JSON Schema. Read that schema exactly: `required` lists the parameters you MUST send, `enum` lists the ONLY values a parameter will accept, and a nested `properties` or `items` describes the exact shape of an object or array argument. A value that is not in a parameter's `enum`, or a missing `required` parameter, will be rejected.
+{{- range .Tools }}
+{"type": "function", "function": {{ .Function }}}
+{{- end }}
+{{- else if .System }}{{ .System }}
+{{- end }}<|END_OF_TURN_TOKEN|>
+{{- end }}
+{{- range .Messages }}
+{{- if eq .Role "system" }}
+{{- continue }}
+{{- end }}<|START_OF_TURN_TOKEN|>
+{{- if eq .Role "user" }}<|USER_TOKEN|>{{ .Content }}
+{{- if $.Tools }}<|START_OF_TURN_TOKEN|><|SYSTEM_TOKEN|>Write 'Action:' followed by a json-formatted list of actions that you want to perform in order to produce a good response to the user's last input. You can use any of the supplied tools any number of times, but you should aim to execute the minimum number of necessary actions for the input. If no tool call is necessary, write no action list at all and simply reply to the user directly. Every `tool_name` you write must be one of the tools listed above, and every value in `parameters` must satisfy that tool's JSON Schema. The list of actions you want to call should be formatted as a list of json objects, for example:
+```json
+[
+    {
+        "tool_name": title of the tool in the specification,
+        "parameters": a dict of parameters to input into the tool as they are defined in the specs, or {} if it takes no parameters
+    }
+]```
+{{- end }}
+{{- else if eq .Role "assistant" }}<|CHATBOT_TOKEN|>
+{{- if .Content }}{{ .Content }}
+{{- else if .ToolCalls }}
+Action: ```json
+[
+{{- range .ToolCalls }}
+    {
+        "tool_name": "{{ .Function.Name }}",
+        "parameters": {{ .Function.Arguments }}
+    }
+{{- end }}
+]```
+{{- end }}
+{{- else if eq .Role "tool" }}<|SYSTEM_TOKEN|><results>
+console_output: {{ .Content }}
+</results>
+{{- end }}<|END_OF_TURN_TOKEN|>
+{{- end }}<|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|CHATBOT_TOKEN|>"""

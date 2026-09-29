@@ -24,6 +24,7 @@ import { DateTime } from 'luxon';
 
 import type { z } from 'zod';
 
+import type { BusinessProfile } from '../../context/businessProfile.js';
 import { ValidationErrorCode } from '../../ports/validation.js';
 import { stringifyJson } from '../../shared/json.js';
 import { deriveIdempotencyKey } from '../../shared/ids.js';
@@ -40,6 +41,7 @@ import type {
   TransferToHumanArgsSchema,
   UpdateQualificationArgsSchema,
 } from './definitions.js';
+import { createHandoverTask } from './handoverTask.js';
 import { explainScoring, scoreQualification } from './qualificationRubric.js';
 import { toolRejection, toolSuccess, type ToolOutcome } from './results.js';
 
@@ -60,10 +62,38 @@ function requireSlot(input: ToolHandlerInput) {
   return input.slot;
 }
 
-/** "Thursday 5 March at 15:00 (America/New_York)" - how a time is spoken back. */
+/**
+ * "Thursday 5 March at 15:00 (America/New_York)" - how a time is spoken back.
+ *
+ * NO YEAR, DELIBERATELY, AND THIS SITE IS THE WORST OFFENDER OF THE THREE.
+ * See docs/MISSION_2D_AYA_ROOT_CAUSE.md § 9.1a.
+ *
+ * A tool RESULT is a message the model reads, so this string is in the context
+ * window exactly like the turn context is - and it is a stronger imitation
+ * target than the disclosure, for two reasons the evidence shows directly:
+ *
+ *  1. IT IS STAMPED OK. The model sees this format as the output of a call that
+ *     SUCCEEDED, which is the most persuasive exemplar a context window can
+ *     carry. The turn context's clock is merely stated; this one is rewarded.
+ *  2. THE COPY IS VERBATIM, IN THE SAME TURN. In `vague-next-week` turn 1 aya
+ *     passed the contact's own words (`next Tuesday at 10am`) and was told
+ *     `Tuesday 10 March 2026 at 10:00 (America/New_York) is free for 30
+ *     minutes.` Its next two calls that turn sent
+ *     `when: "Tuesday 10 March 2026 at 10:00"` - this string, minus the zone
+ *     suffix. The disclosure could not have produced it: the disclosure said
+ *     `Wednesday 4 March`. Only this line says `Tuesday 10 March`.
+ *
+ * The year is what made that copy a gate failure rather than a normal refusal:
+ * every one of the five `FABRICATION_PATTERNS` needs a 4-digit year. Without it
+ * a model that still copies produces something the resolver refuses in the open,
+ * fail-closed, with a recoverable message - not a manufactured absolute instant.
+ *
+ * The zone stays. It is not part of the forbidden shape, and a time spoken back
+ * without its zone is the ambiguity this whole module exists to prevent.
+ */
 function describeLocal(startUtc: string, timezone: string): string {
   return `${DateTime.fromMillis(Date.parse(startUtc), { zone: timezone }).toFormat(
-    "cccc d LLLL yyyy 'at' HH:mm",
+    "cccc d LLLL 'at' HH:mm",
   )} (${timezone})`;
 }
 
@@ -143,9 +173,53 @@ const getContactContext: ToolHandler = async (input) => {
       })),
       source: 'database',
       requested_contact_id: args.contact_id,
+      // Present only when a business profile is wired in. Spread rather than
+      // set to null so that, without one, this key does not exist and the
+      // payload is byte-identical to Baseline V1's.
+      ...(input.deps.businessProfile ? { business: businessBlock(input.deps.businessProfile) } : {}),
     },
   });
 };
+
+/**
+ * The company facts `get_contact_context` hands back.
+ *
+ * A DIGEST, not the whole profile. The full document is already in the turn's
+ * background; repeating it inside a tool result would double its cost in a
+ * context window that is the scarcest thing this milestone has. What is here is
+ * the part a model most often wants at the exact moment it looks a contact up:
+ * who we are, what the headline numbers are, and - most usefully - what we
+ * cannot do, so a promise is refused before it is made rather than after.
+ *
+ * Note the absence of anything to say. Every value is a fact.
+ */
+function businessBlock(profile: BusinessProfile): Record<string, unknown> {
+  return {
+    profile_ref: profile.profileRef,
+    company_name: profile.company.name,
+    what_we_are: profile.company.whatWeAre,
+    products: profile.products.map((product) => ({
+      name: product.name,
+      summary: product.summary,
+      does_not_do: product.limitations,
+    })),
+    pricing: {
+      currency: profile.pricing.currency,
+      plans: profile.pricing.plans.map((plan) => ({
+        name: plan.name,
+        headline_price: plan.headlinePrice,
+        billing_period: plan.billingPeriod,
+      })),
+      discount_facts: profile.pricing.discountFacts,
+    },
+    agent_may_not_commit: profile.pricing.agentMayNotCommit,
+    policies: profile.policies.map((policy) => ({ topic: policy.topic, fact: policy.fact })),
+    objective: profile.objectives.primary,
+    // Said plainly, because a model that has just been handed a pile of facts
+    // is a model about to recite them.
+    how_to_use_this: 'Facts you may draw on. Not sentences to read out, and not a list to work through.',
+  };
+}
 
 // ---------------------------------------------------------------------------
 // 2. check_availability
@@ -582,51 +656,28 @@ const transferToHuman: ToolHandler = async (input) => {
 
   const urgency = args.urgency ?? 'ROUTINE';
 
-  const task = await db.withTransaction(async (tx) => {
-    const row = await tx.tasks.create({
-      organizationId: input.ctx.organizationId,
-      contactId: input.subject.contact.id,
-      conversationId: input.ctx.conversationId,
-      title: `[${urgency}] Human handover: ${input.subject.contact.fullName}`,
-      description: [args.reason, args.summary].filter(Boolean).join('\n\n'),
-      status: 'OPEN',
-      // An urgent handover is due now; a routine one still has a deadline, so
-      // it cannot sit in a queue indefinitely with nobody accountable.
-      dueAtUtc:
-        urgency === 'URGENT'
-          ? input.ctx.nowUtc
-          : new Date(Date.parse(input.ctx.nowUtc) + 24 * 60 * 60 * 1000).toISOString(),
-    });
-
-    await tx.audit.record({
-      type: 'HUMAN_TRANSFER_REQUESTED',
-      organizationId: input.ctx.organizationId,
-      correlationId: input.ctx.correlationId,
-      conversationId: input.ctx.conversationId,
-      contactId: input.subject.contact.id,
-      toolCallId: input.toolCallId,
-      subjectType: 'TASK',
-      subjectId: row.id,
-      summary: `Handover to a human requested (${urgency}): ${args.reason}`,
-      detailJson: { urgency, reason: args.reason, summary: args.summary ?? null, taskId: row.id },
-      occurredAt: input.ctx.nowUtc,
-    });
-
-    await tx.audit.record({
-      type: 'ENTITY_PERSISTED',
-      organizationId: input.ctx.organizationId,
-      correlationId: input.ctx.correlationId,
-      conversationId: input.ctx.conversationId,
-      contactId: input.subject.contact.id,
-      toolCallId: input.toolCallId,
-      subjectType: 'TASK',
-      subjectId: row.id,
-      summary: `Handover task ${row.id} created`,
-      detailJson: { taskId: row.id, status: row.status, dueAtUtc: row.dueAtUtc },
-      occurredAt: input.ctx.nowUtc,
-    });
-
-    return row;
+  // The row, the transaction and the two audit events live in
+  // `./handoverTask.ts`, shared with the claim gate's exhaustion path. Every
+  // string this path used to build is still built here, so the summaries and the
+  // detail payloads are unchanged.
+  const task = await createHandoverTask({
+    db,
+    organizationId: input.ctx.organizationId,
+    correlationId: input.ctx.correlationId,
+    conversationId: input.ctx.conversationId,
+    contactId: input.subject.contact.id,
+    toolCallId: input.toolCallId,
+    title: `[${urgency}] Human handover: ${input.subject.contact.fullName}`,
+    description: [args.reason, args.summary].filter(Boolean).join('\n\n'),
+    // An urgent handover is due now; a routine one still has a deadline, so
+    // it cannot sit in a queue indefinitely with nobody accountable.
+    dueAtUtc:
+      urgency === 'URGENT'
+        ? input.ctx.nowUtc
+        : (new Date(Date.parse(input.ctx.nowUtc) + 24 * 60 * 60 * 1000).toISOString() as typeof input.ctx.nowUtc),
+    nowUtc: input.ctx.nowUtc,
+    requestedSummary: `Handover to a human requested (${urgency}): ${args.reason}`,
+    requestedDetail: { urgency, reason: args.reason, summary: args.summary ?? null },
   });
 
   return toolSuccess({

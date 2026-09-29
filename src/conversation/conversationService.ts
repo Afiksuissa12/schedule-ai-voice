@@ -42,6 +42,8 @@ import type { Clock, IsoUtcString } from '../ports/clock.js';
 import type { ToolCallRequest } from '../ports/llm.js';
 import { InvariantViolationError } from '../shared/errors.js';
 import { stringifyJson } from '../shared/json.js';
+import { selectRecentTurns, type TurnWindow } from './contextWindow.js';
+import { readConversationMemory, type ConversationMemory } from './conversationMemory.js';
 
 export interface ConversationServiceOptions {
   readonly db: Database;
@@ -198,10 +200,47 @@ export class ConversationService {
     return messagesFromTurns(turns, options);
   }
 
+  /**
+   * MISSION 2: the same rebuild, inside a bounded window.
+   *
+   * Same discipline as `buildMessages` - the rows ARE the transcript and they
+   * are read fresh - with the addition that only the most recent stretch that
+   * fits the local model's context length is turned into messages. What falls
+   * outside is not lost: `conversationMemory.ts` carries it as a rolling
+   * summary, and the assembled background puts that summary in the same prompt.
+   *
+   * Returns the window alongside the messages rather than just the messages,
+   * because "what did the model NOT see this turn" is an audit question, and a
+   * function that silently discarded the answer would make it unanswerable.
+   */
+  async buildWindowedMessages(
+    conversationId: string,
+    options: BuildWindowedMessagesOptions,
+  ): Promise<{ messages: AgentLlmMessage[]; window: TurnWindow }> {
+    const turns = await this.db.conversationTurns.listByConversation(conversationId);
+    const window = selectRecentTurns(turns, { maxTurns: options.maxTurns, maxChars: options.maxChars });
+    const messages = messagesFromTurns(window.turns, {
+      ...(options.leadingMessages ? { leadingMessages: options.leadingMessages } : {}),
+    });
+    return { messages, window };
+  }
+
+  /** The durable memory in `Conversation.summary`, tolerant of legacy rows. */
+  async readMemory(conversationId: string): Promise<ConversationMemory> {
+    const conversation = await this.db.conversations.requireById(conversationId);
+    return readConversationMemory(conversation.summary);
+  }
+
   /** Turn count, for the loop cap and for audit detail. */
   async turnCount(conversationId: string): Promise<number> {
     return this.db.conversationTurns.countByConversation(conversationId);
   }
+}
+
+export interface BuildWindowedMessagesOptions {
+  readonly maxTurns: number;
+  readonly maxChars: number;
+  readonly leadingMessages?: readonly AgentLlmMessage[];
 }
 
 export interface BuildMessagesOptions {

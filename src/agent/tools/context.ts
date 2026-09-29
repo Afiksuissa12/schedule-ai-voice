@@ -15,6 +15,7 @@
  * a service that has already been handed a `ResolvedSlot` from
  * `SchedulingValidator`.
  */
+import type { BusinessProfile } from '../../context/businessProfile.js';
 import type { Database } from '../../db/database.js';
 import type { AgentConfiguration, Contact, Meeting, QualificationState } from '../../domain/entities.js';
 import type { FutureActionService } from '../../followup/futureActionService.js';
@@ -68,6 +69,22 @@ export interface ToolDependencies {
   readonly futureActions: FutureActionService;
   readonly availability: AvailabilityProvider;
   readonly calendar: CalendarProvider;
+  /**
+   * MISSION 2, OPT-IN: the loaded business profile.
+   *
+   * `get_contact_context` adds a small block of company facts to its result
+   * when this is present. It is here rather than in a tenth tool because the
+   * mission's rule is to reach business context through a path that already
+   * exists, and because a model that has just asked "what do we know about this
+   * person" is exactly the model about to need "and what can I tell them".
+   *
+   * OPTIONAL, AND ABSENT MEANS ABSENT. With this undefined the tool returns
+   * byte-identical output to Baseline V1, which is what keeps `npm test` and
+   * the 601-scenario sweep unchanged. `ToolDispatcherOptions extends
+   * ToolDependencies`, so wiring it is one constructor field and
+   * `dispatcher.ts` needed no edit at all.
+   */
+  readonly businessProfile?: BusinessProfile | null;
 }
 
 /** The rows the dispatcher resolved from the call's subject arguments. */
