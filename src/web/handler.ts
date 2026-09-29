@@ -52,10 +52,19 @@ const LOCAL_BASE_URL = process.env['LOCAL_LLM_BASE_URL'] ?? 'http://host.docker.
 export const MODEL_LABEL =
   LLM_BACKEND === 'openrouter' ? `${OPENROUTER_MODEL} via OpenRouter` : `${LOCAL_MODEL} via local Ollama`;
 
+let keyShapeLogged = false;
 function modelOptions(): Pick<BuildAgentRuntimeOptions, 'llm' | 'llmProviderConfig'> {
   if (LLM_BACKEND === 'openrouter') {
-    const apiKey = process.env['OPENROUTER_API_KEY'] ?? '';
-    if (apiKey.trim().length === 0) throw new Error('WEB_DEMO_LLM=openrouter requires OPENROUTER_API_KEY.');
+    const raw = process.env['OPENROUTER_API_KEY'] ?? '';
+    // Trim: a key pasted into a dashboard often carries an invisible newline or space, which makes
+    // the Authorization header invalid. Also strip an accidental "Bearer " prefix or quotes.
+    const apiKey = raw.trim().replace(/^Bearer\s+/i, '').replace(/^["']|["']$/g, '').trim();
+    if (!keyShapeLogged) {
+      keyShapeLogged = true;
+      // Shape only - never the key itself.
+      console.log(`[web-demo] OpenRouter key: length ${apiKey.length}, sk-or- prefix ${apiKey.startsWith('sk-or-')}, trimmed ${raw.length - apiKey.length} char(s)`);
+    }
+    if (apiKey.length === 0) throw new Error('WEB_DEMO_LLM=openrouter requires OPENROUTER_API_KEY.');
     return {
       llm: new OpenAiLlmProvider({
         apiKey,
