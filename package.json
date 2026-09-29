@@ -41,7 +41,8 @@
     "check:anti-scripting": "tsx src/cli/antiScriptingCli.ts",
     "context:prove": "tsx src/cli/contextProve.ts",
     "context:render": "tsx src/cli/contextRender.ts",
-    "context:verify": "npm run check:anti-scripting && npm run context:prove"
+    "context:verify": "npm run check:anti-scripting && npm run context:prove",
+    "web:demo": "tsx src/web/server.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.16.2",

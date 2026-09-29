@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Schedule AI Voice - live demo</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Schedule AI Voice</h1>
+      <p class="tagline">The language model owns the conversation. The application owns the truth and the actions.</p>
+    </div>
+    <a class="repo" href="https://github.com/Afiksuissa12/schedule-ai-voice" target="_blank" rel="noopener noreferrer">GitHub repository</a>
+  </header>
+
+  <section class="notice">
+    <strong>Live demo of a student project.</strong>
+    You play <b id="contact">the contact</b>, a lead talking to the sales assistant of <b id="company">the business</b>.
+    Every assistant reply is generated live by a local language model (qwen2.5:7b-instruct). Scheduling requests are
+    validated and saved by application code. Times you mention are interpreted in the contact's timezone
+    (<span id="tz">-</span>; it is now <span id="now">-</span> there).
+    Nothing here dials a real phone or touches a real calendar - those are simulated providers.
+  </section>
+
+  <main>
+    <section class="chat">
+      <div id="log" class="log" aria-live="polite"></div>
+      <div class="suggestions" id="suggestions">
+        <span>Try:</span>
+        <button type="button" class="chip">Hi! What does your product do, and what would it cost for eight technicians?</button>
+        <button type="button" class="chip">I'm busy right now - can you call me back tomorrow afternoon at 3?</button>
+        <button type="button" class="chip">Actually, could we set up a meeting on Thursday at 11am instead?</button>
+      </div>
+      <form id="form" autocomplete="off">
+        <input id="input" type="text" maxlength="500" placeholder="Type a message as the contact..." aria-label="Your message">
+        <button id="send" type="submit">Send</button>
+      </form>
+      <div class="controls">
+        <button id="reset" type="button" class="secondary">New conversation</button>
+        <span id="status" class="status"></span>
+      </div>
+    </section>
+
+    <aside class="state">
+      <h2>What the application actually saved</h2>
+      <p class="hint">Read back from the database after every turn - not what the model claimed.</p>
+      <div id="actions"><p class="empty">Nothing scheduled yet.</p></div>
+      <button id="followup" type="button" class="secondary">Run the follow-up engine (simulate the scheduled time arriving)</button>
+      <p id="followupResult" class="hint"></p>
+      <h2>Audit trail of the last turn</h2>
+      <ol id="audit" class="audit"><li class="empty">No turn yet.</li></ol>
+    </aside>
+  </main>
+
+  <footer>
+    Student / demo system - see <a href="https://github.com/Afiksuissa12/schedule-ai-voice/blob/main/docs/KNOWN_LIMITATIONS.md" target="_blank" rel="noopener noreferrer">known limitations</a>.
+    Conversations are temporary and deleted after 45 minutes of inactivity.
+  </footer>
+  <script src="/app.js"></script>
+</body>
+</html>
