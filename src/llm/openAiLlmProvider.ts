@@ -70,6 +70,16 @@ export interface OpenAiLlmProviderOptions {
   /** Injectable client, so the optional live test can assert on the wiring. */
   readonly client?: OpenAI;
   readonly baseUrl?: string;
+  /**
+   * OPTIONAL, OFF BY DEFAULT. Declare that the endpoint behind `baseUrl` honours a JSON-Schema
+   * `response_format` and a per-request seed (for example OpenRouter with a model that lists
+   * `structured_outputs`). When on, `responseJsonSchema` and `determinism` are forwarded and
+   * `supportsStructuredOutput()` answers true, so the composition root can build the semantic
+   * claim verifier over this provider. The verifier still validates every answer and fails closed.
+   */
+  readonly structuredOutput?: boolean;
+  /** Extra HTTP headers for an OpenAI-compatible gateway (e.g. OpenRouter attribution headers). */
+  readonly defaultHeaders?: Record<string, string>;
 }
 
 export class OpenAiLlmProvider implements LlmProvider {
@@ -77,6 +87,7 @@ export class OpenAiLlmProvider implements LlmProvider {
   private readonly model: string;
   private readonly temperature: number;
   private readonly maxOutputTokens: number | undefined;
+  private readonly structuredOutput: boolean;
 
   constructor(options: OpenAiLlmProviderOptions) {
     if (!options.apiKey || options.apiKey.trim().length === 0) {
@@ -92,20 +103,38 @@ export class OpenAiLlmProvider implements LlmProvider {
         apiKey: options.apiKey,
         ...(options.baseUrl ? { baseURL: options.baseUrl } : {}),
         ...(options.timeoutMs !== undefined ? { timeout: options.timeoutMs } : {}),
+        ...(options.defaultHeaders ? { defaultHeaders: options.defaultHeaders } : {}),
       });
     this.model = options.model ?? DEFAULT_OPENAI_MODEL;
     this.temperature = options.temperature ?? 0;
     this.maxOutputTokens = options.maxOutputTokens;
+    this.structuredOutput = options.structuredOutput === true;
   }
 
   name(): string {
     return `openai:${this.model}`;
   }
 
+  /** True only when explicitly configured - see `OpenAiLlmProviderOptions.structuredOutput`. */
+  supportsStructuredOutput(): boolean {
+    return this.structuredOutput;
+  }
+
   async completeTurn(req: CompleteTurnRequest): Promise<CompleteTurnResult> {
+    const structured = this.structuredOutput;
+    const temperature = structured && req.determinism?.temperature !== undefined ? req.determinism.temperature : this.temperature;
     const response = await this.client.chat.completions.create({
       model: this.model,
-      temperature: this.temperature,
+      temperature,
+      ...(structured && req.determinism?.seed !== undefined ? { seed: req.determinism.seed } : {}),
+      ...(structured && req.responseJsonSchema !== undefined
+        ? {
+            response_format: {
+              type: 'json_schema' as const,
+              json_schema: { name: 'response', schema: req.responseJsonSchema as Record<string, unknown>, strict: true },
+            },
+          }
+        : {}),
       ...(this.maxOutputTokens !== undefined ? { max_tokens: this.maxOutputTokens } : {}),
       messages: [
         { role: 'system', content: req.systemPrompt },

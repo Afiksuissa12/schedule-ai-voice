@@ -1,0 +1,20 @@
+# Render Blueprint for the Schedule AI Voice hosted web demo (branch: hosted-demo).
+# The OpenRouter key is NOT stored here: `sync: false` makes Render ask for it in its dashboard.
+services:
+  - type: web
+    name: schedule-ai-voice
+    runtime: docker
+    branch: hosted-demo
+    dockerfilePath: ./deploy/web-demo/Dockerfile
+    dockerContext: .
+    plan: free            # "starter" (USD 7/month, prorated) keeps the instance awake - see deploy/web-demo/README.md
+    region: frankfurt
+    healthCheckPath: /healthz
+    autoDeploy: false
+    envVars:
+      - key: WEB_DEMO_LLM
+        value: openrouter
+      - key: OPENROUTER_MODEL
+        value: qwen/qwen-2.5-7b-instruct
+      - key: OPENROUTER_API_KEY
+        sync: false

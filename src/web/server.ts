@@ -38,7 +38,8 @@ import { fileURLToPath } from 'node:url';
 import { DateTime } from 'luxon';
 
 import { LOCAL_BRAIN_SYSTEM_PROMPT_REF } from '../agent/prompt/systemPrompt.js';
-import { buildAgentRuntime, type AgentRuntime } from '../app/composition.js';
+import { buildAgentRuntime, type AgentRuntime, type BuildAgentRuntimeOptions } from '../app/composition.js';
+import { OpenAiLlmProvider } from '../llm/openAiLlmProvider.js';
 import { seedSliceWorld, type SliceWorld } from '../app/seedSliceWorld.js';
 import { loadBusinessProfile } from '../context/businessProfile.js';
 import { FixedClock } from '../ports/clock.js';
@@ -50,12 +51,43 @@ const REPO_ROOT = resolve(HERE, '..', '..');
 const PUBLIC_DIR = join(HERE, 'public');
 
 // ---------------------------------------------------------------- configuration
-const PORT = Number(process.env['WEB_DEMO_PORT'] ?? 8080);
+const PORT = Number(process.env['PORT'] ?? process.env['WEB_DEMO_PORT'] ?? 8080);
 const HOST = process.env['WEB_DEMO_HOST'] ?? '0.0.0.0';
 const DATA_DIR = process.env['WEB_DEMO_DATA_DIR'] ?? join(REPO_ROOT, '.tmp', 'web-demo');
-const MODEL = process.env['LOCAL_LLM_MODEL'] ?? 'qwen2.5:7b-instruct';
-const BASE_URL = process.env['LOCAL_LLM_BASE_URL'] ?? 'http://host.docker.internal:11434';
 const NUM_CTX = 16_384;
+
+// Which model backend. 'openrouter' = the same Qwen 2.5 7B Instruct through OpenRouter's
+// OpenAI-compatible API (cloud hosting); 'local' = Ollama on the host (the original local demo).
+// The key is read from the environment ONLY and is never logged or returned.
+const LLM_BACKEND = process.env['WEB_DEMO_LLM'] === 'openrouter' ? 'openrouter' : 'local';
+const OPENROUTER_MODEL = process.env['OPENROUTER_MODEL'] ?? 'qwen/qwen-2.5-7b-instruct';
+const LOCAL_MODEL = process.env['LOCAL_LLM_MODEL'] ?? 'qwen2.5:7b-instruct';
+const LOCAL_BASE_URL = process.env['LOCAL_LLM_BASE_URL'] ?? 'http://host.docker.internal:11434';
+const MODEL_LABEL = LLM_BACKEND === 'openrouter' ? `${OPENROUTER_MODEL} via OpenRouter` : `${LOCAL_MODEL} via local Ollama`;
+
+function modelOptions(): Pick<BuildAgentRuntimeOptions, 'llm' | 'llmProviderConfig'> {
+  if (LLM_BACKEND === 'openrouter') {
+    const apiKey = process.env['OPENROUTER_API_KEY'] ?? '';
+    if (apiKey.trim().length === 0) throw new Error('WEB_DEMO_LLM=openrouter requires OPENROUTER_API_KEY in the environment.');
+    return {
+      llm: new OpenAiLlmProvider({
+        apiKey,
+        baseUrl: 'https://openrouter.ai/api/v1',
+        model: OPENROUTER_MODEL,
+        temperature: 0,
+        timeoutMs: 60_000,
+        structuredOutput: true,
+        defaultHeaders: { 'X-Title': 'Schedule AI Voice (student demo)' },
+      }),
+    };
+  }
+  return {
+    llmProviderConfig: {
+      kind: 'local', model: LOCAL_MODEL, baseUrl: LOCAL_BASE_URL, numCtx: NUM_CTX,
+      temperature: 0, keepAlive: '30m', streamByDefault: false,
+    },
+  };
+}
 
 const LIMITS = {
   bodyBytes: 4_096,
@@ -66,7 +98,18 @@ const LIMITS = {
   sessionsPerClientPer10Min: 8,
   messagesPerClientPer10Min: 40,
   queueLength: 6,
+  turnsPerDay: 1500,
 } as const;
+
+let dayKey = '';
+let turnsToday = 0;
+function underDailyCap(): boolean {
+  const today = new Date().toISOString().slice(0, 10);
+  if (today !== dayKey) { dayKey = today; turnsToday = 0; }
+  if (turnsToday >= LIMITS.turnsPerDay) return false;
+  turnsToday += 1;
+  return true;
+}
 
 // ---------------------------------------------------------------- static files
 const STATIC: Record<string, { body: Buffer; type: string }> = {
@@ -142,17 +185,18 @@ async function createSession(): Promise<Session> {
     clock,
     datasourceUrl: `file:${dbPath}`,
     providers,
-    llmProviderConfig: {
-      kind: 'local',
-      model: MODEL,
-      baseUrl: BASE_URL,
-      numCtx: NUM_CTX,
-      temperature: 0,
-      keepAlive: '30m',
-      streamByDefault: false,
-    },
-    contextAssembly: { businessProfile },
+    ...modelOptions(),
+    // modelNumCtx stated explicitly: when the provider is passed as an instance the composition
+    // root cannot derive it, and the budget must match the window the demo was validated at.
+    contextAssembly: { businessProfile, budget: { modelNumCtx: NUM_CTX } },
   });
+  // The claim gate's semantic layer must be the REAL verifier, never the offline double.
+  const verifierName = runtime.claimGate.semanticVerifier?.verifierName ?? 'none';
+  if (verifierName !== 'llm-semantic-claim-verifier') {
+    await runtime.shutdown();
+    rmSync(dbPath, { force: true });
+    throw new Error(`Refusing to serve: semantic claim verifier is '${verifierName}', not the real LLM verifier.`);
+  }
   const world = await seedSliceWorld(runtime.db, { systemPromptRef: LOCAL_BRAIN_SYSTEM_PROMPT_REF });
   const conversation = await runtime.conversations.start({
     organizationId: world.organization.id,
@@ -208,6 +252,7 @@ function sessionView(s: Session) {
     contactName: s.world.contact.fullName,
     contactTimezone: s.world.contact.timezone,
     company: businessProfile.company.name,
+    model: MODEL_LABEL,
     nowLocal: localTime(s.clock.nowUtc(), s.world.contact.timezone),
     turnsLeft: LIMITS.turnsPerSession - s.userTurns,
     transcript: s.transcript,
@@ -304,6 +349,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     if (text.length === 0 || text.length > LIMITS.messageChars) { send(res, 400, { error: `Messages must be 1-${LIMITS.messageChars} characters.` }); return; }
     if (s.userTurns >= LIMITS.turnsPerSession) { send(res, 400, { error: 'This demo conversation has reached its turn limit. Start a new one.' }); return; }
     if (!allow(`m:${clientKey(req)}`, LIMITS.messagesPerClientPer10Min)) { send(res, 429, { error: 'Too many messages - please wait a few minutes.' }); return; }
+    if (!underDailyCap()) { send(res, 503, { error: 'The demo has reached its daily usage limit. Please try again tomorrow.' }); return; }
 
     const work = enqueue(() => s.runtime.agent.handleTurn({ conversationId: s.conversationId, utterance: text }));
     if (!work) { send(res, 503, { error: 'The model is busy with other visitors - please try again in a moment.' }); return; }
@@ -364,7 +410,7 @@ async function main(): Promise<void> {
   server.requestTimeout = 180_000;
   setInterval(() => { void sweepSessions(); }, 60_000).unref();
   server.listen(PORT, HOST, () => {
-    console.log(`[web-demo] listening on ${HOST}:${PORT} - model ${MODEL} at num_ctx ${NUM_CTX}`);
+    console.log(`[web-demo] listening on ${HOST}:${PORT} - model ${MODEL_LABEL}, context budget ${NUM_CTX}`);
   });
 }
 
