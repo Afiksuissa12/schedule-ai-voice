@@ -10,7 +10,7 @@ services:
     plan: free            # "starter" (USD 7/month, prorated) keeps the instance awake - see deploy/web-demo/README.md
     region: frankfurt
     healthCheckPath: /healthz
-    autoDeploy: false
+    autoDeploy: true      # redeploys when the hosted-demo branch is pushed
     envVars:
       - key: WEB_DEMO_LLM
         value: openrouter
