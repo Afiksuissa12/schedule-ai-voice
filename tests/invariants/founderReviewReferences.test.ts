@@ -44,6 +44,9 @@ const SKIP_DIRECTORIES = new Set([
   'dist',
   '.git',
   '.tmp',
+  // The AutonomousDevTeam orchestrator's own runtime state (gitignored, present
+  // only in a checkout where the team ran): its mission logs quote old paths.
+  '.agent',
   '.agent-inbox',
   '.agent-outbox',
   '.worktrees',
